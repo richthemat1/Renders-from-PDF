@@ -1,0 +1,17 @@
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/CHANGELOG.md
+!/Как пользоваться.txt
+!/Лицензии компонентов.txt
+!/Запустить.cmd
+!/Исходники/
+/Исходники/*
+!/Исходники/photo_*.py
+!/Исходники/test_*.py
+!/Исходники/requirements*.txt
+!/Исходники/build.ps1
+!/Исходники/build_release.ps1
+!/Исходники/publish_release.ps1
+!/Исходники/installer.nsi
