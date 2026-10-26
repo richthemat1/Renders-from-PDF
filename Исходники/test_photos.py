@@ -509,7 +509,7 @@ class PhotoExport(unittest.TestCase):
                     window.after(250, check)
                     return window
                 with patch('tkinter.Tk', hidden):
-                    open_app([str(source)])
+                    open_app([str(source)], state_path=Path(root)/'workspace.json')
                 self.assertIn(expected, observed['status'])
                 self.assertEqual(observed['progress'], 100 if source == valid else 0)
 
@@ -856,7 +856,7 @@ class AppFileDrop(unittest.TestCase):
                 return window
 
             with patch('tkinter.Tk', hidden):
-                open_app()
+                open_app(state_path=Path(root)/'workspace.json')
             self.assertTrue(any(s.startswith('Готово') for s in observed['labels']), observed)
             self.assertIn(first.name, observed['log'])
             self.assertIn('Пропущено, это не PDF: заметка.txt', observed['log'])

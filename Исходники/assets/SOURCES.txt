@@ -1,0 +1,8 @@
+Fonts and icons used by the Figma reference. Bundled for offline use.
+Roboto: https://github.com/googlefonts/roboto-2
+Material Symbols: https://github.com/google/material-design-icons
+Material Symbols subset: arrow_back,arrow_forward,check,chevron_right,close,description,download,folder_open,grid_view,help,history,image,info,open_in_new,search,settings,stop,upload,warning
+MaterialSymbols.ttf SHA256 68f5ce8175f440246d8bc898d717c53058454ad5f3d9fe8ca63b3baa1a7c0f79
+Roboto-Bold.ttf SHA256 c9cc991deb5d27f267830a19f2301eb164d9e61ec08669c1a1a291c5620ff40a
+Roboto-Medium.ttf SHA256 e35252aa3dc2e84e9d7211586fee9aede2a426d3230c8b131881d985f16ff836
+Roboto-Regular.ttf SHA256 017c0be9aaa6d0359737e1fa762ad304c0e0107927faff5a6c1f415c7f5244ed
