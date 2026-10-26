@@ -74,6 +74,7 @@ Section "Фото из PDF (обязательно)" Application
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\Фото из PDF"
   CreateShortcut "$SMPROGRAMS\Фото из PDF\Фото из PDF.lnk" "$INSTDIR\PDF-Photos.exe"
+  CreateShortcut "$SMPROGRAMS\Фото из PDF\Совместимый интерфейс.lnk" "$INSTDIR\PDF-Photos.exe" "--legacy-ui"
   CreateShortcut "$SMPROGRAMS\Фото из PDF\Как пользоваться.lnk" "$INSTDIR\Как пользоваться.txt"
   WriteINIStr "$INSTDIR\Обновления.url" "InternetShortcut" "URL" "https://github.com/richthemat1/Renders-from-PDF/releases/latest"
   CreateShortcut "$SMPROGRAMS\Фото из PDF\Обновления.lnk" "$INSTDIR\Обновления.url"
@@ -88,6 +89,16 @@ Section "Фото из PDF (обязательно)" Application
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLUpdateInfo" "https://github.com/richthemat1/Renders-from-PDF/releases/latest"
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+  ReadRegStr $1 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${If} $1 == ""
+    SetRegView 32
+    ReadRegStr $1 HKLM "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+    SetRegView 64
+  ${EndIf}
+  ${If} $1 == ""
+    IfSilent +2
+    MessageBox MB_ICONINFORMATION "Для нового интерфейса нужен Microsoft Edge WebView2 Runtime. Официальный установщик Microsoft доступен на developer.microsoft.com/microsoft-edge/webview2/. Без Runtime используйте ярлык «Совместимый интерфейс» в меню «Пуск»."
+  ${EndIf}
 SectionEnd
 
 Section /o "Ярлык на рабочем столе" DesktopShortcut
@@ -106,6 +117,7 @@ Section "Uninstall"
   Delete "$INSTDIR\Обновления.url"
   Delete "$INSTDIR\Uninstall.exe"
   Delete "$SMPROGRAMS\Фото из PDF\Фото из PDF.lnk"
+  Delete "$SMPROGRAMS\Фото из PDF\Совместимый интерфейс.lnk"
   Delete "$SMPROGRAMS\Фото из PDF\Как пользоваться.lnk"
   Delete "$SMPROGRAMS\Фото из PDF\Обновления.lnk"
   RMDir "$SMPROGRAMS\Фото из PDF"

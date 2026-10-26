@@ -21,8 +21,10 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == '--batch':
         sys.argv.pop(1)
         return cli_main()
-    open_app(sys.argv[1:])
-    return 0
+    if '--legacy-ui' in sys.argv:
+        return open_app([value for value in sys.argv[1:] if value != '--legacy-ui']) or 0
+    from photo_desktop import open_desktop
+    return open_desktop(sys.argv[1:])
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@
 !/.gitattributes
 !/README.md
 !/CHANGELOG.md
+!/STACK.md
 !/Как пользоваться.txt
 !/Лицензии компонентов.txt
 !/Запустить.cmd
@@ -16,3 +17,9 @@
 !/Исходники/publish_release.ps1
 !/Исходники/installer.nsi
 !/Исходники/assets/
+!/Исходники/frontend/
+/Исходники/frontend/node_modules/
+/Исходники/frontend/dist/
+/Исходники/frontend/.vite/
+/Исходники/frontend/coverage/
+/Исходники/frontend/*.tsbuildinfo

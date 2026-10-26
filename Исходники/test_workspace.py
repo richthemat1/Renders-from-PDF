@@ -1,4 +1,5 @@
 """User-facing workspace state: real history and safe output destinations."""
+import gc
 import importlib.util
 import json
 from pathlib import Path
@@ -162,18 +163,39 @@ class WorkspaceApplication(unittest.TestCase):
     def setUp(self):
         import tkinter as tk
         import photo_app
+        # Previous destroyed Tk fixtures must release their Python cycles on the
+        # interpreter's owning thread, before PDF allocations can trigger worker GC.
+        gc.collect()
         self.assertTrue(hasattr(photo_app, 'PhotoApplication'), 'Нет контроллера нового рабочего пространства')
         self.directory = tempfile.TemporaryDirectory(prefix='pdf-workspace-test-')
         self.addCleanup(self.directory.cleanup)
         self.folder = Path(self.directory.name)
+        self.app = None
         self.root = tk.Tk()
+        self.addCleanup(self.close)
         self.root.withdraw()
         self.app = photo_app.PhotoApplication(self.root, state_path=self.folder / 'workspace.json')
-        self.addCleanup(self.close)
 
     def close(self):
-        if self.root.winfo_exists():
-            self.root.destroy()
+        import tkinter as tk
+        app, root = self.app, self.root
+        try:
+            if app is not None and app.busy:
+                app.cancel()
+                # A failed test still owes the extractor its rollback. The done
+                # message arrives after PDF handles close; pump Tk until it does.
+                while app.busy:
+                    root.update()
+                    time.sleep(.01)
+            if root is not None:
+                try:
+                    root.destroy()
+                except tk.TclError:
+                    pass  # A close event may already have destroyed the test root.
+        finally:
+            self.app = self.root = None
+            del app, root
+            gc.collect()
 
     def source(self, name='Объект'):
         from test_photos import make_pdf
