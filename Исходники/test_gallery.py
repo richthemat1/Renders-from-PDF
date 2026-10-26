@@ -191,7 +191,7 @@ class GalleryRegressions(unittest.TestCase):
             expect(variant_one.locator('.card')).to_have_count(4)
             self.page.locator('#save').click()
             expect(self.page.locator('body')).to_have_attribute('data-revision', '1')
-            with PdfReader(output/'Варианты'/'Вариант 1'/'Вариант 1.pdf') as reader:
+            with PdfReader(output/'Вариант 1'/'Вариант 1.pdf') as reader:
                 self.assertEqual(len(reader.pages), 4)
             self.assertFalse((output/'Все остальное').exists())
             self.assertEqual(self.errors, [])
@@ -215,7 +215,7 @@ class GalleryRegressions(unittest.TestCase):
         expect(self.page.locator('section[data-variant="1"] h2')).to_have_text('Вариант 1 — Северный')
         expect(self.page.locator('#toast')).to_contain_text('Переименовано')
         expect(self.page.get_by_role('button', name='Готово')).to_be_visible()
-        self.assertTrue((self.output/'Варианты'/'Вариант 1 — Северный'/'Вариант 1 — Северный.pdf').is_file())
+        self.assertTrue((self.output/'Вариант 1 — Северный'/'Вариант 1 — Северный.pdf').is_file())
         options = self.card(3).locator('select[data-act="move"] option').all_text_contents()
         self.assertIn('Вариант 1 — Северный', options)
         self.assertEqual(self.errors, [])

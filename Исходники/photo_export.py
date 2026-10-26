@@ -22,8 +22,10 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           variant_numbers)
 from photo_scan import analyse_scans, column_caption, prepare_scan_continuations, whole_scan_caption
 
-VERSION = '3.12'
-LAYOUT = 'grouped'
+VERSION = '3.13'
+LAYOUT = 'variants-root'
+# 3.12 kept every variant inside «Варианты»; such results are still edited in place.
+GROUPED_LAYOUT = 'grouped'
 VARIANTS_DIR = 'Варианты'
 OTHER_DIR = 'Все остальное'
 SERVICE_DIR = '_Служебное'
@@ -57,17 +59,21 @@ def entry_group(entry):
 
 
 def group_dir(folder, key):
-    """Variants sit apart; every other folder goes under one shared folder."""
+    """Variants sit at the top of the result; every other folder goes under one shared folder."""
     if key is not None:
-        return Path(VARIANTS_DIR)/folder
+        return Path(folder)
     return Path(OTHER_DIR)/folder
 
 
 def group_file(report, key):
     name = group_title(key, report)
-    if report.get('layout') != LAYOUT:
-        return Path(name)/f'{name}.pdf'
-    return Path(VARIANTS_DIR)/name/f'{name}.pdf'
+    if report.get('layout') == GROUPED_LAYOUT:
+        return Path(VARIANTS_DIR)/name/f'{name}.pdf'
+    return Path(name)/f'{name}.pdf'
+
+
+def has_service_dir(report):
+    return report.get('layout') in (LAYOUT, GROUPED_LAYOUT)
 
 
 def group_title(key, report=None):
@@ -1070,7 +1076,7 @@ def extract(source, output=None, progress=None):
         report = {'version': VERSION, 'revision': 0, 'layout': LAYOUT, 'source': str(source), 'source_sha256': checksum,
                   'output_format': 'pdf', 'grouping': 'explicit_variant_then_caption',
                   'variant_output': 'one_multipage_pdf_per_variant',
-                  'folders': {'variants': VARIANTS_DIR, 'other': OTHER_DIR, 'service': SERVICE_DIR},
+                  'folders': {'other': OTHER_DIR, 'service': SERVICE_DIR},
                   'page_contexts': [{'page': p['number'], 'divider': p['variant_divider'],
                                      'context': p['variant_context']} for p in pages],
                   'output': str(destination), 'pages': len(pages), 'source_components': total_components,

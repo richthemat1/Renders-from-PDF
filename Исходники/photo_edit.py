@@ -12,8 +12,8 @@ import shutil
 
 from pypdf import PdfReader, PdfWriter
 
-from photo_export import (LAYOUT, SERVICE_DIR, VERSION, entry_group, group_file, group_title,
-                          write_gallery)
+from photo_export import (OTHER_DIR, SERVICE_DIR, VARIANTS_DIR, VERSION, entry_group, group_file, group_title,
+                          has_service_dir, write_gallery)
 
 BACKUPS = '_Резервные копии'
 
@@ -36,7 +36,7 @@ def load_report(output):
 
 
 def backup_root(report):
-    return Path(SERVICE_DIR)/'Резервные копии' if report.get('layout') == LAYOUT else Path(BACKUPS)
+    return Path(SERVICE_DIR)/'Резервные копии' if has_service_dir(report) else Path(BACKUPS)
 
 
 def variant_members(report):
@@ -280,7 +280,7 @@ def rename_item(output, payload):
         before = group_title(key, report)
         old_file = Path(images[members[0]]['file'])
         new_dir = old_file.parent.with_name(name)
-        if name.casefold() in SPECIAL_FOLDERS:
+        if name.casefold() in SPECIAL_FOLDERS | {OTHER_DIR.casefold(), VARIANTS_DIR.casefold()}:
             raise EditError('Это имя занято служебной папкой.')
         check_free(output, output/old_file.parent, output/new_dir)
         moves = [(output/old_file.parent, output/new_dir), (output/new_dir/old_file.name, output/new_dir/f'{name}.pdf')]
