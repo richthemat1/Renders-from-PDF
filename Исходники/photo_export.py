@@ -22,7 +22,7 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           variant_numbers)
 from photo_scan import analyse_scans, column_caption, prepare_scan_continuations, whole_scan_caption
 
-VERSION = '3.16'
+VERSION = '3.17'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'

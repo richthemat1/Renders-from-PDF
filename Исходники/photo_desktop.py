@@ -45,8 +45,9 @@ class NativeBridge:
             raise ValueError('Дождитесь завершения текущей обработки.')
         import webview
         with self._dialogs:
+            # pywebview accepts letters and spaces in filter labels, but no hyphens.
             paths = self._window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=True,
-                                                    file_types=('PDF-презентации (*.pdf)',))
+                                                    file_types=('Презентации PDF (*.pdf)',))
             return self._jobs.start(paths) if paths else self._jobs.snapshot()
 
     def choose_result(self):

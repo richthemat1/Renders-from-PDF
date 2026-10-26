@@ -29,6 +29,42 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertFalse(snapshot['busy'])
         self.assertEqual(snapshot['history'], [])
 
+    def test_pdf_picker_passes_pywebview_validation_and_processes_multiple_pdfs(self):
+        from webview import FileDialog
+        from webview.util import parse_file_type
+        from webview.window import Window
+        from test_photos import make_pdf
+
+        # Keep pywebview's real dialog validation; replace only the OS backend.
+        window = Window('pdf-picker-test', 'Фото из PDF', self.server.url)
+        window.events.shown.set()
+        window.events.loaded.set()
+        window.gui = Mock()
+        window.gui.get_current_url.return_value = self.server.url
+        sources = []
+        for name in ('Первая презентация', 'Вторая презентация'):
+            folder = self.root / name
+            folder.mkdir()
+            sources.append(str(make_pdf(folder, [{
+                'images': [{'box': (50, 170, 800, 500)}],
+                'text': [('Вариант 1. Двор', 50, 120, 18)],
+            }])))
+        window.gui.create_file_dialog.return_value = tuple(sources)
+        self.bridge._window = window
+
+        self.bridge.choose_pdfs()
+        finished = self.jobs.wait(10)
+
+        self.assertFalse(finished['busy'])
+        self.assertEqual(finished['totals']['images'], 2)
+        self.assertEqual(finished['totals']['documents'], 2)
+        self.assertEqual(len(finished['history']), 2)
+        self.assertTrue(all(item['available'] for item in finished['history']))
+        dialog, _, multiple, _, filters, _ = window.gui.create_file_dialog.call_args.args
+        self.assertEqual(dialog, FileDialog.OPEN)
+        self.assertTrue(multiple)
+        self.assertEqual([parse_file_type(value)[1] for value in filters], ['*.pdf'])
+
     def test_untrusted_document_cannot_open_a_native_dialog(self):
         self.window.get_current_url.return_value = 'https://example.org/'
         with self.assertRaises(ValueError):
