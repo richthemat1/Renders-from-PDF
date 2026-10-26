@@ -129,9 +129,9 @@ class PhotoExport(unittest.TestCase):
             self.assertEqual(len({e['file'] for e in report['images']}), 3)
             self.assertEqual([e['pdf_page'] for e in report['images']], [1, 2, 3, 1, 2, 1])
             self.assertEqual({d['file']: d['pages'] for d in report['documents']}, {
-                str(Path('Вариант 1')/'Вариант 1.pdf'): 3,
-                str(Path('Вариант 2')/'Вариант 2.pdf'): 2,
-                str(Path('Вариант 10')/'Вариант 10.pdf'): 1})
+                str(Path('Варианты/Вариант 1')/'Вариант 1.pdf'): 3,
+                str(Path('Варианты/Вариант 2')/'Вариант 2.pdf'): 2,
+                str(Path('Варианты/Вариант 10')/'Вариант 10.pdf'): 1})
 
     def test_one_variant_pdf_keeps_source_order_pixels_and_links_to_each_page(self):
         with tempfile.TemporaryDirectory() as root:
@@ -148,8 +148,8 @@ class PhotoExport(unittest.TestCase):
             report = self.run_export(make_pdf(root, pages))
             variant = [e for e in report['images'] if e['variant'] == 1]
             output = Path(report['output'])
-            self.assertEqual(len(list((output/'Вариант 1').glob('*.pdf'))), 1)
-            target = output/'Вариант 1/Вариант 1.pdf'
+            self.assertEqual(len(list((output/'Варианты/Вариант 1').glob('*.pdf'))), 1)
+            target = output/'Варианты/Вариант 1/Вариант 1.pdf'
             expected = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
             with PdfReader(target) as reader:
                 self.assertEqual(len(reader.pages), 4)
@@ -195,7 +195,7 @@ class PhotoExport(unittest.TestCase):
             self.assertIn('Вид с реки', photos[2]['title'])
             self.assertEqual(photos[1]['variant_source_page'], 2)
             self.assertTrue(all(e['variant'] is None for e in report['images'] if e['size'] == [240, 60]))
-            with PdfReader(Path(report['output'])/'Вариант 1/Вариант 1.pdf') as reader:
+            with PdfReader(Path(report['output'])/'Варианты/Вариант 1/Вариант 1.pdf') as reader:
                 self.assertEqual(len(reader.pages), 3)
 
     def test_unique_variant_page_heading_applies_across_a_large_blank_gap(self):
@@ -547,19 +547,19 @@ class PhotoEdits(EditFixture, unittest.TestCase):
             report, backup = apply_edits(output, {'revision': 0, 'removed': [ids['red']],
                                                   'variants': {'1': [ids['green']],
                                                                '2': [ids['yellow'], ids['blue']]}})
-            self.assertEqual(self.colors(output/'Вариант 1/Вариант 1.pdf'), ['green'])
-            self.assertEqual(self.colors(output/'Вариант 2/Вариант 2.pdf'), ['yellow', 'blue'])
-            self.assertFalse((output/'Без подписи').exists())
-            for relative in ('Вариант 1/Вариант 1.pdf', 'Вариант 2/Вариант 2.pdf', 'Отчёт.json', 'Просмотр.html'):
+            self.assertEqual(self.colors(output/'Варианты/Вариант 1/Вариант 1.pdf'), ['green'])
+            self.assertEqual(self.colors(output/'Варианты/Вариант 2/Вариант 2.pdf'), ['yellow', 'blue'])
+            self.assertFalse((output/'Все остальное'/'Без подписи').exists())
+            for relative in ('Варианты/Вариант 1/Вариант 1.pdf', 'Варианты/Вариант 2/Вариант 2.pdf', 'Отчёт.json', 'Просмотр.html'):
                 self.assertEqual((output/backup/relative).read_bytes(), before[str(Path(relative))])
-            unsigned = next(r for r in before if r.startswith('Без подписи'))
+            unsigned = next(r for r in before if r.startswith(str(Path('Все остальное/Без подписи'))))
             self.assertEqual((output/backup/unsigned).read_bytes(), before[unsigned])
             saved = json.loads((output/'Отчёт.json').read_text(encoding='utf-8'))
             self.assertEqual(saved, report)
             self.assertEqual(saved['revision'], 1)
             self.assertEqual(saved['counts_by_folder'], {'Вариант 1': 1, 'Вариант 2': 2})
             self.assertEqual({d['file']: d['pages'] for d in saved['documents']},
-                             {str(Path('Вариант 1/Вариант 1.pdf')): 1, str(Path('Вариант 2/Вариант 2.pdf')): 2})
+                             {str(Path('Варианты/Вариант 1/Вариант 1.pdf')): 1, str(Path('Варианты/Вариант 2/Вариант 2.pdf')): 2})
             yellow, red = saved['images'][ids['yellow']], saved['images'][ids['red']]
             self.assertEqual((yellow['variant'], yellow['pdf_page'], yellow['auto_folder'], yellow['manual']),
                              (2, 1, 'Без подписи', True))
@@ -578,9 +578,9 @@ class PhotoEdits(EditFixture, unittest.TestCase):
             output, ids = self.export(root)
             report, _ = apply_edits(output, {'revision': 0, 'variants': {
                 '1': [ids['green'], ids['red'], ids['blue']], '2': [], '3': [ids['yellow']]}})
-            self.assertEqual(self.colors(output/'Вариант 1/Вариант 1.pdf'), ['green', 'red', 'blue'])
-            self.assertEqual(self.colors(output/'Вариант 3/Вариант 3.pdf'), ['yellow'])
-            self.assertFalse((output/'Вариант 2').exists())
+            self.assertEqual(self.colors(output/'Варианты/Вариант 1/Вариант 1.pdf'), ['green', 'red', 'blue'])
+            self.assertEqual(self.colors(output/'Варианты/Вариант 3/Вариант 3.pdf'), ['yellow'])
+            self.assertFalse((output/'Варианты/Вариант 2').exists())
             self.assertEqual(report['edits'][0]['reordered'], [1])
             self.assertEqual(report['counts_by_folder'], {'Вариант 1': 3, 'Вариант 3': 1})
 
@@ -609,7 +609,8 @@ class PhotoEdits(EditFixture, unittest.TestCase):
                 with self.assertRaisesRegex(OSError, 'disk full'):
                     photo_edit.apply_edits(output, {'revision': 0, 'removed': [ids['yellow']],
                                                     'variants': {'1': [ids['green']], '2': [ids['blue'], ids['red']]}})
-            after = {k: v for k, v in self.files(output).items() if not k.startswith(photo_edit.BACKUPS)}
+            after = {k: v for k, v in self.files(output).items()
+                     if not k.startswith(str(photo_edit.backup_root(photo_edit.load_report(output))))}
             self.assertEqual(after, before)
 
 
@@ -649,12 +650,271 @@ class PreviewServerEdits(EditFixture, unittest.TestCase):
                 status, body = self.request(base+'/api/apply', edit, server.origin)
                 self.assertEqual(status, 200, body.decode('utf-8'))
                 self.assertEqual(json.loads(body)['revision'], 1)
-                self.assertEqual(self.colors(output/'Вариант 1/Вариант 1.pdf'), ['green'])
+                self.assertEqual(self.colors(output/'Варианты/Вариант 1/Вариант 1.pdf'), ['green'])
                 status, body = self.request(base+'/api/apply', edit, server.origin)
                 self.assertEqual(status, 409)
                 self.assertIn('Обновите страницу', json.loads(body)['error'])
             finally:
                 server.stop()
+
+
+
+class GroupedLayout(EditFixture, unittest.TestCase):
+    TITLES = ['Вариант 1', 'Перспективное изображение №1', 'Перспективное изображение №2 рендер',
+              'Материалы благоустройства. Перспективное изображение двора',
+              'Перспективное изображение №3. Вариант 2', None]
+    COLORS = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff']
+
+    def export_grouped(self, root):
+        pages = [{'images': [{'box': (50, 170, 800, 500), 'color': color}],
+                  **({'text': [(title, 50, 120, 18)]} if title else {})} for title, color in zip(self.TITLES, self.COLORS)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            report = importlib.import_module('photo_export').extract(make_pdf(root, pages))
+        return report, Path(report['output'])
+
+    def pixels(self, path):
+        with PdfReader(path) as reader:
+            return [page.images[0].image.convert('RGB').getpixel((100, 100)) for page in reader.pages]
+
+    def test_unnumbered_perspective_views_join_variant_one(self):
+        with tempfile.TemporaryDirectory() as root:
+            pages = [{'images': [{'box': (50, 170, 800, 500), 'color': color}],
+                      **({'text': [(title, 50, 120, 18)]} if title else {})} for title, color in zip(self.TITLES, self.COLORS)]
+            pages += [{'images': [], 'text': [('Вариант 3', 50, 250, 40)]},
+                      {'images': [{'box': (50, 170, 800, 500), 'color': '#808080'}],
+                       'text': [('Перспективное изображение №5', 50, 120, 18)]}]
+            with contextlib.redirect_stdout(io.StringIO()):
+                report = importlib.import_module('photo_export').extract(make_pdf(root, pages))
+            output = Path(report['output'])
+            self.assertEqual(report['layout'], 'grouped')
+            self.assertEqual({p.name for p in output.iterdir()},
+                             {'Варианты', 'Все остальное', '_Служебное', 'Просмотр.html', 'Отчёт.json'})
+            self.assertEqual([(e['variant'], e.get('group'), e['folder'], e.get('variant_source')) for e in report['images']], [
+                (1, 'variant', 'Вариант 1', None),
+                (1, 'variant', 'Вариант 1', 'perspective_default'),
+                (1, 'variant', 'Вариант 1', 'perspective_default'),
+                (None, None, 'Материалы благоустройства. Перспективное изображение двора', None),
+                (2, 'variant', 'Вариант 2', None),
+                (None, None, 'Без подписи', None),
+                (3, 'variant', 'Вариант 3', 'section_heading')])
+            self.assertIn('отнесено к варианту 1', report['images'][1]['reason'])
+            variant_one = output/'Варианты/Вариант 1/Вариант 1.pdf'
+            self.assertEqual(self.pixels(variant_one), [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
+            with PdfReader(variant_one) as reader:
+                self.assertEqual([item.title for item in reader.outline], [
+                    'Страница 1 — Вариант 1', 'Страница 2 — Перспективное изображение №1',
+                    'Страница 3 — Перспективное изображение №2 рендер'])
+            self.assertEqual(self.pixels(output/'Варианты/Вариант 2/Вариант 2.pdf'), [(0, 255, 255)])
+            self.assertEqual(len(list((output/'Все остальное'/'Без подписи').glob('*.pdf'))), 1)
+            self.assertEqual(len(list((output/'Все остальное').glob('Материалы благоустройства*/*.pdf'))), 1)
+            self.assertTrue(all(e['preview'].startswith(str(Path('_Служебное/Миниатюры'))) for e in report['images']))
+            import ctypes
+            self.assertTrue(ctypes.windll.kernel32.GetFileAttributesW(str(output/'_Служебное')) & 0x2)
+            gallery = (output/'Просмотр.html').read_text(encoding='utf-8')
+            self.assertNotIn('Перспективные изображения', gallery)
+
+    def test_results_with_a_shared_perspective_folder_are_not_edited(self):
+        import photo_edit
+        with tempfile.TemporaryDirectory() as root:
+            report, output = self.export_grouped(root)
+            report['images'][1].update(variant=None, group='perspective', folder='Перспективные изображения')
+            photo_edit.write_report(output, report)
+            before = self.files(output)
+            with self.assertRaisesRegex(photo_edit.EditError, '3.12'):
+                photo_edit.apply_edits(output, {'revision': 0, 'removed': [5], 'variants': {'1': [0, 2]}})
+            self.assertEqual(self.files(output), before)
+
+    def test_deep_output_shortens_caption_folders_to_fit_the_path_budget(self):
+        caption = 'Схема планировочной организации земельного участка с указанием транспортной и пешеходной связи'
+        with tempfile.TemporaryDirectory() as root:
+            source = make_pdf(root, [{'images': [{'box': (50, 170, 800, 500)}], 'text': [(caption, 50, 120, 14)]}])
+            output = Path(root)/('Очень длинная папка проекта '*3).strip()/'Результат с длинным именем — PDF'
+            self.assertGreater(len(str(output)), 150)
+            with contextlib.redirect_stdout(io.StringIO()):
+                report = importlib.import_module('photo_export').extract(source, output)
+            entry = report['images'][0]
+            self.assertEqual(entry['title'], caption)
+            self.assertEqual(Path(entry['file']).parts[0], 'Все остальное')
+            self.assertLess(len(entry['folder']), len(caption))
+            self.assertTrue(all(len(str(path)) <= 239 for path in output.rglob('*')))
+            self.assertTrue((output/entry['file']).is_file())
+
+    def test_earlier_layout_keeps_its_paths_when_edited(self):
+        import photo_edit
+        with tempfile.TemporaryDirectory() as root:
+            output, ids = self.export(root)
+            report = photo_edit.load_report(output)
+            for number in (1, 2):
+                (output/f'Варианты/Вариант {number}').rename(output/f'Вариант {number}')
+            (output/'Все остальное'/'Без подписи').rename(output/'Без подписи')
+            (output/'Варианты').rmdir()
+            (output/'Все остальное').rmdir()
+            for entry in report['images']:
+                entry['file'] = entry['file'].replace(str(Path('Варианты'))+'\\', '').replace(str(Path('Все остальное'))+'\\', '')
+                entry.pop('group', None)
+            del report['layout']
+            photo_edit.write_report(output, report)
+            with self.assertRaisesRegex(photo_edit.EditError, 'Некорректный формат'):
+                photo_edit.apply_edits(output, {'revision': 0, 'variants': {'P': [ids['yellow']]}})
+            report, backup = photo_edit.apply_edits(output, {'revision': 0, 'removed': [ids['red']],
+                                                             'variants': {'1': [ids['green'], ids['yellow']],
+                                                                          '2': [ids['blue']]}})
+            self.assertTrue(backup.startswith('_Резервные копии'))
+            self.assertEqual(self.colors(output/'Вариант 1/Вариант 1.pdf'), ['green', 'yellow'])
+            self.assertFalse((output/'Варианты').exists())
+            self.assertEqual(report['images'][ids['yellow']]['file'], str(Path('Вариант 1/Вариант 1.pdf')))
+
+
+
+def post_dropped_files(hwnd, paths):
+    """Send the same WM_DROPFILES message Explorer sends: a DROPFILES header and NUL-separated wide paths."""
+    import ctypes
+    from ctypes import wintypes
+    kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    kernel32.GlobalAlloc.restype = ctypes.c_void_p
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, ctypes.c_void_p, ctypes.c_void_p]
+    names = ('\0'.join(str(p) for p in paths)+'\0\0').encode('utf-16-le')
+    header = (20).to_bytes(4, 'little')+bytes(8)+bytes(4)+(1).to_bytes(4, 'little')
+    memory = kernel32.GlobalAlloc(0x0042, len(header)+len(names))
+    pointer = kernel32.GlobalLock(memory)
+    ctypes.memmove(pointer, header+names, len(header)+len(names))
+    kernel32.GlobalUnlock(memory)
+    assert user32.PostMessageW(hwnd, 0x0233, memory, None)
+
+
+class AppFileDrop(unittest.TestCase):
+    def test_pdfs_dropped_from_explorer_start_processing(self):
+        import time
+        import tkinter as tk
+        from tkinter import ttk
+        from unittest.mock import patch
+        from photo_app import open_app
+        original = tk.Tk
+        with tempfile.TemporaryDirectory() as root:
+            folder = Path(root)/'Папка с PDF'
+            folder.mkdir()
+            first = make_pdf(folder, [{'images': [{'box': (50, 180, 800, 500)}], 'text': [('Вариант 1', 50, 120, 18)]}])
+            note = Path(root)/'заметка.txt'
+            note.write_text('не PDF', encoding='utf-8')
+            observed = {}
+
+            def hidden():
+                window = original()
+                window.withdraw()
+                started = time.monotonic()
+
+                def texts():
+                    widgets = []
+
+                    def walk(widget):
+                        for child in widget.winfo_children():
+                            widgets.append(child)
+                            walk(child)
+                    walk(window)
+                    labels = [window.getvar(w.cget('textvariable')) for w in widgets
+                              if isinstance(w, ttk.Label) and w.cget('textvariable')]
+                    log = next(w for w in widgets if isinstance(w, tk.Text)).get('1.0', 'end')
+                    return labels, log
+
+                def drop():
+                    window.update_idletasks()
+                    post_dropped_files(int(window.wm_frame(), 16), [folder, note])
+                    window.after(200, check)
+
+                def check():
+                    labels, log = texts()
+                    if any(s.startswith('Готово') for s in labels) or time.monotonic()-started > 20:
+                        observed.update(labels=labels, log=log)
+                        window.destroy()
+                    else:
+                        window.after(100, check)
+                window.after(300, drop)
+                return window
+
+            with patch('tkinter.Tk', hidden):
+                open_app()
+            self.assertTrue(any(s.startswith('Готово') for s in observed['labels']), observed)
+            self.assertIn(first.name, observed['log'])
+            self.assertIn('Пропущено, это не PDF: заметка.txt', observed['log'])
+            self.assertTrue((folder/'presentation — PDF'/'Варианты'/'Вариант 1'/'Вариант 1.pdf').is_file())
+
+
+
+class Renames(EditFixture, unittest.TestCase):
+    def captioned(self, root):
+        pages = [{'images': [{'box': (50, 170, 800, 500), 'color': color}], 'text': [('Западный двор', 50, 120, 18)]}
+                 for color in ('#ff0000', '#00ff00')]
+        with contextlib.redirect_stdout(io.StringIO()):
+            report = importlib.import_module('photo_export').extract(make_pdf(root, pages))
+        return Path(report['output'])
+
+    def test_variant_rename_keeps_its_number_for_later_edits(self):
+        from photo_edit import apply_edits, rename_item
+        with tempfile.TemporaryDirectory() as root:
+            output, ids = self.export(root)
+            report, change = rename_item(output, {'revision': 0, 'kind': 'variant', 'target': '1', 'name': 'Вариант 1 — Левел'})
+            self.assertEqual(change, {'kind': 'variant', 'from': 'Вариант 1', 'to': 'Вариант 1 — Левел'})
+            renamed = output/'Варианты'/'Вариант 1 — Левел'/'Вариант 1 — Левел.pdf'
+            self.assertEqual(self.colors(renamed), ['red', 'green'])
+            self.assertFalse((output/'Варианты'/'Вариант 1').exists())
+            self.assertEqual(report['variant_names'], {'1': 'Вариант 1 — Левел'})
+            self.assertEqual({e['folder'] for e in report['images'] if e['variant'] == 1}, {'Вариант 1 — Левел'})
+            self.assertIn('<h2>Вариант 1 — Левел</h2>', (output/'Просмотр.html').read_text(encoding='utf-8'))
+            report, _ = apply_edits(output, {'revision': 1, 'variants': {'1': [ids['red'], ids['green'], ids['yellow']],
+                                                                          '2': [ids['blue']]}})
+            self.assertEqual(self.colors(renamed), ['red', 'green', 'yellow'])
+            self.assertFalse((output/'Варианты'/'Вариант 1').exists())
+            self.assertEqual(report['images'][ids['yellow']]['folder'], 'Вариант 1 — Левел')
+
+    def test_caption_folder_and_single_pdf_can_be_renamed(self):
+        from photo_edit import rename_item
+        with tempfile.TemporaryDirectory() as root:
+            output = self.captioned(root)
+            report, _ = rename_item(output, {'revision': 0, 'kind': 'folder', 'target': 'Западный двор', 'name': 'Двор'})
+            self.assertFalse((output/'Все остальное'/'Западный двор').exists())
+            self.assertEqual(len(list((output/'Все остальное'/'Двор').glob('*.pdf'))), 2)
+            self.assertTrue(all((output/e['file']).is_file() and e['folder'] == 'Двор' for e in report['images']))
+            report, change = rename_item(output, {'revision': 1, 'kind': 'file', 'target': 0, 'name': 'Двор — вид 1.pdf'})
+            self.assertEqual(change['to'], 'Двор — вид 1')
+            self.assertEqual(report['images'][0]['file'], str(Path('Все остальное/Двор/Двор — вид 1.pdf')))
+            self.assertTrue((output/report['images'][0]['file']).is_file())
+            self.assertEqual(report['revision'], 2)
+            self.assertEqual([e['renamed']['kind'] for e in report['edits']], ['folder', 'file'])
+
+    def test_invalid_or_conflicting_renames_change_nothing(self):
+        from photo_edit import EditConflict, EditError, rename_item
+        with tempfile.TemporaryDirectory() as root:
+            output, ids = self.export(root)
+            before = self.files(output)
+            for payload, message in [
+                    ({'kind': 'variant', 'target': '1', 'name': 'Вариант: 1'}, 'символы'),
+                    ({'kind': 'variant', 'target': '1', 'name': 'Вариант 2'}, 'уже существует'),
+                    ({'kind': 'variant', 'target': '1', 'name': '  '}, 'Введите'),
+                    ({'kind': 'variant', 'target': '1', 'name': 'CON'}, 'зарезервировано'),
+                    ({'kind': 'variant', 'target': '1', 'name': '_Служебное'}, 'зарезервировано'),
+                    ({'kind': 'folder', 'target': 'Без подписи', 'name': 'Прочее'}, 'нельзя'),
+                    ({'kind': 'file', 'target': ids['red'], 'name': 'Отдельно'}, 'вместе с вариантом'),
+                    ({'kind': 'variant', 'target': '7', 'name': 'Новый'}, 'не найден'),
+                    ({'kind': 'variant', 'target': '1', 'name': 'x'*300}, 'длинное')]:
+                with self.subTest(payload=payload), self.assertRaisesRegex(EditError, message):
+                    rename_item(output, dict(payload, revision=0))
+            with self.assertRaises(EditConflict):
+                rename_item(output, {'revision': 3, 'kind': 'variant', 'target': '1', 'name': 'Новое имя'})
+            self.assertEqual(self.files(output), before)
+
+    def test_failed_rename_restores_the_previous_names(self):
+        import photo_edit
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            output, _ = self.export(root)
+            before = self.files(output)
+            with patch.object(photo_edit, 'write_report', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    photo_edit.rename_item(output, {'revision': 0, 'kind': 'variant', 'target': '2', 'name': 'Другой'})
+            self.assertEqual(self.files(output), before)
 
 
 if __name__ == '__main__':

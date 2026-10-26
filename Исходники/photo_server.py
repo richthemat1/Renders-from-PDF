@@ -8,7 +8,7 @@ import secrets
 from threading import Event, Lock, Thread
 from urllib.parse import quote, unquote, urlsplit
 
-from photo_edit import EditConflict, EditError, apply_edits, load_report
+from photo_edit import EditConflict, EditError, apply_edits, load_report, rename_item
 from photo_export import VERSION, write_gallery
 
 LOGGER = logging.getLogger('pdf-photos')
@@ -96,20 +96,29 @@ def handler(server):
         do_HEAD = do_GET
 
         def do_POST(self):
+            try:
+                length = int(self.headers.get('Content-Length') or 0)
+            except ValueError:
+                length = -1
+            # Read the body before any refusal: closing a socket with unread data resets the
+            # connection on Windows, and the page would see a network error instead of the reply.
+            body = self.rfile.read(length) if 0 < length <= MAX_BODY else None
             folder, relative = self.target()
-            if folder is None or relative != 'api/apply':
+            if folder is None or relative not in ('api/apply', 'api/rename'):
                 return self.reply(404, {'error': 'Не найдено.'})
             if self.headers.get('Origin') != server.origin:
                 return self.reply(403, {'error': 'Запрос отклонён: он пришёл не со страницы просмотра.'})
-            length = int(self.headers.get('Content-Length') or 0)
-            if not 0 < length <= MAX_BODY or not self.headers.get('Content-Type', '').startswith('application/json'):
+            if body is None or not self.headers.get('Content-Type', '').startswith('application/json'):
                 return self.reply(400, {'error': 'Некорректный запрос.'})
             try:
-                payload = json.loads(self.rfile.read(length))
+                payload = json.loads(body)
                 with server.lock:
                     if server.closing.is_set():
                         return self.reply(503, {'error': 'Программа закрывается. Откройте её и повторите сохранение.'})
-                    report, backup = apply_edits(folder, payload)
+                    if relative == 'api/rename':
+                        report, change = rename_item(folder, payload)
+                    else:
+                        report, backup = apply_edits(folder, payload)
             except EditConflict as error:
                 return self.reply(409, {'error': str(error)})
             except (EditError, json.JSONDecodeError) as error:
@@ -118,6 +127,9 @@ def handler(server):
                 LOGGER.exception('Edit failed: %s', folder)
                 return self.reply(500, {'error': f'Не удалось сохранить: {error}. Файлы восстановлены.'})
             LOGGER.info('Edited %s: %s', folder, report.get('edits', [{}])[-1])
+            if relative == 'api/rename':
+                message = 'Имя не изменилось.' if change is None else f'Переименовано: «{change["from"]}» → «{change["to"]}».'
+                return self.reply(200, {'ok': True, 'revision': report['revision'], 'message': message})
             message = ('Изменений нет.' if backup is None else
                        f'Сохранено. Прежние файлы — в папке «{backup}».')
             self.reply(200, {'ok': True, 'revision': report['revision'], 'backup': backup, 'message': message})

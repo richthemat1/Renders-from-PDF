@@ -22,7 +22,12 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           variant_numbers)
 from photo_scan import analyse_scans, column_caption, prepare_scan_continuations, whole_scan_caption
 
-VERSION = '3.10'
+VERSION = '3.12'
+LAYOUT = 'grouped'
+VARIANTS_DIR = 'Варианты'
+OTHER_DIR = 'Все остальное'
+SERVICE_DIR = '_Служебное'
+PERSPECTIVE_TITLE = re.compile(r'^\W*перспективн\w*\s+изображени', re.I)
 
 
 def group_caption(match):
@@ -38,7 +43,42 @@ def group_caption(match):
     if numbers:
         match['variant'] = numbers.pop()
         return match, f'Вариант {match["variant"]}'
+    if PERSPECTIVE_TITLE.match(match['title']):
+        # A perspective view without any variant number in its caption, page or section belongs to variant 1.
+        match.update(variant=1, variant_source='perspective_default',
+                     reason=(match.get('reason') or '')+' Номер варианта не указан; перспективное изображение '
+                            'отнесено к варианту 1.')
+        return match, 'Вариант 1'
     return match, match['title']
+
+
+def entry_group(entry):
+    return entry['variant']
+
+
+def group_dir(folder, key):
+    """Variants sit apart; every other folder goes under one shared folder."""
+    if key is not None:
+        return Path(VARIANTS_DIR)/folder
+    return Path(OTHER_DIR)/folder
+
+
+def group_file(report, key):
+    name = group_title(key, report)
+    if report.get('layout') != LAYOUT:
+        return Path(name)/f'{name}.pdf'
+    return Path(VARIANTS_DIR)/name/f'{name}.pdf'
+
+
+def group_title(key, report=None):
+    """A variant keeps its number; a manual rename only changes the name of its folder and PDF."""
+    return ((report or {}).get('variant_names') or {}).get(str(key), f'Вариант {key}')
+
+
+def hide(path):
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), 0x2)
 
 
 def image_to_pdf(image_path, target, bbox, title, matrix=None):
@@ -67,7 +107,10 @@ def safe_name(text, limit=80):
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', ' — ', clean_text(text))
     text = re.sub(r'\s+', ' ', text).strip(' .') or 'Без подписи'
     if len(text) > limit:
-        text = text[:limit-27].rstrip()+' … '+text[-24:].lstrip()
+        if limit >= 40:
+            text = text[:limit-27].rstrip()+' … '+text[-24:].lstrip()
+        else:
+            text = text[:limit].rstrip(' .')
     if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', text, re.I):
         text = '_'+text
     return text
@@ -237,8 +280,8 @@ def merge_variant_pdfs(staging, entries, progress=None):
     variants = {}
     for entry in entries:
         entry['pdf_page'] = 1
-        if entry['variant'] is not None:
-            variants.setdefault(entry['variant'], []).append(entry)
+        if entry_group(entry) is not None:
+            variants.setdefault(entry_group(entry), []).append(entry)
     total = sum(map(len, variants.values()))
     current = 0
     if progress and total:
@@ -247,10 +290,10 @@ def merge_variant_pdfs(staging, entries, progress=None):
         # The extraction sequence already follows page geometry, top to bottom
         # and left to right; captions and filenames must not change that order.
         images.sort(key=lambda entry: (entry['page'], entry['sequence']))
-        target = staging/images[0]['folder']/f'Вариант {number}.pdf'
+        target = staging/group_file({'layout': LAYOUT}, number)
         originals = [staging/entry['file'] for entry in images]
         with PdfWriter() as writer:
-            writer.add_metadata({'/Title': f'Вариант {number}', '/Creator': f'PDF Photos {VERSION}'})
+            writer.add_metadata({'/Title': group_title(number), '/Creator': f'PDF Photos {VERSION}'})
             for index, (entry, source) in enumerate(zip(images, originals)):
                 with PdfReader(source) as reader:
                     writer.add_page(reader.pages[0])
@@ -268,15 +311,16 @@ def merge_variant_pdfs(staging, entries, progress=None):
     for entry in entries:
         document = documents.setdefault(entry['file'], {
             'file': entry['file'], 'folder': entry['folder'], 'variant': entry['variant'],
-            'pages': 0, 'sha256': entry['sha256']})
+            'group': entry.get('group'), 'pages': 0, 'sha256': entry['sha256']})
         document['pages'] += 1
     return list(documents.values())
 
 
 def render_previews(staging, report, progress=None):
     import pypdfium2
-    thumbnails = staging/'_Просмотр'
-    thumbnails.mkdir()
+    thumbnails = staging/SERVICE_DIR/'Миниатюры'
+    thumbnails.mkdir(parents=True)
+    hide(staging/SERVICE_DIR)
     report['preview_errors'] = []
     for index, entry in enumerate(report['images'], 1):
         if progress:
@@ -316,7 +360,7 @@ def write_gallery(staging, report):
             kind = 'review'
         elif folder == 'Без подписи':
             kind = 'unsigned'
-        elif any(entry['variant'] is not None for _, entry in entries):
+        elif any(entry_group(entry) is not None for _, entry in entries):
             kind = 'variant'
             entries.sort(key=lambda item: item[1]['pdf_page'])
         else:
@@ -349,7 +393,9 @@ def write_gallery(staging, report):
         id_attr = f' id="{anchor}"' if anchor else ''
         return (f'<article class="card"{id_attr} data-id="{index}" '
                 f'data-search="{escape(" ".join([title]+entry["candidates"]))}" '
-                f'data-folder="{escape(entry["folder"])}" data-pdf="{url}">'
+                f'data-folder="{escape(entry["folder"])}" data-pdf="{url}"'
+                + (f' data-file-name="{escape(Path(entry["file"]).stem)}"' if entry['variant'] is None else '')
+                + (' data-folder-rename="1"' if kind == 'caption' else '') + '>'
                 f'<div class="media"><a class="cover" href="{url}" title="Открыть PDF на странице {entry["pdf_page"]}">'
                 f'{thumbnail}</a>{zoom}</div><div class="body">{badge}'
                 f'<a class="caption{"" if entry["title"] else " none"}" href="{url}">{escape(title)}</a>{candidates}'
@@ -362,7 +408,7 @@ def write_gallery(staging, report):
     sections, nav = [], []
     for kind in ('variant', 'review', 'unsigned'):
         for anchor, folder, entries in groups[kind]:
-            number = f' data-variant="{entries[0][1]["variant"]}"' if kind == 'variant' else ''
+            number = f' data-variant="{entry_group(entries[0][1])}"' if kind == 'variant' else ''
             sections.append(f'<section id="{anchor}" class="group {kind}" data-folder="{escape(folder)}"{number}>'
                             f'<header class="group-head"><h2>{escape(folder)}</h2>'
                             f'<span class="count">{len(entries)}</span><p class="note">{notes[kind]}</p></header>'
@@ -676,6 +722,8 @@ body.editing .group-head .pick-all{display:inline-flex}
 .selection{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-basis:100%;padding:10px 0 2px;
 border-top:1px dashed var(--line)}
 .selection b{font-variant-numeric:tabular-nums}.selection select.tool{flex:0 1 200px}
+.card.arrived{animation:arrive 1.8s ease-out}
+@keyframes arrive{0%,35%{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent)}100%{}}
 .drop-marker{position:fixed;z-index:40;width:4px;border-radius:2px;background:var(--accent);pointer-events:none;
 box-shadow:0 0 0 3px var(--accent-soft)}
 .group.drop-end .grid{outline:2px dashed var(--accent);outline-offset:6px;border-radius:var(--radius)}
@@ -688,6 +736,13 @@ body.dragging .nav-group:not(:first-child){opacity:.45}
 .drag-ghost{position:fixed;top:-100px;left:-100px;padding:6px 12px;border-radius:999px;background:var(--accent);
 color:var(--on-accent);font:600 13px "Segoe UI",system-ui,sans-serif}
 .hint-keys{color:var(--muted);font-size:12px}
+#rename{width:min(480px,92vw)}#rename[open]{display:block}
+.rename-form{display:flex;flex-direction:column;gap:10px;padding:20px 22px}.rename-form h3{margin:0 0 4px;font-size:18px}
+.rename-form label{font-size:13px;color:var(--muted)}
+.rename-form input{height:40px;padding:0 12px;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:10px}
+.rename-form input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.rn-hint{margin:0;font-size:13px;color:var(--muted)}.rn-error{margin:0;font-size:13px;color:#b42318}
+.rn-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}
 @media (max-width:1023px){.changes{margin:16px 16px 0}}
 @media (max-width:600px){.edit-btn span{display:none}.hint-keys{display:none}.selection{gap:6px}.selection select.tool{flex:1 1 140px}}
 '''
@@ -699,24 +754,29 @@ const svg=p=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 function toast(text,error){toastBox.textContent=text;toastBox.className="toast"+(error?" error":"");toastBox.hidden=false;
 clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastBox.hidden=true,error?8000:5000)}
 try{const m=sessionStorage.getItem("pdf-photos-toast");if(m){sessionStorage.removeItem("pdf-photos-toast");toast(m)}}catch(e){}
-function variantNumbers(){return $$(".group.variant").map(s=>+s.dataset.variant).sort((a,b)=>a-b)}
+function variantNumbers(){return $$(".group.variant").map(s=>s.dataset.variant).filter(v=>/^[0-9]+$/.test(v)).map(Number).sort((a,b)=>a-b)}
+function groupName(n){const s=$('.group.variant[data-variant="'+n+'"]');return s?s.dataset.folder:"Вариант "+n}
 function payload(){const variants={};for(const s of $$(".group.variant"))
 variants[s.dataset.variant]=$$(".card",s).filter(c=>!c.classList.contains("removed")).map(c=>+c.dataset.id);
 return{revision:+document.body.dataset.revision,variants,removed:$$(".card.removed").map(c=>+c.dataset.id)}}
-function section(n){let s=$('.group.variant[data-variant="'+n+'"]');if(s)return s;
+function section(n){n=String(n);let s=$('.group.variant[data-variant="'+n+'"]');if(s)return s;
 s=document.createElement("section");s.className="group variant";s.dataset.variant=n;s.dataset.folder="Вариант "+n;s.id="new"+n;
 s.innerHTML='<header class="group-head"><h2>Вариант '+n+'</h2><span class="count">0</span><p class="note">Новый вариант — PDF будет создан при сохранении</p></header><div class="grid"></div>';
-const after=$$(".group.variant").filter(x=>+x.dataset.variant<n).pop();
-if(after)after.after(s);else $("#content").prepend(s);return s}
+const numbered=$$(".group.variant").filter(x=>/^[0-9]+$/.test(x.dataset.variant));
+const after=numbered.filter(x=>+x.dataset.variant<+n).pop();
+if(after)after.after(s);else{const first=$(".group.variant");if(first)first.before(s);else $("#content").prepend(s)}
+if(typeof groupHead==="function"&&editing){groupHead(s)}return s}
 function options(card){const own=card.closest(".group.variant")?.dataset.variant;const nums=variantNumbers();
 const next=(nums.length?Math.max(...nums):0)+1;
-return '<option value="">Перенести в…</option>'+nums.filter(n=>String(n)!==own).map(n=>'<option value="'+n+'">Вариант '+n+'</option>').join("")+
+return '<option value="">Перенести в…</option>'+nums.filter(n=>String(n)!==own).map(n=>'<option value="'+n+'">'+groupName(n)+'</option>').join("")+
 '<option value="'+next+'">Новый вариант '+next+'</option>'}
 function tools(card){if($(".tools",card))return;const t=document.createElement("div");t.className="tools";
 t.innerHTML='<span class="handle" title="Перетащите, чтобы изменить порядок">'+svg('<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>')+'</span>'+
 '<button class="tool order" type="button" data-act="prev" aria-label="Сдвинуть раньше" title="Сдвинуть раньше">'+svg('<path d="m15 18-6-6 6-6"/>')+'</button>'+
 '<button class="tool order" type="button" data-act="next" aria-label="Сдвинуть позже" title="Сдвинуть позже">'+svg('<path d="m9 18 6-6-6-6"/>')+'</button>'+
 '<select class="tool" data-act="move" aria-label="Перенести в другой вариант"></select>'+
+(card.dataset.fileName?'<button class="tool" type="button" data-act="rename-file" title="Переименовать PDF">'+svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>')+'<span>Имя файла</span></button>':"")+
+(card.dataset.folderRename?'<button class="tool" type="button" data-act="rename-folder" title="Переименовать папку">'+svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>')+'<span>Папка</span></button>':"")+
 '<button class="tool danger" type="button" data-act="remove">'+svg('<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>')+'<span>Убрать</span></button>';
 $(".body",card).append(t);pickBox(card);card.dataset.origin=card.dataset.origin||card.closest(".group").dataset.folder||"";
 for(const el of $$("a,img",card))el.draggable=false}
@@ -751,14 +811,14 @@ if(on){$$(".card").forEach(tools);$$(".group").forEach(groupHead);syncSelection(
 else{clearSelection();if(JSON.stringify(payload())===initial)changes.hidden=true}
 for(const c of $$(".card"))c.draggable=on}
 editBtn.addEventListener("click",()=>setEditing(!editing));
-document.addEventListener("click",e=>{if(saving)return;const b=e.target.closest(".tool[data-act]");if(!b||b.tagName==="SELECT")return;const c=b.closest(".card");
+document.addEventListener("click",e=>{if(saving)return;const b=e.target.closest(".tool[data-act]");if(!b||b.tagName==="SELECT"||b.dataset.act.startsWith("rename"))return;const c=b.closest(".card");
 if(b.dataset.act==="remove")c.classList.toggle("removed");
 else{const sib=b.dataset.act==="prev"?c.previousElementSibling:c.nextElementSibling;if(sib&&sib.classList.contains("card")){
 if(b.dataset.act==="prev")sib.before(c);else sib.after(c)}b.focus()}refresh()});
 document.addEventListener("change",e=>{if(saving)return;const s=e.target.closest('select.tool[data-act="move"]');if(!s||!s.value)return;
-const c=s.closest(".card"),n=s.value;c.classList.remove("removed");$(".grid",section(+n)).append(c);refresh();
-c.scrollIntoView({block:"center",behavior:"smooth"});toast("Перенесено в «Вариант "+n+"»")});
-let anchor=null,dropTarget=null,autoY=null,autoTimer=0;const marker=document.createElement("div");marker.className="drop-marker";
+const c=s.closest(".card"),n=s.value,dest=section(n);c.classList.remove("removed");$(".grid",dest).append(c);refresh();
+reveal([c],dest);toast("Перенесено в «"+groupName(n)+"»")});
+let anchor=null,dropTarget=null,autoY=null,autoTimer=0,revealTimer=0;const marker=document.createElement("div");marker.className="drop-marker";
 marker.hidden=true;document.body.append(marker);
 function cards(){return $$(".card").filter(c=>!c.hidden)}
 function selected(){return $$(".card.selected")}
@@ -783,7 +843,7 @@ bar.hidden=!list.length;$("#sel-count").textContent=list.length;
 $('[data-bulk="restore"]',bar).hidden=!list.some(c=>c.classList.contains("removed"));
 $('[data-bulk="remove"]',bar).hidden=list.length>0&&list.every(c=>c.classList.contains("removed"));
 const nums=variantNumbers(),next=(nums.length?Math.max(...nums):0)+1;
-$('[data-bulk="move"]',bar).innerHTML='<option value="">Перенести в…</option>'+nums.map(n=>'<option value="'+n+'">Вариант '+n+'</option>').join("")+
+$('[data-bulk="move"]',bar).innerHTML='<option value="">Перенести в…</option>'+nums.map(n=>'<option value="'+n+'">'+groupName(n)+'</option>').join("")+
 '<option value="'+next+'">Новый вариант '+next+'</option>'}
 function moveCards(list,grid,before){if(saving)return;list=list.filter(c=>c!==before);for(const c of list){c.classList.remove("removed");
 if(before)grid.insertBefore(c,before);else grid.append(c)}
@@ -791,7 +851,9 @@ refresh();syncSelection()}
 function groupHead(s){const h=$(".group-head",s);if(!h||$(".pick-all",h))return;const b=document.createElement("button");
 b.type="button";b.className="tool pick-all";b.textContent="Выбрать все";b.addEventListener("click",()=>{if(saving)return;
 const list=$$(".card",s).filter(c=>!c.hidden),all=list.every(c=>c.classList.contains("selected"));
-list.forEach(c=>c.classList.toggle("selected",!all));anchor=list[0]||null;syncSelection()});h.append(b)}
+list.forEach(c=>c.classList.toggle("selected",!all));anchor=list[0]||null;syncSelection()});h.append(b);
+if(s.classList.contains("variant")&&!s.id.startsWith("new")){const r=document.createElement("button");r.type="button";
+r.className="tool pick-all";r.dataset.renameVariant="1";r.textContent="Переименовать";r.title="Переименовать папку и PDF варианта";h.append(r)}}
 document.addEventListener("click",e=>{if(!editing||saving)return;const card=e.target.closest(".card");if(!card)return;
 const pick=e.target.closest(".pick");
 if(!pick&&e.target.closest(".tools,.zoom,.caption,select,button"))return;
@@ -802,13 +864,14 @@ if(b.dataset.bulk==="remove")list.forEach(c=>c.classList.add("removed"));
 else if(b.dataset.bulk==="restore")list.forEach(c=>c.classList.remove("removed"));
 else clearSelection();refresh();syncSelection()});
 document.addEventListener("change",e=>{if(saving)return;const s=e.target.closest('select[data-bulk="move"]');if(!s||!s.value)return;const n=s.value,list=selected();
-moveCards(list,$(".grid",section(+n)),null);toast("Перенесено в «Вариант "+n+"»: "+list.length);
-list[0]?.scrollIntoView({block:"center",behavior:"smooth"})});
+const dest=section(n);moveCards(list,$(".grid",dest),null);toast("Перенесено в «"+groupName(n)+"»: "+list.length);
+reveal(list,dest)});
 addEventListener("keydown",e=>{if(!editing||saving||viewer.open||document.body.classList.contains("nav-open"))return;
 const typing=e.target instanceof Element&&e.target.closest("input:not(.pick),select,textarea");if(typing)return;
 if(e.key==="Escape"&&selected().length){e.preventDefault();clearSelection()}
 else if(e.key==="Delete"&&selected().length){e.preventDefault();selected().forEach(c=>c.classList.add("removed"));refresh();syncSelection()}
 else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="a"){e.preventDefault();cards().forEach(c=>c.classList.add("selected"));syncSelection()}});
+function reveal(list,s){const target=list.find(c=>!c.hidden)||s;if(!target)return;const smooth=!matchMedia("(prefers-reduced-motion: reduce)").matches;target.scrollIntoView({block:target===s?"start":"center",behavior:smooth?"smooth":"instant"});for(const c of list){c.classList.remove("arrived");void c.offsetWidth;c.classList.add("arrived")}clearTimeout(revealTimer);revealTimer=setTimeout(()=>{const r=target.getBoundingClientRect();if(r.bottom<80||r.top>innerHeight-80)target.scrollIntoView({block:target===s?"start":"center",behavior:"instant"});spy()},900)}
 function dragged(){return drag?(drag.classList.contains("selected")?selected():[drag]):[]}
 function newVariantItem(){const ul=$(".nav-group ul");if(!ul)return;let li=$(".nav-new");if(!li){li=document.createElement("li");li.className="nav-new";
 li.innerHTML='<a class="nav-item" href="#" data-new="1"><span>+ Новый вариант</span></a>';ul.append(li)}
@@ -841,8 +904,8 @@ dropTarget={grid,before:before&&before.classList.contains("card")?before:null}}
 else if(!over){group.classList.add("drop-end");dropTarget={grid,before:null}}});
 document.addEventListener("dragleave",e=>{if(drag&&!e.relatedTarget)autoY=null});
 document.addEventListener("drop",e=>{if(saving||!drag)return;e.preventDefault();const list=dragged(),t=dropTarget;clearDrop();if(!t)return;
-if(t.nav){const n=t.nav==="new"?(variantNumbers().length?Math.max(...variantNumbers()):0)+1:+t.nav;
-moveCards(list,$(".grid",section(n)),null);toast("Перенесено в «Вариант "+n+"»: "+list.length)}
+if(t.nav){const n=t.nav==="new"?(variantNumbers().length?Math.max(...variantNumbers()):0)+1:t.nav;
+const dest=section(n);moveCards(list,$(".grid",dest),null);toast("Перенесено в «"+groupName(n)+"»: "+list.length);reveal(list,dest)}
 else moveCards(list,t.grid,t.before)});
 document.addEventListener("dragend",()=>{if(!drag)return;$$(".dragging").forEach(x=>x.classList.remove("dragging"));
 document.body.classList.remove("dragging");drag=null;autoY=null;clearInterval(autoTimer);autoTimer=0;clearDrop();refresh();syncSelection()});
@@ -854,6 +917,31 @@ initial=submitted;try{sessionStorage.setItem("pdf-photos-toast",data.message)}ca
 catch(err){toast(err.message==="Failed to fetch"?"Нет связи с программой. Откройте «Фото из PDF» и нажмите «Открыть просмотр» ещё раз.":err.message,true);
 setSaving(false);saveBtn.textContent="Сохранить"}});
 addEventListener("beforeunload",e=>{if(initial&&JSON.stringify(payload())!==initial){e.preventDefault();e.returnValue=""}});
+const renameBox=document.createElement("dialog");renameBox.id="rename";renameBox.setAttribute("aria-labelledby","rn-title");
+renameBox.innerHTML='<form class="rename-form"><h3 id="rn-title"></h3><label for="rn-input">Новое имя</label>'+
+'<input id="rn-input" autocomplete="off" spellcheck="false"><p id="rn-hint" class="rn-hint"></p>'+
+'<p id="rn-error" class="rn-error" role="alert" hidden></p><div class="rn-actions">'+
+'<button type="button" class="icon-btn" data-rn-cancel>Отмена</button><button type="submit" class="btn" id="rn-ok">Переименовать</button></div></form>';
+document.body.append(renameBox);let renameRequest=null;
+function openRename(kind,target,current,title,hint){if(saving)return;
+if(JSON.stringify(payload())!==initial){toast("Сначала сохраните или отмените изменения, потом переименовывайте.",true);return}
+renameRequest={kind,target};$("#rn-title").textContent=title;$("#rn-hint").textContent=hint;const input=$("#rn-input");
+input.value=current;$("#rn-error").hidden=true;$("#rn-ok").disabled=false;renameBox.showModal();input.select()}
+$("[data-rn-cancel]",renameBox).addEventListener("click",()=>renameBox.close());
+$("form",renameBox).addEventListener("submit",async e=>{e.preventDefault();const ok=$("#rn-ok");ok.disabled=true;
+try{const r=await fetch("api/rename",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({revision:+document.body.dataset.revision,kind:renameRequest.kind,target:renameRequest.target,name:$("#rn-input").value})});
+const data=await r.json().catch(()=>({error:"Программа вернула непонятный ответ."}));if(!r.ok)throw new Error(data.error||("Ошибка "+r.status));
+initial="";try{sessionStorage.setItem("pdf-photos-toast",data.message);sessionStorage.setItem("pdf-photos-edit","1")}catch(x){}location.reload()}
+catch(err){const box=$("#rn-error");box.textContent=err.message==="Failed to fetch"?"Нет связи с программой. Откройте «Фото из PDF» и нажмите «Открыть просмотр» ещё раз.":err.message;
+box.hidden=false;ok.disabled=false;$("#rn-input").focus()}});
+document.addEventListener("click",e=>{const b=e.target.closest('[data-act="rename-file"],[data-act="rename-folder"],[data-rename-variant]');if(!b||saving)return;
+if(b.dataset.renameVariant){const s=b.closest(".group");openRename("variant",s.dataset.variant,s.dataset.folder,"Переименовать вариант",
+"Меняется название папки и PDF варианта. Номер варианта сохраняется: переносить картинки в него можно как раньше.");return}
+const c=b.closest(".card");if(b.dataset.act==="rename-file")openRename("file",c.dataset.id,c.dataset.fileName,"Переименовать PDF",
+"Имя файла без «.pdf». Файл лежит в папке «"+c.dataset.folder+"».");
+else openRename("folder",c.dataset.folder,c.dataset.folder,"Переименовать папку","Переименуется папка «"+c.dataset.folder+"» вместе со всеми её PDF.")});
+try{if(sessionStorage.getItem("pdf-photos-edit")){sessionStorage.removeItem("pdf-photos-edit");setEditing(true)}}catch(e){}
 '''
 
 
@@ -907,19 +995,26 @@ def extract(source, output=None, progress=None):
                 if match['status'] == 'named':
                     key = clean_text(grouping_title).casefold()
                     if key not in folders:
-                        folder = safe_name(grouping_title)
+                        # Caption folders sit one level deeper («Все остальное»); shorten them so that a
+                        # file name «Страница 000 — 000.pdf» still fits the 239-character path budget.
+                        limit = min(80, 214-len(str(destination/OTHER_DIR)))
+                        if limit < 16:
+                            raise ValueError('Путь результата слишком длинный. Переместите исходный PDF в папку с более коротким путём.')
+                        folder = safe_name(grouping_title, limit)
                         if folder.casefold() in folder_owners and folder_owners[folder.casefold()] != key:
-                            folder = folder[:69]+' — '+hashlib.sha256(key.encode()).hexdigest()[:8]
+                            folder = folder[:limit-11].rstrip(' .')+' — '+hashlib.sha256(key.encode()).hexdigest()[:8]
                         folders[key] = folder
                         folder_owners[folder.casefold()] = key
                     folder = folders[key]
                 else:
                     folder = 'На проверку' if match['status'] == 'review' else 'Без подписи'
-                target_folder = staging/folder
-                target_folder.mkdir(exist_ok=True)
+                match['group'] = 'variant' if match['variant'] is not None else None
+                relative_folder = group_dir(folder, entry_group(match))
+                target_folder = staging/relative_folder
+                target_folder.mkdir(parents=True, exist_ok=True)
                 prefix = f'Страница {page["number"]:03d} — {sequence:03d}'
                 stem = prefix+(' — '+safe_name(match['title']) if match['title'] else '')
-                available = 239-len(str(destination/folder))-1-len('.pdf')
+                available = 239-len(str(destination/relative_folder))-1-len('.pdf')
                 if available < len(prefix):
                     raise ValueError('Путь результата слишком длинный. Переместите исходный PDF в папку с более коротким путём.')
                 target = target_folder/(stem[:available].rstrip(' .')+'.pdf')
@@ -972,9 +1067,10 @@ def extract(source, output=None, progress=None):
         documents = merge_variant_pdfs(staging, entries, progress)
         with source.open('rb') as stream:
             checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-        report = {'version': VERSION, 'revision': 0, 'source': str(source), 'source_sha256': checksum,
+        report = {'version': VERSION, 'revision': 0, 'layout': LAYOUT, 'source': str(source), 'source_sha256': checksum,
                   'output_format': 'pdf', 'grouping': 'explicit_variant_then_caption',
                   'variant_output': 'one_multipage_pdf_per_variant',
+                  'folders': {'variants': VARIANTS_DIR, 'other': OTHER_DIR, 'service': SERVICE_DIR},
                   'page_contexts': [{'page': p['number'], 'divider': p['variant_divider'],
                                      'context': p['variant_context']} for p in pages],
                   'output': str(destination), 'pages': len(pages), 'source_components': total_components,
@@ -983,7 +1079,9 @@ def extract(source, output=None, progress=None):
                   'counts_by_status': dict(Counter(e['status'] for e in entries)),
                   'warnings': warnings, 'errors': errors, 'images': entries, 'documents': documents,
                   'note': 'Изображения каждого варианта объединены в один PDF в порядке исходных страниц '
-                          'и расположения на странице. Остальные растровые элементы сохранены отдельными PDF; '
+                          'и расположения на странице. Перспективные изображения без номера варианта в подписи, '
+                          'на странице и в разделе отнесены к варианту 1. Остальные растровые элементы '
+                          'сохранены отдельными PDF в папке «Все остальное»; '
                           'соприкасающиеся полосы объединены. '
                           'Отдельный слайд варианта задаёт раздел до следующего раздела; '
                           'общий заголовок с одним вариантом применяется к содержимому своей страницы. '

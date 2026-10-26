@@ -48,6 +48,69 @@ def enable_dpi_awareness():
             pass
 
 
+def accept_dropped_files(root, callback):
+    """Let Explorer drop files onto the window (WM_DROPFILES); returns the handler that must stay referenced.
+
+    The callback runs inside the window procedure and must not call Tk; it should only queue the names.
+    """
+    if sys.platform != 'win32':
+        return None
+    import ctypes
+    from ctypes import wintypes
+    user32, shell32 = ctypes.windll.user32, ctypes.windll.shell32
+    LRESULT = ctypes.c_ssize_t
+    WNDPROC = ctypes.WINFUNCTYPE(LRESULT, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+    user32.SetWindowLongPtrW.restype = ctypes.c_void_p
+    user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+    user32.CallWindowProcW.restype = LRESULT
+    user32.CallWindowProcW.argtypes = [ctypes.c_void_p, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    shell32.DragQueryFileW.restype = wintypes.UINT
+    shell32.DragQueryFileW.argtypes = [ctypes.c_void_p, wintypes.UINT, ctypes.c_wchar_p, wintypes.UINT]
+    shell32.DragFinish.argtypes = [ctypes.c_void_p]
+    root.update_idletasks()  # before this, wm_frame() still names the inner window, not the frame Explorer drops on
+    hwnd = int(root.wm_frame(), 16)
+    # An elevated window would otherwise silently refuse drops from Explorer.
+    for message in (0x0233, 0x004A, 0x0049):
+        user32.ChangeWindowMessageFilterEx(hwnd, message, 1, None)
+    shell32.DragAcceptFiles(hwnd, True)
+    previous = None
+
+    def procedure(window, message, wparam, lparam):
+        if message == 0x0233:
+            names = []
+            for index in range(shell32.DragQueryFileW(wparam, 0xFFFFFFFF, None, 0)):
+                size = shell32.DragQueryFileW(wparam, index, None, 0)+1
+                buffer = ctypes.create_unicode_buffer(size)
+                shell32.DragQueryFileW(wparam, index, buffer, size)
+                names.append(buffer.value)
+            shell32.DragFinish(wparam)
+            # Runs inside Tk's event loop: no Tk calls here, only hand the names over.
+            callback(names)
+            return 0
+        return user32.CallWindowProcW(previous, window, message, wparam, lparam)
+
+    handler = WNDPROC(procedure)
+    previous = user32.SetWindowLongPtrW(hwnd, -4, ctypes.cast(handler, ctypes.c_void_p))
+    return handler
+
+
+def dropped_pdfs(names):
+    """PDF files from a drop; a dropped folder contributes the PDFs directly inside it."""
+    found, skipped = [], []
+    for name in names:
+        path = Path(name)
+        if path.is_dir():
+            inside = sorted(child for child in path.iterdir() if child.is_file() and child.suffix.lower() == '.pdf')
+            found += inside
+            if not inside:
+                skipped.append(path.name)
+        elif path.suffix.lower() == '.pdf' and path.is_file():
+            found.append(path)
+        else:
+            skipped.append(path.name)
+    return [str(path) for path in dict.fromkeys(found)], skipped
+
+
 def app_icon(tk, color):
     icon = tk.PhotoImage(width=32, height=32)
     icon.put(color, to=(2, 2, 30, 30))
@@ -142,7 +205,7 @@ def open_app(initial_files=()):
     pick_text.pack(side='left', fill='x', expand=True)
     ttk.Label(pick_text, text='Презентации для обработки', style='CardTitle.TLabel').pack(anchor='w')
     ttk.Label(pick_text, style='CardMuted.TLabel',
-              text='Можно выбрать несколько PDF или перетащить их на значок программы. '
+              text='Перетащите PDF или папку с PDF в это окно, выберите файлы кнопкой или перетащите их на значок программы. '
                    'Результат появится рядом с каждым файлом.').pack(anchor='w', fill='x', pady=(2, 0))
     ttk.Separator(work).pack(fill='x', pady=16)
     status = tk.StringVar(value='Ожидаю выбор файлов')
@@ -278,6 +341,23 @@ def open_app(initial_files=()):
         detail.configure(text=f'В очереди файлов: {len(paths)}')
         Thread(target=worker, args=(tuple(paths),), daemon=True).start()
 
+    def drop(names):
+        paths, skipped = dropped_pdfs(names)
+        if skipped:
+            append('Пропущено, это не PDF: '+', '.join(skipped), 'warn')
+        if state['busy']:
+            if paths:
+                append('Идёт обработка. Перетащите файлы ещё раз, когда она закончится.', 'warn')
+            return
+        if paths:
+            root.deiconify()
+            root.lift()
+            start(paths)
+        elif not skipped:
+            append('В перетащенной папке нет PDF.', 'warn')
+
+    state['drop_handler'] = accept_dropped_files(root, lambda names: messages.put(('drop', names)))
+
     def pick(event=None):
         if not state['busy']:
             start(filedialog.askopenfilenames(parent=root, title='Выберите PDF', filetypes=[('PDF', '*.pdf')]))
@@ -348,7 +428,9 @@ def open_app(initial_files=()):
         try:
             while True:
                 kind, data = messages.get_nowait()
-                if kind == 'start':
+                if kind == 'drop':
+                    drop(data)
+                elif kind == 'start':
                     source, index, total = data
                     append(f'Файл {index} из {total}: {Path(source).name}', 'head')
                     status.set(f'Читаю файл {index} из {total}')

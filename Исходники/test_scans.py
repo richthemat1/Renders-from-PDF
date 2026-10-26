@@ -75,7 +75,8 @@ class ScanExport(unittest.TestCase):
         return target
 
     def test_numbered_ocr_views_continue_the_variant_only_in_sequence(self):
-        for next_number, expected in [(2, [2, 2, 2]), (4, [2, None, None])]:
+        # A broken sequence does not continue variant 2; such unnumbered perspective views default to variant 1.
+        for next_number, expected in [(2, [2, 2, 2]), (4, [2, 1, 1])]:
             with self.subTest(next_number=next_number), tempfile.TemporaryDirectory() as root:
                 report = extract(self.numbered_views(root, next_number))
                 self.assertEqual([e['variant'] for e in report['images']], expected)

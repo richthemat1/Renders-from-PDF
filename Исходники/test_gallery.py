@@ -1,11 +1,13 @@
 """Real-browser regressions for search, drag and drop, and saving manual corrections."""
 from pathlib import Path
+import re
 import tempfile
 from threading import Event
 import unittest
 from unittest.mock import patch
 
 from playwright.sync_api import expect, sync_playwright
+from pypdf import PdfReader
 
 import photo_edit
 from photo_export import extract
@@ -129,6 +131,94 @@ class GalleryRegressions(unittest.TestCase):
         self.assertEqual(photo_edit.load_report(self.output)['revision'], 0)
         self.page.locator('#save').click()
         expect(self.page.locator('body')).to_have_attribute('data-revision', '1')
+
+    def test_moving_to_a_variant_scrolls_to_the_destination(self):
+        pages = [{'images': [{'box': (50, 170, 800, 500), 'color': '#ff0000'}], 'text': [('Вариант 1', 50, 120, 18)]}]
+        pages += [{'images': [{'box': (50, 170, 800, 500), 'color': '#0000ff'}]} for _ in range(24)]
+        with tempfile.TemporaryDirectory(prefix='pdf-photos-scroll-test-') as root:
+            output = Path(extract(make_pdf(root, pages))['output'])
+            self.page.goto(self.server.register(output))
+            self.page.get_by_role('button', name='Редактировать', exact=True).click()
+            on_screen = '(e)=>{const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}'
+            unsigned = self.page.locator('.group.unsigned .card')
+            for way in ('sidebar', 'sidebar-new', 'bulk', 'single'):
+                with self.subTest(way=way):
+                    card = unsigned.last
+                    card.scroll_into_view_if_needed()
+                    moved = self.page.locator(f'.card[data-id="{card.get_attribute("data-id")}"]')
+                    if way == 'single':
+                        card.locator('select[data-act="move"]').select_option('1')
+                    elif way == 'bulk':
+                        card.locator('.cover').click()
+                        unsigned.nth(unsigned.count()-2).locator('.cover').click(modifiers=['Shift'])
+                        self.page.locator('[data-bulk="move"] option').last.wait_for(state='attached')
+                        self.page.locator('[data-bulk="move"]').select_option('1')
+                    else:
+                        target = '.nav-new .nav-item' if way == 'sidebar-new' else '.nav-item[href="#g2"]'
+                        transfer = self.page.evaluate_handle('new DataTransfer()')
+                        card.dispatch_event('dragstart', {'dataTransfer': transfer})
+                        self.page.locator(target).dispatch_event('dragover', {'dataTransfer': transfer})
+                        self.page.locator(target).dispatch_event('drop', {'dataTransfer': transfer})
+                        card.dispatch_event('dragend', {'dataTransfer': transfer})
+                        transfer.dispose()
+                    self.page.wait_for_function(
+                        f'(()=>{{const e=document.querySelector(\'.card[data-id="{moved.get_attribute("data-id")}"]\');'
+                        f'const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight}})()', timeout=3000)
+                    self.assertTrue(moved.evaluate(on_screen))
+                    expect(moved).to_have_class(re.compile(r'\barrived\b'))
+                    self.assertTrue(moved.locator('xpath=ancestor::section').get_attribute('data-variant'))
+                    self.page.keyboard.press('Escape')
+            self.assertEqual(self.errors, [])
+
+
+    def test_unnumbered_perspective_views_are_shown_and_edited_in_variant_one(self):
+        pages = [{'images': [{'box': (50, 170, 800, 500), 'color': color}],
+                  **({'text': [(title, 50, 120, 18)]} if title else {})} for title, color in [
+                      ('Вариант 1', '#ff0000'), ('Перспективное изображение №1', '#00ff00'),
+                      ('Перспективное изображение №2 рендер', '#0000ff'), (None, '#ffff00')]]
+        with tempfile.TemporaryDirectory(prefix='pdf-photos-perspective-test-') as root:
+            output = Path(extract(make_pdf(root, pages))['output'])
+            self.page.goto(self.server.register(output))
+            variants_block = self.page.locator('.nav-group', has=self.page.locator('h3', has_text='Варианты'))
+            expect(variants_block.locator('.nav-item')).to_have_text([re.compile('Вариант 1')])
+            variant_one = self.page.locator('section[data-variant="1"]')
+            expect(variant_one.locator('.card')).to_have_count(3)
+            self.page.get_by_role('button', name='Редактировать', exact=True).click()
+            self.page.locator('.card[data-id="3"] .cover').click()
+            options = self.page.locator('[data-bulk="move"] option').all_text_contents()
+            self.assertNotIn('Перспективные изображения', options)
+            self.page.locator('[data-bulk="move"]').select_option('1')
+            expect(variant_one.locator('.card')).to_have_count(4)
+            self.page.locator('#save').click()
+            expect(self.page.locator('body')).to_have_attribute('data-revision', '1')
+            with PdfReader(output/'Варианты'/'Вариант 1'/'Вариант 1.pdf') as reader:
+                self.assertEqual(len(reader.pages), 4)
+            self.assertFalse((output/'Все остальное').exists())
+            self.assertEqual(self.errors, [])
+
+    def test_variant_is_renamed_from_the_preview(self):
+        self.card(3).locator('[data-act="remove"]').click()
+        self.page.locator('section[data-variant="1"] [data-rename-variant]').click()
+        expect(self.page.locator('#toast')).to_contain_text('Сначала сохраните или отмените')
+        expect(self.page.locator('#rename')).not_to_be_visible()
+        self.card(3).locator('[data-act="remove"]').click()
+        self.page.locator('section[data-variant="1"] [data-rename-variant]').click()
+        dialog = self.page.locator('#rename')
+        expect(dialog).to_be_visible()
+        expect(dialog.locator('input')).to_have_value('Вариант 1')
+        dialog.locator('input').fill('Вариант 2')
+        dialog.locator('#rn-ok').click()
+        expect(dialog.locator('#rn-error')).to_contain_text('уже существует')
+        dialog.locator('input').fill('Вариант 1 — Северный')
+        dialog.locator('input').press('Enter')
+        expect(self.page.locator('body')).to_have_attribute('data-revision', '1')
+        expect(self.page.locator('section[data-variant="1"] h2')).to_have_text('Вариант 1 — Северный')
+        expect(self.page.locator('#toast')).to_contain_text('Переименовано')
+        expect(self.page.get_by_role('button', name='Готово')).to_be_visible()
+        self.assertTrue((self.output/'Варианты'/'Вариант 1 — Северный'/'Вариант 1 — Северный.pdf').is_file())
+        options = self.card(3).locator('select[data-act="move"] option').all_text_contents()
+        self.assertIn('Вариант 1 — Северный', options)
+        self.assertEqual(self.errors, [])
 
 
 if __name__ == '__main__':
