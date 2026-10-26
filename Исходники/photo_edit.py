@@ -39,6 +39,19 @@ def backup_root(report):
     return Path(SERVICE_DIR)/'Резервные копии' if has_service_dir(report) else Path(BACKUPS)
 
 
+def _backup_io_path(path):
+    """Allow long Windows backup paths without putting device prefixes in reports."""
+    path = Path(path)
+    if os.name != 'nt':
+        return path
+    value = os.path.abspath(path)
+    if value.startswith('\\\\?\\'):
+        return Path(value)
+    if value.startswith('\\\\'):
+        value = 'UNC\\' + value[2:]
+    return Path('\\\\?\\' + value)
+
+
 def variant_members(report):
     members = {}
     for index, entry in enumerate(report['images']):
@@ -110,7 +123,7 @@ def unused_backup(output, report):
     base = Path(output)/backup_root(report)/datetime.now().strftime('%Y-%m-%d %H-%M-%S')
     for number in range(1, 1000):
         candidate = base if number == 1 else base.with_name(f'{base.name} ({number})')
-        if not candidate.exists():
+        if not _backup_io_path(candidate).exists():
             return candidate
     raise EditError('Не удалось подобрать имя папки резервной копии.')
 
@@ -190,6 +203,7 @@ def apply_edits(output, payload):
     built = {key: variant_pdf(output, report, variants[key], key) for key in changed if variants[key]}
     backup = unused_backup(output, report)
     backup_name = str(backup.relative_to(output))
+    backup_io = _backup_io_path(backup)
     new = updated_report(report, variants, removed, current, built, changed, backup_name)
     rebuilt = {str(group_file(report, key)) for key in built}
     touched = sorted({images[index]['file'] for index in singles}
@@ -199,8 +213,8 @@ def apply_edits(output, payload):
     try:
         for relative in touched:
             if (output/relative).is_file():
-                (backup/relative).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(output/relative, backup/relative)
+                (backup_io/relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(output/relative, backup_io/relative)
                 saved.append(relative)
         for key in built:
             target = output/group_file(report, key)
@@ -218,7 +232,7 @@ def apply_edits(output, payload):
     except BaseException:
         for relative in saved:
             (output/relative).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(backup/relative, output/relative)
+            shutil.copy2(backup_io/relative, output/relative)
         for target in created:
             target.unlink(missing_ok=True)
             remove_empty_folders(output, target.parent)
