@@ -126,6 +126,8 @@ button {
   color: white;
   letter-spacing: -0.015em;
 }
+.brand-mark.custom-logo { background: transparent; }
+.brand-mark.custom-logo img { width: 36px; height: 36px; object-fit: contain; }
 .brand div > span {
   display: block;
   margin-top: 3px;

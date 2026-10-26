@@ -9,7 +9,7 @@ from threading import Event, Lock, Thread
 from photo_desktop_server import DesktopServer
 from photo_export import VERSION
 from photo_jobs import JobService
-from photo_native import configure_logging, enable_dpi_awareness
+from photo_native import app_icon_path, configure_logging, enable_dpi_awareness
 
 LOGGER = logging.getLogger('pdf-photos')
 
@@ -214,7 +214,9 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
             if initial_files:
                 jobs.start(initial_files)
         # Force modern Chromium: the old mshtml fallback cannot run the React editor.
-        webview.start(start_initial, gui='edgechromium', debug=debug, private_mode=True)
+        icon = app_icon_path()
+        webview.start(start_initial, gui='edgechromium', debug=debug, private_mode=True,
+                      icon=str(icon) if icon else None)
         return 0
     except Exception as error:
         LOGGER.exception('Desktop failed')

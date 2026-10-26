@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import filedialog
 
 from photo_export import VERSION, extract
-from photo_native import Cancelled, accept_dropped_files, app_icon, configure_logging, dropped_pdfs
+from photo_native import Cancelled, accept_dropped_files, app_icon, app_icon_path, configure_logging, dropped_pdfs
 from photo_state import WorkspaceState
 from photo_ui import WorkspaceView
 
@@ -28,7 +28,11 @@ class PhotoApplication:
         root.geometry(f'{width}x{height}')
         root.minsize(min(p(820), width), min(p(620), height))
         try:
-            root.iconphoto(True, app_icon(tk, '#26745d'))
+            icon = app_icon_path()
+            if icon:
+                root.iconbitmap(default=str(icon))
+            else:
+                root.iconphoto(True, app_icon(tk, '#26745d'))
         except tk.TclError:
             pass
         self.log_path = configure_logging()

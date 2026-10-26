@@ -3,6 +3,7 @@ import type { PropsWithChildren, ReactNode } from "react";
 import { Layers3, Menu, X, Check, LoaderCircle } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { APP_ICON_AVAILABLE } from "./app-icon.generated";
 
 gsap.registerPlugin(useGSAP);
 
@@ -20,6 +21,15 @@ export function Shell({
 }>) {
   const scope = useRef<HTMLDivElement>(null);
   const nav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!APP_ICON_AVAILABLE) return;
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.type = "image/x-icon";
+    link.href = `${import.meta.env.BASE_URL}app-icon.ico`;
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, []);
   useGSAP(
     () => {
       const media = gsap.matchMedia();
@@ -44,8 +54,8 @@ export function Shell({
     <div className="app-shell" ref={scope}>
       <aside className="sidebar" ref={nav}>
         <div className="brand">
-          <span className="brand-mark">
-            <Layers3 size={22} />
+          <span className={`brand-mark${APP_ICON_AVAILABLE ? " custom-logo" : ""}`}>
+            {APP_ICON_AVAILABLE ? <img src={`${import.meta.env.BASE_URL}app-icon.ico`} alt="" width={36} height={36} /> : <Layers3 size={22} />}
           </span>
           <div>
             <strong>Фото из PDF</strong>

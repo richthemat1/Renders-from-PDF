@@ -22,5 +22,8 @@ try {
 } finally { Pop-Location }
 & $taskBuildPython -X utf8 -m pip install --disable-pip-version-check -r (Join-Path $PSScriptRoot 'requirements.txt') 'pyinstaller==6.22.3'
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось установить зависимости сборки.' }
-& $taskBuildPython -X utf8 -m PyInstaller --noconfirm --onefile --console --hide-console hide-early --noupx --name "PDF-фото $taskVersion" --add-data ((Join-Path $PSScriptRoot 'assets') + ';assets') --add-data ((Join-Path $taskFrontend 'dist') + ';frontend/dist') --collect-all webview --hidden-import pythonnet --hidden-import clr_loader --distpath (Split-Path $PSScriptRoot -Parent) --workpath (Join-Path $taskBuild 'work') --specpath $taskBuild (Join-Path $PSScriptRoot 'photo_app.py')
+$taskIcon = Join-Path $PSScriptRoot 'assets\app-icon.ico'
+$taskIconArguments = @()
+if (Test-Path -LiteralPath $taskIcon) { $taskIconArguments = @('--icon', $taskIcon) }
+& $taskBuildPython -X utf8 -m PyInstaller --noconfirm --onefile --console --hide-console hide-early --noupx --name "PDF-фото $taskVersion" @taskIconArguments --add-data ((Join-Path $PSScriptRoot 'assets') + ';assets') --add-data ((Join-Path $taskFrontend 'dist') + ';frontend/dist') --collect-all webview --hidden-import pythonnet --hidden-import clr_loader --distpath (Split-Path $PSScriptRoot -Parent) --workpath (Join-Path $taskBuild 'work') --specpath $taskBuild (Join-Path $PSScriptRoot 'photo_app.py')
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось собрать EXE.' }

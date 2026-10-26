@@ -20,6 +20,11 @@ Unicode True
 !define APP_NAME "Фото из PDF"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\PDF-Photos"
 
+!if /FileExists "${SOURCE_DIR}\Исходники\assets\app-icon.ico"
+  !define MUI_ICON "${SOURCE_DIR}\Исходники\assets\app-icon.ico"
+  !define MUI_UNICON "${SOURCE_DIR}\Исходники\assets\app-icon.ico"
+!endif
+
 Name "${APP_NAME} ${APP_VERSION}"
 OutFile "${OUT_FILE}"
 InstallDir "$LOCALAPPDATA\Programs\PDF-Photos"

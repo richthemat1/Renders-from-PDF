@@ -1,4 +1,5 @@
 Fonts and icons used by the Figma reference. Bundled for offline use.
+Application icon: owner-provided APP_logo.png, 1254x1254 RGBA. Original artwork is unchanged; app-icon.ico contains transparent 16/20/24/32/40/48/64/128/256 px exports. Shared by EXE, windows, installer, shortcuts and React.
 Roboto: https://github.com/googlefonts/roboto-2
 Material Symbols: https://github.com/google/material-design-icons
 Material Symbols subset: arrow_back,arrow_forward,check,chevron_right,close,description,download,folder_open,grid_view,help,history,image,info,open_in_new,search,settings,stop,upload,warning

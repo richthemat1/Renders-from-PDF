@@ -23,3 +23,5 @@
 /Исходники/frontend/.vite/
 /Исходники/frontend/coverage/
 /Исходники/frontend/*.tsbuildinfo
+/Исходники/frontend/src/app-icon.generated.ts
+/Исходники/frontend/public/app-icon.ico

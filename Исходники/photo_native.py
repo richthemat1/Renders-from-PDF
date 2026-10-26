@@ -41,6 +41,12 @@ def enable_dpi_awareness():
             pass
 
 
+def app_icon_path():
+    base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
+    icon = base / 'assets' / 'app-icon.ico'
+    return icon if icon.is_file() else None
+
+
 def accept_dropped_files(root, callback):
     """Let Explorer drop files onto the window (WM_DROPFILES); returns the handler that must stay referenced.
 
