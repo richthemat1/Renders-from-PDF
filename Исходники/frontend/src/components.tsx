@@ -2,29 +2,23 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, PropsWithChildren, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil } from "lucide-react";
-import gsap from "gsap";
-import { useGSAP } from "@gsap/react";
 import { APP_ICON_AVAILABLE } from "./app-icon.generated";
-import { clampSidebarWidth, setSidebarPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useSidebarPreferences } from "./sidebar";
+import { clampSidebarWidth, setSidebarPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_RAIL_WIDTH,
+  useSidebarPreferences } from "./sidebar";
 import "./sidebar-visual.css";
-
-gsap.registerPlugin(useGSAP);
 
 export function Shell({
   navigation,
   footer,
   header,
   children,
-  motionKey,
   version,
 }: PropsWithChildren<{
   navigation: ReactNode;
   footer: ReactNode;
   header: ReactNode;
-  motionKey: string;
   version?: string;
 }>) {
-  const scope = useRef<HTMLDivElement>(null);
   const nav = useRef<HTMLElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
   const sidebarId = useId();
@@ -42,10 +36,41 @@ export function Shell({
   } | null>(null);
   const width = clampSidebarWidth(dragWidth ?? preferences.width, viewport);
   const maxWidth = clampSidebarWidth(SIDEBAR_MAX_WIDTH, viewport);
-  const visible = mobile ? drawerOpen : !preferences.hidden;
-  const space = mobile || preferences.hidden ? 0 : width;
-  const toggleLabel = mobile ? "Открыть меню"
-    : preferences.hidden ? "Показать боковое меню" : "Скрыть боковое меню";
+  // The saved «hidden» preference now means a rail of section icons, never a missing menu.
+  const collapsed = !mobile && preferences.hidden;
+  const visible = mobile ? drawerOpen : true;
+  const space = mobile ? 0 : collapsed ? SIDEBAR_RAIL_WIDTH : width;
+  const collapseLabel = collapsed ? "Развернуть меню" : "Свернуть меню";
+  const [tip, setTip] = useState<{ text: string; count: string; top: number; left: number } | null>(null);
+  const tipOwner = useRef<HTMLElement | null>(null);
+
+  function hideTip() {
+    const owner = tipOwner.current;
+    if (owner?.dataset.nativeTitle !== undefined) {
+      owner.title = owner.dataset.nativeTitle;
+      delete owner.dataset.nativeTitle;
+    }
+    tipOwner.current = null;
+    setTip(null);
+  }
+  function showTip(target: EventTarget | null) {
+    const owner = target instanceof Element ? target.closest<HTMLElement>("button") : null;
+    if (!collapsed || !owner || !nav.current?.contains(owner)) return hideTip();
+    if (owner === tipOwner.current) return;
+    hideTip();
+    const count = owner.querySelector(":scope > b")?.textContent?.trim() ?? "";
+    const text = owner.dataset.tooltip || owner.querySelector(".nav-text")?.textContent?.trim()
+      || owner.getAttribute("aria-label") || owner.title || owner.textContent?.replace(count, "").trim() || "";
+    if (!text) return;
+    // The custom popup replaces the slow native tooltip while the rail is collapsed.
+    if (owner.title) {
+      owner.dataset.nativeTitle = owner.title;
+      owner.removeAttribute("title");
+    }
+    tipOwner.current = owner;
+    const rect = owner.getBoundingClientRect();
+    setTip({ text, count, top: rect.top + rect.height / 2, left: rect.right + 10 });
+  }
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -91,6 +116,9 @@ export function Shell({
       toggle.current?.focus({ preventScroll: true });
   }, [visible]);
   useEffect(() => {
+    if (!collapsed) hideTip();
+  }, [collapsed]);
+  useEffect(() => {
     if (!mobile || !drawerOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -111,33 +139,16 @@ export function Shell({
     document.head.appendChild(link);
     return () => link.remove();
   }, []);
-  useGSAP(
-    () => {
-      const media = gsap.matchMedia();
-      media.add("(prefers-reduced-motion: no-preference)", () => {
-        gsap.fromTo(
-          ".content",
-          { y: 8, opacity: 0.85 },
-          {
-            y: 0,
-            opacity: 1,
-            duration: 0.3,
-            ease: "power3.out",
-            clearProps: "all",
-          },
-        );
-      });
-      return () => media.revert();
-    },
-    { scope, dependencies: [motionKey], revertOnUpdate: true },
-  );
   return (
-    <div className={`app-shell${preferences.hidden ? " is-sidebar-hidden" : ""}${dragWidth !== null ? " is-resizing-sidebar" : ""}`}
-      style={{ "--sidebar-width": `${width}px` } as CSSProperties} ref={scope}>
+    <div className={`app-shell${collapsed ? " is-sidebar-collapsed" : ""}${dragWidth !== null ? " is-resizing-sidebar" : ""}`}
+      style={{ "--sidebar-width": `${collapsed ? SIDEBAR_RAIL_WIDTH : width}px` } as CSSProperties}>
       <aside id={sidebarId} className={`sidebar${mobile && drawerOpen ? " is-open" : ""}`} ref={nav}
-        hidden={!mobile && preferences.hidden} inert={!visible} aria-hidden={!visible} onClick={(event) => {
-        if (mobile && (event.target as Element).closest("button")) closeDrawer();
-      }}>
+        inert={!visible} aria-hidden={!visible} onClick={(event) => {
+          if (mobile && (event.target as Element).closest("button")) closeDrawer();
+          else hideTip();
+        }}
+        onPointerOver={event => showTip(event.target)} onPointerLeave={hideTip}
+        onFocus={event => showTip(event.target)} onBlur={hideTip} onScroll={hideTip}>
         <div className="brand">
           <span className={`brand-mark${APP_ICON_AVAILABLE ? " custom-logo" : ""}`}>
             {APP_ICON_AVAILABLE ? <img src={`${import.meta.env.BASE_URL}app-icon.ico`} alt="" width={36} height={36} /> : <Layers3 size={22} />}
@@ -153,6 +164,11 @@ export function Shell({
           >
             <X size={18} />
           </button>
+          {!mobile && <button className="icon-btn sidebar-collapse" aria-label={collapseLabel}
+            title={collapseLabel} aria-controls={sidebarId} aria-expanded={!collapsed}
+            onClick={() => setSidebarPreferences({ hidden: !collapsed })}>
+            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>}
         </div>
         <nav aria-label="Навигация">
           {navigation}
@@ -165,7 +181,7 @@ export function Shell({
           </div>
           {version && <div className="sidebar-version">Версия {version}</div>}
         </div>
-        {!mobile && !preferences.hidden && <div className="sidebar-resizer" role="separator" tabIndex={0}
+        {!mobile && !collapsed && <div className="sidebar-resizer" role="separator" tabIndex={0}
           aria-label="Ширина бокового меню" aria-controls={sidebarId} aria-orientation="vertical"
           aria-valuemin={SIDEBAR_MIN_WIDTH} aria-valuemax={maxWidth} aria-valuenow={width}
           aria-valuetext={`${width} пикселей`}
@@ -206,19 +222,22 @@ export function Shell({
       <div className="workspace-main">
         <header className="topbar">
           <div className="topbar-inner">
-          <button
+          {mobile && <button
             ref={toggle} className="icon-btn sidebar-toggle"
-            aria-label={toggleLabel} title={toggleLabel} aria-controls={sidebarId} aria-expanded={visible}
-            onClick={() => mobile ? setDrawerOpen(!drawerOpen) : setSidebarPreferences({ hidden: !preferences.hidden })}
+            aria-label="Открыть меню" title="Открыть меню" aria-controls={sidebarId} aria-expanded={visible}
+            onClick={() => setDrawerOpen(!drawerOpen)}
           >
-            {mobile ? <Menu size={20} /> : preferences.hidden ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
-          </button>
+            <Menu size={20} />
+          </button>}
           {header}
           </div>
         </header>
         {preferences.problem && <p className="sidebar-save-warning" role="status">{preferences.problem}</p>}
         {children}
       </div>
+      {tip && createPortal(<div className="sidebar-tooltip" role="tooltip" style={{ top: tip.top, left: tip.left }}>
+        <span>{tip.text}</span>{tip.count && <b>{tip.count}</b>}
+      </div>, document.body)}
     </div>
   );
 }
@@ -263,7 +282,7 @@ export function Dialog({
       }}
     >
       <div className="dialog-heading">
-        {subtitle ? <div className="dialog-heading-copy"><h2 id={id}>{title}</h2>{subtitle}</div>
+        {subtitle ? <div className="dialog-heading-copy"><h2 id={id} title={title}>{title}</h2>{subtitle}</div>
           : <h2 id={id}>{title}</h2>}
         {headerActions}
         <button

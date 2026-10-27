@@ -456,7 +456,6 @@ export function App() {
   return (
     <>
       <Shell
-        motionKey={page}
         footer={appUtilities}
         version={state?.version}
         navigation={workNavigation}
@@ -471,7 +470,7 @@ export function App() {
           </>
         }
       >
-        <div className={`content${page === "settings" ? " settings-content" : page === "work" ? " work-content" : ""}`}>
+        <div className={`content${page === "settings" ? " settings-content" : page === "work" ? " work-content" : " history-content"}`}>
           {!state ? (
             <Empty
               icon={

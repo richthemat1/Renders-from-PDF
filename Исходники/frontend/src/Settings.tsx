@@ -1,4 +1,4 @@
-import { Check, FileText, FolderOpen, FolderOutput, Info, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Check, FileText, FolderOpen, FolderOutput, Info, ShieldCheck } from "lucide-react";
 import type { Snapshot } from "./types";
 import "./settings-visual.css";
 
@@ -23,7 +23,6 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onOpenL
     <div className="settings-page">
       <header className="settings-heading">
         <div className="settings-heading-main">
-          <span className="settings-heading-icon" aria-hidden="true"><SlidersHorizontal size={22} /></span>
           <div>
             <h1>Настройки</h1>
             <p>Как сохранять следующие результаты обработки.</p>

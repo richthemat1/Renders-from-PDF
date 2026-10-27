@@ -678,7 +678,6 @@ export function Viewer({
   const variantCount = variants.filter((key) => draft.variants[key].length).length;
   return (
     <Shell
-      motionKey={result.id}
       footer={footer}
       navigation={
         <>

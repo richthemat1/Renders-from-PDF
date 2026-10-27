@@ -1,5 +1,6 @@
 """Optional Windows OCR and conservative native-pixel panels in flattened slides."""
-from contextlib import ExitStack
+from contextlib import contextmanager, ExitStack
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,66 @@ from PIL import Image, ImageDraw, ImageFilter, ImageStat
 from pypdf import PdfReader
 
 from photo_layout import clean_text, variant_numbers
+
+# Poster layers reach 200 Mpx (about 600 MB per decode) and trip Pillow's bomb guard.
+# Such JPEGs are opened at a reduced JPEG scale that stays within this pixel budget.
+LARGE_RASTER_PIXELS = 50_000_000
+
+
+def is_large_raster(image):
+    width, height = image['srcsize']
+    return width*height > LARGE_RASTER_PIXELS
+
+
+def open_large_raster(obj, budget=None):
+    """Open a JPEG XObject at the coarsest 1/2^n scale within budget; return the image and native/decoded factor."""
+    budget = LARGE_RASTER_PIXELS if budget is None else budget
+    filters = obj.get('/Filter')
+    filters = [str(item) for item in filters] if isinstance(filters, list) else [str(filters)]
+    # pypdf removes outer encodings such as ASCII85 and returns the JPEG itself.
+    if not filters or filters[-1] != '/DCTDecode':
+        raise ValueError('Очень большое изображение без сжатия JPEG: сохранён снимок области страницы.')
+    width, height = int(obj['/Width']), int(obj['/Height'])
+    scale = 1
+    while width*height/(scale*scale) > budget and scale < 8:
+        scale *= 2
+    previous = Image.MAX_IMAGE_PIXELS
+    # The size check alone rejects the file; the decode below never materialises full resolution.
+    Image.MAX_IMAGE_PIXELS = None
+    try:
+        image = Image.open(BytesIO(obj.get_data()))
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous
+    try:
+        image.draft('RGB', (max(1, width//scale), max(1, height//scale)))
+        image.load()
+        if image.width*image.height > budget*1.01:
+            raise ValueError('JPEG не поддерживает уменьшенное чтение; сохранён снимок области страницы.')
+    except BaseException:
+        image.close()
+        raise
+    return image, width/image.width
+
+
+def blank_layer_ink(obj):
+    """Share of visibly drawn pixels in a stacked JPEG layer, measured on a small decode."""
+    image, _ = open_large_raster(obj, budget=4_000_000)
+    with image, image.convert('L') as gray:
+        histogram = gray.histogram()
+    return sum(histogram[:235])/max(1, sum(histogram))
+
+
+@contextmanager
+def scan_image(reader, pdf_page, path, original):
+    """Yield a decoded raster and the factor from its pixels to the native resource pixels."""
+    if is_large_raster(original):
+        image, factor = open_large_raster(reader.get_object(original['object_id']))
+    else:
+        image, factor = pdf_page.images[path].image, 1
+    try:
+        yield image, factor
+    finally:
+        image.close()
 
 
 # Windows PowerShell 5.1 exposes the installed Windows Runtime OCR engine.
@@ -167,7 +228,7 @@ def photo_panels(image):
     with eroded:
         mask = eroded.filter(ImageFilter.MaxFilter(7))
     data = bytearray(mask.tobytes())
-    boxes = []
+    boxes, doubtful = [], []
     uncertain = False
     for position in range(len(data)):
         if not data[position]:
@@ -204,14 +265,24 @@ def photo_panels(image):
         rectangular = density > .55 and (all(corner_fill)
                         or (density > .95 and sum(corner_fill) >= 3))
         if not rectangular:
-            uncertain = True
+            doubtful.append([left, top, right+1, bottom+1])
             continue
-        sx, sy = image.width/width, image.height/height
-        boxes.append([round(left*sx), round(top*sy), round((right+1)*sx), round((bottom+1)*sy)])
+        boxes.append([left, top, right+1, bottom+1])
     mask.close()
+    # A light sky can empty a corner of a real photo. Such a region still counts when the confident
+    # panels prove it is a cell of the same grid: aligned with one of them by row and another by column.
+    tolerance = .015
+    def aligned(box, other, start, end, size):
+        return abs(box[start]-other[start]) <= size*tolerance and abs(box[end]-other[end]) <= size*tolerance
+    for box in doubtful:
+        if not (any(aligned(box, other, 1, 3, height) for other in boxes)
+                and any(aligned(box, other, 0, 2, width) for other in boxes)):
+            uncertain = True
     # If a substantial part is not rectangular, keep the slide intact.
     if uncertain:
         return []
+    sx, sy = image.width/width, image.height/height
+    boxes = [[round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)] for box in boxes+doubtful]
     rows = []
     for box in sorted(boxes, key=lambda b: (b[1], b[0])):
         if not rows or box[1]-rows[-1][0][1] > image.height*.015:
@@ -257,8 +328,10 @@ def _compound_background(image, panels):
         return background >= 210 and sum(histogram[start:end])/max(1, sum(histogram)) > .93
 
 
-def _compound_text(engine, image, original, panels):
-    """Remove confirmed photographs only in the OCR copy, never in exported pixels."""
+def _compound_text(engine, image, original, panels, page_lines=()):
+    """Remove confirmed photographs only in the OCR copy, never in exported pixels.
+
+    Captions may also be live PDF text printed over the raster, as on posters."""
     full_lines = engine.recognise(image, original)
     sx = (original['x1']-original['x0'])/image.width
     sy = (original['bottom']-original['top'])/image.height
@@ -273,7 +346,8 @@ def _compound_text(engine, image, original, panels):
         for left, top, right, bottom in panels:
             draw.rectangle((left, top, right-1, bottom-1), fill='white')
         lines = _merge_ocr_lines(full_lines, engine.recognise(labels, original))
-    headings = [line for line in lines if not any(_inside(line, box) for box in boxes)
+    live = [line for line in page_lines if _inside(line, original)]
+    headings = [line for line in lines+live if not any(_inside(line, box) for box in boxes)
                 and len(re.findall(r'[^\W\d_]', line['text'])) >= 3]
     if not headings:
         raise ValueError('У составного растра не прочитаны подписи; требуется проверка разрезания.')
@@ -289,7 +363,8 @@ def analyse_scans(source, pages, resource_paths, progress=None):
         full_page = (not page['lines'] and len(page['images']) == 1
                      and _area(page['images'][0]) > page['width']*page['height']*.80)
         images = [im for im in page['images'] if full_page or (
-                  not im.get('repeated_static') and not im.get('fully_occluded')
+                  not im.get('repeated_static') and not im.get('fully_occluded') and not im.get('blank_layer')
+                  and not im.get('text_fill')
                   and _area(im) >= page['width']*page['height']*.15
                   and min(im['srcsize']) >= 300)]
         if images:
@@ -314,7 +389,7 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                         if not full_page:
                             continue
                         raise ValueError('Для скана не найден отдельный ресурс.')
-                    with pdf_page.images[path].image as image:
+                    with scan_image(reader, pdf_page, path, original) as (image, factor):
                         # A normal photograph must not start OCR or produce scan warnings.
                         panels = None if full_page else photo_panels(image)
                         if not full_page and len(panels) < 2:
@@ -346,14 +421,15 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                                 raise
                         try:
                             lines = (engine.recognise(image, original) if full_page
-                                     else _compound_text(engine, image, original, panels))
+                                     else _compound_text(engine, image, original, panels, page['lines']))
                         except RuntimeError as error:
                             # A late response after a timeout must never name another page.
                             startup_error = 'Распознавание остановлено после ошибки OCR: '+str(error)
                             raise
                         page['lines'] = _merge_ocr_lines(page['lines'], lines)
                         scan['lines'] = scan.get('lines', 0)+len(lines)
-                        if not lines:
+                        # A compound raster may carry no text of its own: its captions passed as live PDF text.
+                        if not lines and full_page:
                             continue
                         panels = photo_panels(image) if full_page else panels
                         if not panels:
@@ -363,7 +439,8 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                         sy = (original['bottom']-original['top'])/image.height
                         replacements = [dict(original, x0=original['x0']+box[0]*sx,
                                              top=original['top']+box[1]*sy, x1=original['x0']+box[2]*sx,
-                                             bottom=original['top']+box[3]*sy, scan_crop_px=box,
+                                             bottom=original['top']+box[3]*sy,
+                                             scan_crop_px=[round(value*factor) for value in box],
                                              source_bbox=record['bbox']) for box in panels]
                         position = next(i for i, im in enumerate(page['images']) if im is original)
                         page['images'][position:position+1] = replacements

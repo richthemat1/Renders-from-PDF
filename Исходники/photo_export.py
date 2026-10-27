@@ -17,6 +17,7 @@ import pdfplumber
 from pdfminer.layout import LTContainer, LTFigure, LTImage
 from pdfminer.utils import mult_matrix
 from PIL import Image
+import pypdf.filters
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import ContentStream
 
@@ -24,9 +25,19 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
                           text_lines, tile_groups, variant_numbers)
-from photo_scan import analyse_scans, column_caption, prepare_scan_continuations, whole_scan_caption
+from photo_scan import (analyse_scans, blank_layer_ink, column_caption, is_large_raster, LARGE_RASTER_PIXELS,
+                        open_large_raster,
+                        prepare_scan_continuations, whole_scan_caption)
 
-VERSION = '3.27'
+# A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
+# make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
+# decompressed output stay at pypdf's defaults.
+pypdf.filters.MAX_DECLARED_STREAM_LENGTH = max(pypdf.filters.MAX_DECLARED_STREAM_LENGTH, 2_000_000_000)
+# Whole poster-size rasters are kept at a reduced JPEG scale within this budget.
+LARGE_WHOLE_PIXELS = 25_000_000
+_large_raster_cache = {}
+
+VERSION = '3.28'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -329,6 +340,13 @@ def opaque_paints(pdf_page, reader):
                 path = []
             elif operator in (b'n', b'S', b's'):
                 path = []
+            elif operator == b'Tr':
+                # Modes 4-7 add the glyph outlines to the clip at ET; text clips are never rectangles.
+                state['text_clip'] = bool(operands) and int(operands[0]) >= 4
+            elif operator == b'ET' and state.get('text_clip'):
+                state['clip_known'] = False
+                state['text_clip'] = False
+                state['clipped_by_text'] = True
             elif operator == b'Do':
                 reference = resources.get('/XObject', {}).get(operands[0])
                 if reference is None:
@@ -341,7 +359,8 @@ def opaque_paints(pdf_page, reader):
                     covers = (visible if opaque(state) and not obj.get('/SMask') and not obj.get('/Mask')
                               and obj.get('/ImageMask') != True else None)
                     paints.append({'kind': 'image', 'object_id': object_id, 'bbox': box,
-                                   'opaque_bbox': covers, 'order': len(paints)})
+                                   'opaque_bbox': covers, 'order': len(paints),
+                                   'text_clip': state.get('clipped_by_text', False)})
                 elif obj.get('/Subtype') == '/Form' and object_id not in ancestors and len(ancestors) < 16:
                     nested = dict(state)
                     nested['ctm'] = mult_matrix(tuple(map(float, obj.get('/Matrix', (1, 0, 0, 1, 0, 0)))), state['ctm'])
@@ -401,6 +420,9 @@ def prepare_image_quality(source, pages):
                 if not occurrences:
                     continue
                 paint = occurrences.pop(0)
+                if paint.get('text_clip'):
+                    # Seen only through glyph outlines: this raster colours a caption, it is not a picture.
+                    image['text_fill'] = True
                 box = paint['bbox']
                 if box is None:
                     continue
@@ -431,9 +453,32 @@ def prepare_image_quality(source, pages):
             image['repeated_static'] = {'pages': static_pages, 'identity_sha256': image['identity_sha256']}
 
 
+def mark_blank_layers(reader, page):
+    """Set aside nearly white JPEG layers stacked exactly over an earlier image in the same place."""
+    for index, image in enumerate(page['images']):
+        base = next((earlier for earlier in page['images'][:index]
+                     if all(abs(earlier[key]-image[key]) <= 1 for key in ('x0', 'top', 'x1', 'bottom'))), None)
+        if base is None:
+            continue
+        try:
+            ink = blank_layer_ink(reader.get_object(image['object_id']))
+        except Exception:
+            # Only JPEG layers are measured; anything unreadable stays a normal image.
+            continue
+        if ink < .005:
+            image['blank_layer'] = {'visible_fraction': round(ink, 6), 'base_object': base['object_id']}
+
+
 def group_suppression(page, group):
     """Apply fragment thresholds to assembled regions, preserving low-resolution large photos."""
     box = bounds(group)
+    if all(image.get('text_fill') for image in group):
+        return {'suppression_code': 'text_fill',
+                'reason': 'Изображение видно только внутри букв надписи: это оформление текста, а не отдельная картинка.'}
+    if all(image.get('blank_layer') for image in group):
+        return {'suppression_code': 'blank_layer',
+                'reason': 'Почти пустой слой поверх изображения того же размера: видимых деталей меньше 0,5 % площади.',
+                'evidence': [image['blank_layer'] for image in group]}
     if all(image.get('fully_occluded') for image in group):
         return {'suppression_code': 'fully_occluded', 'reason': 'Изображение полностью закрыто более поздним непрозрачным элементом.',
                 'evidence': [image['fully_occluded'] for image in group]}
@@ -465,6 +510,9 @@ def inspect(source, progress=None):
                           'images': images, 'source_components': len(images)})
             page.close()
     prepare_image_quality(source, pages)
+    with PdfReader(source) as reader:
+        for page in pages:
+            mark_blank_layers(reader, page)
     analyse_scans(source, pages, image_paths, progress)
     headers = Counter()
     for page in pages:
@@ -492,7 +540,36 @@ def _decode(page, paths, image):
     return name, data
 
 
+def _large_raster(page, image, budget):
+    """Decode a poster-size JPEG once per page and budget; panels of one poster share the copy."""
+    key = (id(page.pdf), image['object_id'], budget)
+    if key not in _large_raster_cache:
+        for cached, _ in _large_raster_cache.values():
+            cached.close()
+        _large_raster_cache.clear()
+        _large_raster_cache[key] = open_large_raster(page.pdf.get_object(image['object_id']), budget)
+    return _large_raster_cache[key]
+
+
+def release_large_rasters():
+    for cached, _ in _large_raster_cache.values():
+        cached.close()
+    _large_raster_cache.clear()
+
+
 def save_group(page, paths, group, base):
+    if len(group) == 1 and is_large_raster(group[0]):
+        crop = group[0].get('scan_crop_px')
+        image, factor = _large_raster(page, group[0], LARGE_RASTER_PIXELS if crop else LARGE_WHOLE_PIXELS)
+        if crop:
+            target = base.with_suffix('.png')
+            with image.crop([round(value/factor) for value in crop]) as part:
+                size = list(part.size)
+                part.save(target, 'PNG')
+            return target, size, 'reduced_scan_crop'
+        target = base.with_suffix('.jpg')
+        image.convert('RGB').save(target, 'JPEG', quality=92)
+        return target, list(image.size), 'reduced_original'
     if len(group) == 1:
         name, data = _decode(page, paths, group[0])
         with Image.open(BytesIO(data)) as image:
@@ -1469,6 +1546,7 @@ def extract(source, output=None, progress=None):
             shutil.rmtree(staging)
         raise
     finally:
+        release_large_rasters()
         if raw_workspace is not None:
             raw_workspace.cleanup()
         if pdfium_document is not None:

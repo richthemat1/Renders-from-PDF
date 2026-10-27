@@ -1,8 +1,19 @@
-.app-shell .content.work-content {
+/* Processing and history share one container so headings stay in place when switching tabs. */
+.app-shell .content.work-content,
+.app-shell .content.history-content {
   max-width: 1440px;
   min-height: calc(100vh - 72px);
-  padding: 40px 48px 44px;
+  padding: 40px var(--content-gutter) 44px;
   background: #f5f6fa;
+}
+
+.history-content .page-heading {
+  margin-top: 0;
+}
+
+.history-content h1 {
+  font-size: 30px;
+  font-weight: 700;
 }
 
 .processing-page {
@@ -819,14 +830,19 @@
 }
 
 @media (max-width: 1100px) {
-  .app-shell .content.work-content {
-    padding: 32px 24px 40px;
+  .app-shell .content.work-content,
+  .app-shell .content.history-content {
+    padding: 32px var(--content-gutter) 40px;
   }
 }
 
 @media (max-width: 560px) {
-  .app-shell .content.work-content {
+  .app-shell .content.work-content,
+  .app-shell .content.history-content {
     padding: 24px 16px 32px;
+  }
+  .history-content h1 {
+    font-size: 26px;
   }
   .processing-page {
     gap: 24px;

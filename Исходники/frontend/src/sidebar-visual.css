@@ -301,3 +301,160 @@
     margin-top: 8px;
   }
 }
+
+/* The collapse button lives in the menu itself, level with the app name so the tagline keeps its width. */
+.app-shell > .sidebar .brand {
+  position: relative;
+}
+
+.app-shell > .sidebar .sidebar-collapse {
+  position: absolute;
+  top: calc(50% - 25px);
+  right: 10px;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--sidebar-muted);
+}
+
+.app-shell:not(.is-sidebar-collapsed) > .sidebar .brand strong {
+  padding-right: 30px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-collapse {
+  position: static;
+  width: 32px;
+  height: 32px;
+}
+
+.app-shell > .sidebar .sidebar-collapse:hover:not(:disabled) {
+  background: #242a38;
+  color: #fff;
+}
+
+.app-shell > .sidebar .sidebar-collapse:focus-visible {
+  outline: 2px solid #9aa8ff;
+  outline-offset: 0;
+}
+
+/* Collapsed menu: a rail of section icons; names appear in .sidebar-tooltip. */
+.app-shell.is-sidebar-collapsed > .sidebar .brand {
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-height: 104px;
+  padding: 14px 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .brand-copy,
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-tip,
+.app-shell.is-sidebar-collapsed > .sidebar .nav-empty,
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-footer,
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-version,
+.app-shell.is-sidebar-collapsed > .sidebar .project-link > .spin {
+  display: none;
+}
+
+/* Names and counts leave the rail visually but keep each button's accessible name. */
+.app-shell.is-sidebar-collapsed > .sidebar .project-link .nav-text,
+.app-shell.is-sidebar-collapsed > .sidebar .project-link > b {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar > nav {
+  padding: 14px 12px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-label {
+  height: 1px;
+  margin: 12px 6px;
+  padding: 0;
+  overflow: hidden;
+  background: #2b303e;
+  font-size: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link {
+  justify-content: center;
+  width: 48px;
+  min-height: 40px;
+  margin-inline: auto;
+  padding: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link > span {
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 0;
+  font-size: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .back-link {
+  margin-bottom: 8px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-utilities {
+  padding: 10px 12px 14px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-bottom,
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-utilities:has(.sidebar-version) .sidebar-bottom {
+  grid-template-columns: 48px;
+  justify-content: center;
+  gap: 4px;
+}
+
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 320px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #2b3140;
+  color: #f2f4fa;
+  font-size: 13px;
+  line-height: 18px;
+  box-shadow: 0 6px 20px #0b0e1440;
+  transform: translateY(-50%);
+  pointer-events: none;
+  animation: sidebar-tooltip-in 90ms ease-out;
+}
+
+.sidebar-tooltip::before {
+  content: "";
+  position: absolute;
+  top: calc(50% - 4px);
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.sidebar-tooltip b {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: #3b4255;
+  color: #c9cfe0;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+@keyframes sidebar-tooltip-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-tooltip { animation: none; }
+}

@@ -3,6 +3,8 @@ import { request } from "./api";
 
 export const SIDEBAR_MIN_WIDTH = 248;
 export const SIDEBAR_MAX_WIDTH = 520;
+/** Width of the collapsed menu: section icons only, names in a hover popup. */
+export const SIDEBAR_RAIL_WIDTH = 72;
 const STORAGE_KEY = "pdf-photos.sidebar";
 
 interface SidebarPreferences {

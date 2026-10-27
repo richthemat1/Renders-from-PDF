@@ -342,6 +342,12 @@ def caption_for(page, region):
         if -inset <= above <= page['height']*.20:
             gap, side = abs(above), 'above'
         elif -inset <= below <= page['height']*.075:
+            # A line that sits closer above the next picture is that picture's caption.
+            if any(min(box['x1'], line['x1']) > max(box['x0'], line['x0'])
+                   and 0 <= box['top']-line['bottom'] < below
+                   and any(abs(box[key]-region[key]) >= 1 for key in ('x0', 'top', 'x1', 'bottom'))
+                   for box in page.get('regions', [])):
+                continue
             gap, side = abs(below)+(0 if contained else page['height']*.025), 'below'
         else:
             continue
@@ -364,8 +370,10 @@ def caption_for(page, region):
                 'reason': 'У одного изображения несколько заголовков. Сохранено целиком.'}
     if len(choices) > 1 and choices[1][0]-score < .012:
         other = choices[1][2]
+        # A heading above the nearest caption tops the same stack; the parent rule below names it.
+        stacked = side == choices[1][1] == 'above' and other['bottom'] <= best['top']+1
         if (other['text'] != best['text'] and abs(other['top']-best['top']) > 8
-                and other['size'] >= best['size']*.85):
+                and other['size'] >= best['size']*.85 and not stacked):
             return {'status': 'review', 'title': None,
                     'candidates': [best['text'], other['text']],
                     'reason': 'Неоднозначная связь изображения с соседними подписями.'}
@@ -374,7 +382,11 @@ def caption_for(page, region):
         parents = [line for line in page['captions'] if line is not best
                    and line['size'] >= best['size']*1.18
                    and 0 < best['top']-line['bottom'] < page['height']*.20
-                   and abs(line['x0']-best['x0']) < page['width']*.06]
+                   and abs(line['x0']-best['x0']) < page['width']*.06
+                   # A row of pictures between them means the heading belongs to an earlier section.
+                   and not any(box['top'] >= line['bottom'] and box['bottom'] <= best['top']
+                               and min(box['x1'], region['x1']) > max(box['x0'], region['x0'])
+                               for box in page.get('regions', []))]
         if parents:
             parent = min(parents, key=lambda line: best['top']-line['bottom'])
             title = parent['text']+' — '+title

@@ -123,9 +123,6 @@ button {
   color: #dbe2ea;
   z-index: 30;
 }
-.sidebar[hidden] {
-  display: none;
-}
 .sidebar-resizer {
   position: absolute;
   inset: 0 -4px 0 auto;

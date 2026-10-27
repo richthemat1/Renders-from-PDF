@@ -31,8 +31,11 @@
 .viewer-preview-dialog .dialog-heading-copy h2 {
   margin: 0;
   padding: 0;
-  max-height: 3.9em;
-  overflow-y: auto;
+  /* A clamp, not a scroll box: Windows draws bare scrollbar arrows for a one-pixel overflow. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
   font-size: 20px;
   font-weight: 700;
   line-height: 1.3;
