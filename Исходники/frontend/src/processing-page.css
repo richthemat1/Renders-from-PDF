@@ -58,7 +58,8 @@
   justify-content: center;
   gap: 6px;
   min-height: 32px;
-  padding: 3px 0;
+  padding: 3px 10px;
+  margin-inline: -10px;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.5;

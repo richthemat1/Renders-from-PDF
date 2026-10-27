@@ -491,7 +491,9 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) 0;
+  /* Room for the hover background; the negative margin keeps the text aligned with its neighbours. */
+  padding: var(--space-1) var(--space-2);
+  margin-inline: calc(var(--space-2) * -1);
   border: 0;
   background: transparent;
   color: var(--accent-dark);
@@ -1371,7 +1373,7 @@ fieldset {
   font-weight: 400;
 }
 .edit-panel.is-floating .select-visible {
-  padding: 0;
+  padding: 0 var(--space-2);
   gap: var(--space-1);
   border-color: transparent;
   background: transparent;
@@ -1379,7 +1381,7 @@ fieldset {
 }
 .edit-panel.is-floating .editor-move {
   width: 160px;
-  padding-inline: var(--space-1);
+  padding-inline: var(--space-2);
   border-color: transparent;
   background: transparent;
 }
@@ -1925,6 +1927,13 @@ kbd,
   color: #2e3d9c;
   background: #edf0fa;
   border-radius: var(--radius-sm);
+}
+/* A link inside a sentence must not slide its hover background over the preceding words. */
+.suppressed-summary .text-btn,
+.editor-removed .text-btn,
+.editor-conflict .text-btn {
+  margin-inline: 0;
+  padding-inline: 6px;
 }
 .recent-result:hover:not(:disabled),
 .history-row:hover:not(:disabled) {
