@@ -1,6 +1,6 @@
 """Offline image export with generic captions, tile assembly and safe fallbacks."""
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 import hashlib
 import html
 from io import BytesIO
@@ -10,19 +10,23 @@ import re
 import shutil
 import sys
 import tempfile
+from threading import RLock
 from urllib.parse import quote
 
 import pdfplumber
 from pdfminer.layout import LTContainer, LTFigure, LTImage
+from pdfminer.utils import mult_matrix
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ContentStream
 
 from photo_layout import (bounds, caption_for, caption_with_variant_context, clean_text,
-                          prepare_captions, prepare_variant_context, text_lines, tile_groups,
-                          variant_numbers)
+                          prepare_captions, prepare_selected_variants, prepare_variant_context,
+                          region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
+                          text_lines, tile_groups, variant_numbers)
 from photo_scan import analyse_scans, column_caption, prepare_scan_continuations, whole_scan_caption
 
-VERSION = '3.18'
+VERSION = '3.27'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -30,9 +34,28 @@ VARIANTS_DIR = 'Варианты'
 OTHER_DIR = 'Все остальное'
 SERVICE_DIR = '_Служебное'
 PERSPECTIVE_TITLE = re.compile(r'^\W*перспективн\w*\s+изображени', re.I)
+OUTDATED_VARIANT = re.compile(r'\b(?:предыдущ|первоначальн|прежн|устаревш|архивн|отклон[её]нн|неактуальн)\w*'
+                              r'|\bне\s+принят\w*', re.I)
+SUPPRESSED_DIR = 'Служебные элементы'
+PDFIUM_LOCK = RLock()
 
 
-def group_caption(match):
+def perspective_conflict(pages):
+    """Return the presentation's own evidence that variant 1 is not the current design, if any."""
+    for page in pages:
+        for line in page['lines']:
+            if variant_numbers(line['text']) == {1} and OUTDATED_VARIANT.search(line['text']):
+                text = line['text'] if len(line['text']) <= 80 else line['text'][:79].rstrip()+'…'
+                return {'kind': 'outdated_variant', 'page': page['number'], 'text': line['text'],
+                        'reason': f'вариант 1 в презентации помечен как «{text}» (страница {page["number"]})'}
+    selected = next((page['selected_variant'] for page in pages if page.get('selected_variant')), None)
+    if selected and selected['variant'] != 1:
+        return {'kind': 'selected_variant', 'page': selected['page'], 'variant': selected['variant'],
+                'reason': f'в таблице на странице {selected["page"]} выбран вариант {selected["variant"]}'}
+    return None
+
+
+def group_caption(match, conflict=None):
     """Keep the full caption, but group every explicit variant by its number."""
     match = dict(match, variant=None)
     if match['status'] != 'named':
@@ -45,6 +68,12 @@ def group_caption(match):
     if numbers:
         match['variant'] = numbers.pop()
         return match, f'Вариант {match["variant"]}'
+    if PERSPECTIVE_TITLE.match(match['title']) and conflict is not None:
+        # The variant 1 default is a guess; the presentation itself contradicts it, so a person decides.
+        match.update(status='review', candidates=[match['title']], variant_source='perspective_conflict',
+                     reason=(match.get('reason') or '')+' Номер варианта не указан. Перспективное изображение '
+                            f'не отнесено к варианту 1: {conflict["reason"]}. Перенесите его в нужный вариант.')
+        return match, 'На проверку'
     if PERSPECTIVE_TITLE.match(match['title']):
         # A perspective view without any variant number in its caption, page or section belongs to variant 1.
         match.update(variant=1, variant_source='perspective_default',
@@ -114,12 +143,31 @@ def safe_name(text, limit=80):
     text = re.sub(r'\s+', ' ', text).strip(' .') or 'Без подписи'
     if len(text) > limit:
         if limit >= 40:
-            text = text[:limit-27].rstrip()+' … '+text[-24:].lstrip()
+            tail = text[-24:]
+            if len(text) > 24 and not text[-25].isspace() and ' ' in tail:
+                tail = tail.split(' ', 1)[1]
+            head = text[:limit-len(tail)-3]
+            if len(head) < len(text) and not text[len(head)].isspace() and ' ' in head:
+                head = head.rsplit(' ', 1)[0]
+            text = head.rstrip(' .—–-')+' … '+tail.lstrip(' .—–-')
         else:
-            text = text[:limit].rstrip(' .')
+            shortened = text[:limit]
+            if not text[limit].isspace() and ' ' in shortened:
+                shortened = shortened.rsplit(' ', 1)[0]
+            text = shortened.rstrip(' .—–-')
     if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', text, re.I):
         text = '_'+text
     return text
+
+
+def available_folder_name(title, limit, owners, key):
+    """Readable disk names stay distinct through numeric suffixes, never opaque hashes."""
+    for number in range(1, 10000):
+        suffix = '' if number == 1 else f' ({number})'
+        folder = safe_name(title, limit-len(suffix))+suffix
+        if folder.casefold() not in owners or owners[folder.casefold()] == key:
+            return folder
+    raise OutputPathError('Не удалось подобрать свободное имя папки результата.')
 
 
 def unused_folder(path):
@@ -128,6 +176,42 @@ def unused_folder(path):
         if not candidate.exists():
             return candidate
     raise ValueError('Не удалось подобрать свободное имя результата.')
+
+
+class OutputPathError(ValueError):
+    """A destination that cannot hold the minimum safe export structure."""
+
+
+def check_output_path(destination):
+    destination = Path(destination).resolve()
+    # Leave room for «Все остальное», a useful caption, and a numbered PDF.
+    if 214 - len(str(destination / OTHER_DIR)) < 16:
+        raise OutputPathError('Путь папки сохранения слишком длинный. Нажмите «Выбрать другую папку» '
+                              'и выберите папку ближе к корню диска, например C:\\Результаты.')
+    return destination
+
+
+def planned_output(source, parent=None):
+    """Pick a readable unused folder within the path budget, without reading the PDF."""
+    source = Path(source).resolve()
+    parent = Path(parent).resolve() if parent is not None else source.parent
+    root_budget = 214 - 16 - len(OTHER_DIR) - 1
+    name_budget = root_budget - len(str(parent)) - 1
+    if name_budget < 8:
+        check_output_path(parent / 'Результат')
+        raise OutputPathError('Для результата не хватает места в пути. Выберите другую папку ближе к корню диска.')
+    for number in range(1, 10000):
+        suffix = '' if number == 1 else f' ({number})'
+        available = name_budget - len(suffix)
+        if available < 3:
+            break
+        name = safe_name(source.stem, 78) + ' — PDF'
+        if len(name) > available:
+            name = safe_name(source.stem, available-6)+' — PDF' if available >= 10 else safe_name('Результат', available)
+        destination = check_output_path(parent / (name + suffix))
+        if not destination.exists():
+            return destination
+    raise OutputPathError('Не удалось подобрать короткое свободное имя результата. Выберите другую папку.')
 
 
 def image_paths(page):
@@ -161,6 +245,211 @@ def page_images(page):
     return list(walk(page.layout))
 
 
+def selection_table_references(page, lines):
+    if not any(SELECTION_REFERENCE.fullmatch(line['text']) for line in lines):
+        return []
+    references = []
+    for table in page.find_tables():
+        for row in table.extract():
+            for cell in row:
+                match = SELECTION_REFERENCE.fullmatch(clean_text(cell or ''))
+                if match:
+                    references.append({'marker': match[1], 'variant': int(match[2] or match[3]),
+                                       'cell_text': clean_text(cell),
+                                       'table_bbox': [round(value, 3) for value in table.bbox]})
+    return references
+
+
+def opaque_paints(pdf_page, reader):
+    """Prove only axis-aligned opaque paints, respecting alpha, masks and rectangular clips.
+
+    Complex clipping, blends, transparency groups and rotated rectangles deliberately
+    cannot prove an occluder. Coordinates here stay in PDF space, independent of page rotation.
+    """
+    paints = []
+    def rectangle(values, matrix):
+        if abs(matrix[1]) > 1e-6 or abs(matrix[2]) > 1e-6:
+            return None
+        x, y, width, height = map(float, values)
+        points = [(px*matrix[0]+matrix[4], py*matrix[3]+matrix[5])
+                  for px, py in ((x, y), (x+width, y+height))]
+        return [min(p[0] for p in points), min(p[1] for p in points),
+                max(p[0] for p in points), max(p[1] for p in points)]
+    def intersect(first, second):
+        return [max(first[0], second[0]), max(first[1], second[1]),
+                min(first[2], second[2]), min(first[3], second[3])]
+    def opaque(state):
+        return (state['alpha'] == 1 and state['normal'] and not state['mask']
+                and not state['unsafe'] and state['clip_known'])
+    def walk(stream, resources, initial, ancestors=frozenset()):
+        state, stack, path = dict(initial), [], []
+        for operands, operator in ContentStream(stream, reader).operations:
+            if operator == b'q':
+                stack.append(dict(state))
+            elif operator == b'Q':
+                if stack:
+                    state = stack.pop()
+            elif operator == b'cm':
+                state['ctm'] = mult_matrix(tuple(map(float, operands)), state['ctm'])
+            elif operator == b'gs':
+                graphics = resources.get('/ExtGState', {}).get(operands[0])
+                if graphics is None:
+                    state['unsafe'] = True
+                    continue
+                graphics = graphics.get_object()
+                state['alpha'] = float(graphics.get('/ca', state['alpha']))
+                if '/BM' in graphics:
+                    state['normal'] = graphics['/BM'] in ('/Normal', ['/Normal'])
+                if '/SMask' in graphics:
+                    state['mask'] = graphics['/SMask'] != '/None'
+                if graphics.get('/op') == True or graphics.get('/OP') == True:
+                    state['unsafe'] = True
+            elif operator == b're':
+                if path is not None:
+                    path.append(rectangle(operands, state['ctm']))
+            elif operator in (b'm', b'l', b'c', b'v', b'y', b'h'):
+                path = None
+            elif operator in (b'W', b'W*'):
+                if path is not None and len(path) == 1 and path[0] is not None:
+                    state['clip'] = intersect(state['clip'], path[0])
+                else:
+                    state['clip_known'] = False
+            elif operator in (b'cs', b'scn'):
+                if operator == b'cs':
+                    state['fill_simple'] = str(operands[0]) != '/Pattern'
+                elif operands and str(operands[-1]).startswith('/'):
+                    state['fill_simple'] = False
+            elif operator in (b'g', b'rg', b'k'):
+                state['fill_simple'] = True
+            elif operator in (b'f', b'F', b'f*', b'B', b'B*', b'b', b'b*'):
+                if (path is not None and len(path) == 1 and path[0] is not None
+                        and opaque(state) and state['fill_simple']):
+                    paints.append({'kind': 'rectangle', 'opaque_bbox': intersect(path[0], state['clip']),
+                                   'order': len(paints)})
+                path = []
+            elif operator in (b'n', b'S', b's'):
+                path = []
+            elif operator == b'Do':
+                reference = resources.get('/XObject', {}).get(operands[0])
+                if reference is None:
+                    continue
+                obj = reference.get_object()
+                object_id = getattr(reference, 'idnum', None)
+                if obj.get('/Subtype') == '/Image':
+                    box = rectangle((0, 0, 1, 1), state['ctm'])
+                    visible = intersect(box, state['clip']) if box is not None and state['clip_known'] else None
+                    covers = (visible if opaque(state) and not obj.get('/SMask') and not obj.get('/Mask')
+                              and obj.get('/ImageMask') != True else None)
+                    paints.append({'kind': 'image', 'object_id': object_id, 'bbox': box,
+                                   'opaque_bbox': covers, 'order': len(paints)})
+                elif obj.get('/Subtype') == '/Form' and object_id not in ancestors and len(ancestors) < 16:
+                    nested = dict(state)
+                    nested['ctm'] = mult_matrix(tuple(map(float, obj.get('/Matrix', (1, 0, 0, 1, 0, 0)))), state['ctm'])
+                    form_box = obj.get('/BBox')
+                    if form_box:
+                        x0, y0, x1, y1 = map(float, form_box)
+                        clip = rectangle((x0, y0, x1-x0, y1-y0), nested['ctm'])
+                        if clip is None:
+                            nested['clip_known'] = False
+                        else:
+                            nested['clip'] = intersect(nested['clip'], clip)
+                    if obj.get('/Group', {}).get('/S') == '/Transparency':
+                        nested['unsafe'] = True
+                    walk(obj, obj.get('/Resources', resources), nested, ancestors | {object_id})
+    initial = {'ctm': (1, 0, 0, 1, 0, 0), 'alpha': 1, 'normal': True, 'mask': False,
+               'unsafe': False, 'clip_known': True, 'fill_simple': True,
+               'clip': list(map(float, pdf_page.cropbox))}
+    walk(pdf_page.get_contents(), pdf_page.get('/Resources', {}), initial)
+    return paints
+
+
+def prepare_image_quality(source, pages):
+    placements, identities = defaultdict(list), {}
+    with PdfReader(source) as reader:
+        for page in pages:
+            try:
+                paints = opaque_paints(reader.pages[page['number']-1], reader)
+            except Exception as error:
+                paints = []
+                page['quality_warning'] = {'page': page['number'], 'reason': 'Проверка перекрытий: '+str(error),
+                                           'fallback': 'Изображения с недоказанным перекрытием сохранены.'}
+            by_object = defaultdict(list)
+            for paint in paints:
+                if paint['kind'] == 'image':
+                    by_object[paint['object_id']].append(paint)
+            for image in page['images']:
+                object_id = image['object_id']
+                if object_id not in identities:
+                    try:
+                        obj = reader.get_object(object_id)
+                        identity = hashlib.sha256(obj.get_data())
+                        identity.update(str((obj.get('/Width'), obj.get('/Height'), obj.get('/ColorSpace'),
+                                             obj.get('/BitsPerComponent'))).encode())
+                        for name in ('/SMask', '/Mask'):
+                            mask = obj.get(name)
+                            if mask is not None:
+                                mask = mask.get_object() if hasattr(mask, 'get_object') else mask
+                                identity.update(mask.get_data() if hasattr(mask, 'get_data') else str(mask).encode())
+                        identities[object_id] = identity.hexdigest()
+                    except Exception:
+                        # An unavailable identity is never evidence that two resources are equal.
+                        identities[object_id] = None
+                image['identity_sha256'] = identities[object_id]
+                if image['identity_sha256']:
+                    placements[image['identity_sha256']].append((page, image))
+                occurrences = by_object[object_id]
+                if not occurrences:
+                    continue
+                paint = occurrences.pop(0)
+                box = paint['bbox']
+                if box is None:
+                    continue
+                for covering in paints[paint['order']+1:]:
+                    cover = covering.get('opaque_bbox')
+                    if cover and cover[0] <= box[0]+1e-6 and cover[1] <= box[1]+1e-6 and cover[2] >= box[2]-1e-6 and cover[3] >= box[3]-1e-6:
+                        image['fully_occluded'] = {'paint_order': paint['order'], 'covered_by': covering}
+                        break
+    for occurrences in placements.values():
+        eligible = [(page, image) for page, image in occurrences
+                    if (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height'])
+                        <= (.22 if region_is_clipped(page, image) else .08)]
+        def position(page, image):
+            return (image['x0']/page['width'], image['top']/page['height'],
+                    image['x1']/page['width'], image['bottom']/page['height'])
+        clusters = []
+        for page, image in eligible:
+            near = [(other_page, other) for other_page, other in eligible
+                    if all(abs(a-b) <= .015 for a, b in zip(position(page, image), position(other_page, other)))]
+            if len({other_page['number'] for other_page, _ in near}) >= 3:
+                clusters.append(near)
+        static_pages = sorted({page['number'] for cluster in clusters for page, _ in cluster})
+        if not static_pages:
+            continue
+        for page, image in eligible:
+            # A stable placement proves the auxiliary asset's role. The same small
+            # resource can move on a later slide without becoming a new photograph.
+            image['repeated_static'] = {'pages': static_pages, 'identity_sha256': image['identity_sha256']}
+
+
+def group_suppression(page, group):
+    """Apply fragment thresholds to assembled regions, preserving low-resolution large photos."""
+    box = bounds(group)
+    if all(image.get('fully_occluded') for image in group):
+        return {'suppression_code': 'fully_occluded', 'reason': 'Изображение полностью закрыто более поздним непрозрачным элементом.',
+                'evidence': [image['fully_occluded'] for image in group]}
+    if all(image.get('repeated_static') for image in group) and not any('scan_crop_px' in image for image in group):
+        return {'suppression_code': 'repeated_static', 'reason': 'Одинаковый вспомогательный элемент повторяется в одном месте не менее чем на трёх страницах.',
+                'evidence': [image['repeated_static'] for image in group]}
+    left, top = page['origin']
+    width = max(0, min(box['x1'], left+page['width'])-max(box['x0'], left))
+    height = max(0, min(box['bottom'], top+page['height'])-max(box['top'], top))
+    fraction = width*height/(page['width']*page['height'])
+    if fraction < .01:
+        return {'suppression_code': 'small_fragment', 'reason': 'Мелкий отдельный элемент занимает менее 1 % площади страницы после сборки соприкасающихся фрагментов.',
+                'visible_page_fraction': round(fraction, 6)}
+    return None
+
+
 def inspect(source, progress=None):
     pages = []
     with pdfplumber.open(source) as document:
@@ -169,11 +458,13 @@ def inspect(source, progress=None):
             if progress:
                 progress({'stage': 'labels', 'current': number, 'total': total, 'found': 0})
             images = page_images(page)
+            lines = text_lines(page.extract_words(extra_attrs=['size', 'fontname']))
             pages.append({'number': number, 'width': page.width, 'height': page.height,
                           'origin': [page.bbox[0], page.bbox[1]],
-                          'lines': text_lines(page.extract_words(extra_attrs=['size', 'fontname'])),
+                          'lines': lines, 'selection_references': selection_table_references(page, lines),
                           'images': images, 'source_components': len(images)})
             page.close()
+    prepare_image_quality(source, pages)
     analyse_scans(source, pages, image_paths, progress)
     headers = Counter()
     for page in pages:
@@ -185,6 +476,7 @@ def inspect(source, progress=None):
             image['repeated_header'] = (image['bottom'] < page['height']*.14
                                         and headers[key] >= max(3, len(pages)*.5))
     prepare_captions(pages)
+    prepare_selected_variants(pages)
     prepare_variant_context(pages)
     prepare_scan_continuations(pages)
     return pages
@@ -261,6 +553,11 @@ def save_group(page, paths, group, base):
 
 
 def save_crop(pdfium_document, page, box, base):
+    with PDFIUM_LOCK:
+        return _save_crop(pdfium_document, page, box, base)
+
+
+def _save_crop(pdfium_document, page, box, base):
     pdf_page = pdfium_document[page['number']-1]
     scale = 200/72
     left = max(0, box['x0']-page['origin'][0])
@@ -328,13 +625,13 @@ def render_previews(staging, report, progress=None):
     thumbnails.mkdir(parents=True)
     hide(staging/SERVICE_DIR)
     report['preview_errors'] = []
+    found = sum(not entry.get('removed') for entry in report['images'])
     for index, entry in enumerate(report['images'], 1):
         if progress:
-            progress({'stage': 'export', 'current': index, 'total': len(report['images']),
-                      'found': len(report['images'])})
+            progress({'stage': 'export', 'current': index, 'total': len(report['images']), 'found': found})
         path = thumbnails/f'{index:05d}.png'
         try:
-            with pypdfium2.PdfDocument(staging/entry['file']) as document:
+            with PDFIUM_LOCK, pypdfium2.PdfDocument(staging/entry['file']) as document:
                 pdf_page = document[entry['pdf_page']-1]
                 try:
                     scale = min(min(640, entry['size'][0])/pdf_page.get_width(),
@@ -357,18 +654,24 @@ def render_previews(staging, report, progress=None):
 
 def write_gallery(staging, report):
     escape = html.escape
-    folders = report['counts_by_folder']
+    labels = report.get('folder_labels') or {}
+    def folder_label(folder):
+        return labels.get(folder, folder)
     images = [(index, entry) for index, entry in enumerate(report['images']) if not entry.get('removed')]
     groups = {'variant': [], 'review': [], 'unsigned': [], 'caption': []}
-    for number, folder in enumerate(folders, 1):
-        entries = [(index, entry) for index, entry in images if entry['folder'] == folder]
-        if folder == 'На проверку':
+    members = {}
+    for index, entry in images:
+        members.setdefault((entry_group(entry), entry['folder']), []).append((index, entry))
+    group_keys = sorted(members, key=lambda key: (key[1], key[0] is None, key[0] or 0))
+    for number, (variant, folder) in enumerate(group_keys, 1):
+        entries = members[variant, folder]
+        if variant is not None:
+            kind = 'variant'
+            entries.sort(key=lambda item: item[1]['pdf_page'])
+        elif folder == 'На проверку':
             kind = 'review'
         elif folder == 'Без подписи':
             kind = 'unsigned'
-        elif any(entry_group(entry) is not None for _, entry in entries):
-            kind = 'variant'
-            entries.sort(key=lambda item: item[1]['pdf_page'])
         else:
             kind = 'caption'
         groups[kind].append((f'g{number}', folder, entries))
@@ -381,6 +684,7 @@ def write_gallery(staging, report):
         if entry['preview']:
             thumbnail_url = quote(entry['preview'].replace('\\', '/'), safe='/')
             thumbnail = (f'<img loading="lazy" decoding="async" src="{thumbnail_url}" '
+                         f'width="{entry["size"][0]}" height="{entry["size"][1]}" '
                          f'alt="{escape(title)}">')
             zoom = (f'<button class="zoom" type="button" data-src="{thumbnail_url}" '
                     f'aria-label="Увеличить изображение">{ICONS["zoom"]}</button>')
@@ -388,8 +692,8 @@ def write_gallery(staging, report):
             thumbnail = f'<span class="missing">{ICONS["image"]}Миниатюра не создана</span>'
             zoom = ''
         badge = ''
-        if kind == 'caption' and entry['folder'] != entry['title']:
-            badge = f'<span class="badge">{ICONS["folder"]}{escape(entry["folder"])}</span>'
+        if kind == 'caption' and folder_label(entry['folder']) != entry['title']:
+            badge = f'<span class="badge">{ICONS["folder"]}{escape(folder_label(entry["folder"]))}</span>'
         if entry.get('manual'):
             badge += f'<span class="badge accent">{ICONS["edit"]}Изменено вручную</span>'
         candidates = ''
@@ -398,7 +702,7 @@ def write_gallery(staging, report):
                           + ''.join(f'<li>{escape(c)}</li>' for c in entry['candidates'])+'</ul>')
         id_attr = f' id="{anchor}"' if anchor else ''
         return (f'<article class="card"{id_attr} data-id="{index}" '
-                f'data-search="{escape(" ".join([title]+entry["candidates"]))}" '
+                f'data-search="{escape(" ".join([title, folder_label(entry["folder"])]+entry["candidates"]))}" '
                 f'data-folder="{escape(entry["folder"])}" data-pdf="{url}"'
                 + (f' data-file-name="{escape(Path(entry["file"]).stem)}"' if entry['variant'] is None else '')
                 + (' data-folder-rename="1"' if kind == 'caption' else '') + '>'
@@ -416,7 +720,7 @@ def write_gallery(staging, report):
         for anchor, folder, entries in groups[kind]:
             number = f' data-variant="{entry_group(entries[0][1])}"' if kind == 'variant' else ''
             sections.append(f'<section id="{anchor}" class="group {kind}" data-folder="{escape(folder)}"{number}>'
-                            f'<header class="group-head"><h2>{escape(folder)}</h2>'
+                            f'<header class="group-head"><h2>{escape(folder_label(folder))}</h2>'
                             f'<span class="count">{len(entries)}</span><p class="note">{notes[kind]}</p></header>'
                             f'<div class="grid">{"".join(card(e, kind) for e in entries)}</div></section>')
     if groups['caption']:
@@ -433,7 +737,7 @@ def write_gallery(staging, report):
         if not members:
             continue
         items = ''.join(f'<li><a class="nav-item {"warn" if folder in ("На проверку", "Без подписи") else ""}" '
-                        f'href="#{anchor}" data-folder="{escape(folder)}" title="{escape(folder)}"><span>{escape(folder)}</span>'
+                        f'href="#{anchor}" data-folder="{escape(folder)}" title="{escape(folder_label(folder))}"><span>{escape(folder_label(folder))}</span>'
                         f'<b>{len(entries)}</b></a></li>' for anchor, folder, entries in members)
         nav.append(f'<div class="nav-group"><h3>{titles[kind]}</h3><ul>{items}</ul></div>')
 
@@ -590,7 +894,7 @@ border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);transition:
 .card:target{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .media{position:relative;background:var(--thumb)}
 .cover{display:flex;align-items:center;justify-content:center;aspect-ratio:4/3;padding:12px;cursor:pointer}
-.cover img{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.18);
+.cover img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.18);
 transition:transform .25s ease-out}
 .card:hover .cover img{transform:scale(1.02)}
 .zoom{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;
@@ -953,24 +1257,63 @@ try{if(sessionStorage.getItem("pdf-photos-edit")){sessionStorage.removeItem("pdf
 
 def extract(source, output=None, progress=None):
     source = Path(source).resolve(strict=True)
+    # Destination errors must be found before PDF analysis and OCR.
+    destination = check_output_path(output) if output else planned_output(source)
+    if destination.exists():
+        raise ValueError(f'Папка уже существует: {destination}')
     pages = inspect(source, progress)
     total_components = sum(page['source_components'] for page in pages)
     if not total_components:
         raise ValueError('В PDF не найдено отдельных растровых изображений. На страницах может быть только текст или векторная графика.')
-    destination = Path(output).resolve() if output else unused_folder(source.with_name(safe_name(source.stem, 78)+' — PDF'))
-    if destination.exists():
-        raise ValueError(f'Папка уже существует: {destination}')
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.pdf-photos-', dir=destination.parent)).resolve()
     if staging.parent != destination.parent.resolve() or not staging.name.startswith('.pdf-photos-'):
         raise ValueError('Некорректный путь временной папки.')
     folders, folder_owners = {}, {'без подписи': '__unsigned', 'на проверку': '__review',
                                  '_просмотр': '__preview', 'отчёт.json': '__report', 'просмотр.html': '__gallery'}
-    entries, errors = [], []
-    warnings = [page['scan_warning'] for page in pages if page.get('scan_warning')]
+    entries, errors, suppressed, folder_labels = [], [], [], {}
+    warnings = [page[key] for page in pages for key in ('scan_warning', 'quality_warning') if page.get(key)]
+    conflict = perspective_conflict(pages)
     pdfium_document = None
     reader = None
     raw_workspace = None
+
+    def export_region(page, paths, group, box, sequence, target, title, quiet=False):
+        """Write one region as a single-page PDF; return its report fields or an error record."""
+        nonlocal pdfium_document
+        base = raw_folder/f'{page["number"]:03d}-{sequence:03d}'
+        try:
+            raster, size, method = save_group(reader.pages[page['number']-1], paths, group, base)
+        except Exception as error:
+            try:
+                if pdfium_document is None:
+                    import pypdfium2
+                    with PDFIUM_LOCK:
+                        pdfium_document = pypdfium2.PdfDocument(source)
+                raster, size, method = save_crop(pdfium_document, page, box, base)
+                if not quiet:
+                    warnings.append({'page': page['number'], 'image': sequence,
+                                     'reason': str(error), 'fallback': 'Снимок области страницы, 200 dpi.'})
+            except Exception as fallback_error:
+                return {'error': str(error), 'fallback_error': str(fallback_error)}
+        bbox = [box[k] for k in ('x0', 'top', 'x1', 'bottom')]
+        try:
+            with raster.open('rb') as stream:
+                image_checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+            matrix = group[0].get('matrix') if len(group) == 1 and method == 'original' else None
+            image_to_pdf(raster, target, bbox, title, matrix)
+        except Exception as error:
+            target.unlink(missing_ok=True)
+            return {'error': f'Не удалось сохранить PDF: {error}'}
+        finally:
+            raster.unlink(missing_ok=True)
+        with target.open('rb') as stream:
+            checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+        return {'file': str(target.relative_to(staging)), 'size': size, 'method': method,
+                'sha256': checksum, 'image_sha256': image_checksum,
+                'pdf_page_size_pt': [round(bbox[2]-bbox[0], 4), round(bbox[3]-bbox[1], 4)],
+                'bbox': [round(box[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
+
     try:
         reader = PdfReader(source)
         raw_workspace = tempfile.TemporaryDirectory(prefix='.raster-', dir=staging)
@@ -982,11 +1325,51 @@ def extract(source, output=None, progress=None):
             groups = tile_groups(page['images'])
             if page.get('scan', {}).get('panels'):
                 groups.sort(key=lambda group: min(im['scan_order'] for im in group))
-            page['regions'] = [bounds(group) for group in groups]
-            for sequence, group in enumerate(groups, 1):
+            planned_groups = [(group, group_suppression(page, group)) for group in groups]
+            page['regions'] = [bounds(group) for group, suppression in planned_groups if suppression is None]
+            for sequence, (group, suppression) in enumerate(planned_groups, 1):
                 if progress:
-                    progress({'stage': 'images', 'current': page['number'], 'total': len(pages), 'found': len(entries)})
+                    progress({'stage': 'images', 'current': page['number'], 'total': len(pages),
+                              'found': sum(not entry.get('removed') for entry in entries)})
                 box = bounds(group)
+                components = [{'object_id': im['object_id'], 'resource': im['name'],
+                               'matrix': im.get('matrix'), 'size': list(im['srcsize']),
+                               **({'crop_px': im['scan_crop_px'], 'source_bbox': im['source_bbox']}
+                                  if 'scan_crop_px' in im else {})} for im in group]
+                if suppression is not None:
+                    first = group[0]
+                    if len(group) == 1:
+                        crop = first.get('scan_crop_px')
+                        suppressed_size = [crop[2]-crop[0], crop[3]-crop[1]] if crop else list(first['srcsize'])
+                    else:
+                        suppressed_size = [round((box['x1']-box['x0'])*first['srcsize'][0]/max(first['x1']-first['x0'], .01)),
+                                           round((box['bottom']-box['top'])*first['srcsize'][1]/max(first['bottom']-first['top'], .01))]
+                    record = {'page': page['number'], 'sequence': sequence,
+                              'bbox': [round(box[k], 3) for k in ('x0', 'top', 'x1', 'bottom')],
+                              'size': suppressed_size, 'components': components, **suppression}
+                    suppressed.append(record)
+                    # Keep a recoverable copy: the filter is a heuristic, a person may still need the element.
+                    service_folder = staging/SERVICE_DIR/SUPPRESSED_DIR
+                    name = f'Страница {page["number"]:03d} — {sequence:03d}.pdf'
+                    if len(str(destination/SERVICE_DIR/SUPPRESSED_DIR/name)) > 239:
+                        record['export_error'] = 'Путь результата слишком длинный для копии служебного элемента.'
+                        continue
+                    service_folder.mkdir(parents=True, exist_ok=True)
+                    saved = export_region(page, paths, group, box, sequence, service_folder/name, None, quiet=True)
+                    if 'error' in saved:
+                        record['export_error'] = saved['error']
+                        continue
+                    record['image'] = len(entries)
+                    entries.append({'status': 'unsigned', 'title': None, 'candidates': [],
+                                    'reason': suppression['reason'], 'variant': None, 'group': None,
+                                    'page': page['number'], 'sequence': sequence, 'folder': 'Без подписи',
+                                    **saved, 'components': components, 'removed': True, 'suppressed': True,
+                                    'suppression_code': suppression['suppression_code'],
+                                    'original_location': {'folder': 'Без подписи', 'status': 'unsigned',
+                                                          'label': 'Без подписи',
+                                                          'reason': 'Возвращено вручную из служебных элементов.'}})
+                    continue
+                box['repeated_static'] = all(im.get('repeated_static') for im in group)
                 if all(im.get('repeated_header') for im in group):
                     match = {'status': 'unsigned', 'title': None, 'candidates': [],
                              'reason': 'Повторяющийся элемент шапки: подпись рендера к нему не применяется.'}
@@ -994,10 +1377,11 @@ def extract(source, output=None, progress=None):
                     match = caption_for(page, box)
                     match = whole_scan_caption(page, match)
                     match = column_caption(page, box, match)
+                    match = selected_caption_with_variant(page, match)
                     match = caption_with_variant_context(page, box, match)
                 if page.get('scan'):
                     match['caption_method'] = 'windows_ocr' if not page['scan'].get('error') else 'unavailable'
-                match, grouping_title = group_caption(match)
+                match, grouping_title = group_caption(match, conflict)
                 if match['status'] == 'named':
                     key = clean_text(grouping_title).casefold()
                     if key not in folders:
@@ -1005,15 +1389,14 @@ def extract(source, output=None, progress=None):
                         # file name «Страница 000 — 000.pdf» still fits the 239-character path budget.
                         limit = min(80, 214-len(str(destination/OTHER_DIR)))
                         if limit < 16:
-                            raise ValueError('Путь результата слишком длинный. Переместите исходный PDF в папку с более коротким путём.')
-                        folder = safe_name(grouping_title, limit)
-                        if folder.casefold() in folder_owners and folder_owners[folder.casefold()] != key:
-                            folder = folder[:limit-11].rstrip(' .')+' — '+hashlib.sha256(key.encode()).hexdigest()[:8]
+                            raise OutputPathError('Путь результата слишком длинный. Выберите другую папку ближе к корню диска.')
+                        folder = available_folder_name(grouping_title, limit, folder_owners, key)
                         folders[key] = folder
                         folder_owners[folder.casefold()] = key
                     folder = folders[key]
                 else:
                     folder = 'На проверку' if match['status'] == 'review' else 'Без подписи'
+                folder_labels[folder] = grouping_title
                 match['group'] = 'variant' if match['variant'] is not None else None
                 relative_folder = group_dir(folder, entry_group(match))
                 target_folder = staging/relative_folder
@@ -1022,73 +1405,52 @@ def extract(source, output=None, progress=None):
                 stem = prefix+(' — '+safe_name(match['title']) if match['title'] else '')
                 available = 239-len(str(destination/relative_folder))-1-len('.pdf')
                 if available < len(prefix):
-                    raise ValueError('Путь результата слишком длинный. Переместите исходный PDF в папку с более коротким путём.')
+                    raise OutputPathError('Путь результата слишком длинный. Выберите другую папку ближе к корню диска.')
                 target = target_folder/(stem[:available].rstrip(' .')+'.pdf')
-                base = raw_folder/f'{page["number"]:03d}-{sequence:03d}'
-                try:
-                    raster, size, method = save_group(reader.pages[page['number']-1], paths, group, base)
-                except Exception as error:
-                    try:
-                        if pdfium_document is None:
-                            import pypdfium2
-                            pdfium_document = pypdfium2.PdfDocument(source)
-                        raster, size, method = save_crop(pdfium_document, page, box, base)
-                        warnings.append({'page': page['number'], 'image': sequence,
-                                         'reason': str(error), 'fallback': 'Снимок области страницы, 200 dpi.'})
-                    except Exception as fallback_error:
-                        errors.append({'page': page['number'], 'image': sequence,
-                                       'components': len(group), 'error': str(error),
-                                       'fallback_error': str(fallback_error)})
-                        continue
-                bbox = [box[k] for k in ('x0', 'top', 'x1', 'bottom')]
-                try:
-                    with raster.open('rb') as stream:
-                        image_checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-                    matrix = group[0].get('matrix') if len(group) == 1 and method == 'original' else None
-                    image_to_pdf(raster, target, bbox, match['title'], matrix)
-                except Exception as error:
-                    target.unlink(missing_ok=True)
-                    errors.append({'page': page['number'], 'image': sequence,
-                                   'components': len(group), 'error': f'Не удалось сохранить PDF: {error}'})
+                saved = export_region(page, paths, group, box, sequence, target, match['title'])
+                if 'error' in saved:
+                    errors.append({'page': page['number'], 'image': sequence, 'components': len(group), **saved})
                     continue
-                finally:
-                    raster.unlink(missing_ok=True)
-                with target.open('rb') as stream:
-                    checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
                 entries.append(match | {'page': page['number'], 'sequence': sequence, 'folder': folder,
-                                        'file': str(target.relative_to(staging)), 'size': size,
-                                        'method': method, 'sha256': checksum, 'image_sha256': image_checksum,
-                                        'pdf_page_size_pt': [round(bbox[2]-bbox[0], 4), round(bbox[3]-bbox[1], 4)],
-                                        'bbox': [round(box[k], 3) for k in ('x0', 'top', 'x1', 'bottom')],
-                                        'components': [{'object_id': im['object_id'], 'resource': im['name'],
-                                                        'matrix': im.get('matrix'),
-                                                        'size': list(im['srcsize']),
-                                                        **({'crop_px': im['scan_crop_px'], 'source_bbox': im['source_bbox']}
-                                                           if 'scan_crop_px' in im else {})} for im in group]})
+                                        **saved, 'components': components})
             if progress:
-                progress({'stage': 'images', 'current': page['number'], 'total': len(pages), 'found': len(entries)})
-        if not entries:
+                progress({'stage': 'images', 'current': page['number'], 'total': len(pages),
+                          'found': sum(not entry.get('removed') for entry in entries)})
+        active = [entry for entry in entries if not entry.get('removed')]
+        if not active and (errors or not suppressed):
             raise ValueError('Не удалось сохранить изображения. '+json.dumps(errors[:3], ensure_ascii=False))
         raw_workspace.cleanup()
-        documents = merge_variant_pdfs(staging, entries, progress)
+        for entry in entries:
+            if entry.get('removed'):
+                entry['pdf_page'] = 1
+        documents = merge_variant_pdfs(staging, active, progress)
         with source.open('rb') as stream:
             checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
         report = {'version': VERSION, 'revision': 0, 'layout': LAYOUT, 'source': str(source), 'source_sha256': checksum,
                   'output_format': 'pdf', 'grouping': 'explicit_variant_then_caption',
                   'variant_output': 'one_multipage_pdf_per_variant',
                   'folders': {'other': OTHER_DIR, 'service': SERVICE_DIR},
+                  'folder_labels': folder_labels,
                   'page_contexts': [{'page': p['number'], 'divider': p['variant_divider'],
                                      'context': p['variant_context']} for p in pages],
                   'output': str(destination), 'pages': len(pages), 'source_components': total_components,
                   'scan_pages': [p['scan'] for p in pages if p.get('scan')],
-                  'counts_by_folder': dict(sorted(Counter(e['folder'] for e in entries).items())),
-                  'counts_by_status': dict(Counter(e['status'] for e in entries)),
+                  'counts_by_folder': dict(sorted(Counter(e['folder'] for e in active).items())),
+                  'counts_by_status': dict(Counter(e['status'] for e in active)),
                   'warnings': warnings, 'errors': errors, 'images': entries, 'documents': documents,
+                  'suppressed': suppressed, 'counts_by_suppression': dict(Counter(item['suppression_code'] for item in suppressed)),
+                  'perspective_conflict': conflict,
                   'note': 'Изображения каждого варианта объединены в один PDF в порядке исходных страниц '
                           'и расположения на странице. Перспективные изображения без номера варианта в подписи, '
-                          'на странице и в разделе отнесены к варианту 1. Остальные растровые элементы '
+                          'на странице и в разделе отнесены к варианту 1, если сама презентация этому не противоречит '
+                          '(вариант 1 помечен как предыдущий или таблица указывает другой выбранный вариант); '
+                          'иначе они остаются на проверке. Остальные растровые элементы '
                           'сохранены отдельными PDF в папке «Все остальное»; '
                           'соприкасающиеся полосы объединены. '
+                          'Повторяющиеся вспомогательные элементы, мелкие области менее 1 % страницы '
+                          'после сборки фрагментов и доказанно полностью перекрытые изображения '
+                          'не экспортируются в результат; их координаты и основания перечислены в suppressed, '
+                          'а копии лежат в «_Служебное/Служебные элементы» как убранные карточки, которые можно вернуть. '
                           'Отдельный слайд варианта задаёт раздел до следующего раздела; '
                           'общий заголовок с одним вариантом применяется к содержимому своей страницы. '
                           'Для цельных сканов без текстового слоя используется локальный русский OCR Windows. '
@@ -1097,7 +1459,7 @@ def extract(source, output=None, progress=None):
                           'Один исходный растр может упоминаться в компонентах нескольких вырезанных областей. '
                           'Векторная графика отдельно не экспортируется.'}
         if progress:
-            progress({'stage': 'export', 'current': len(entries), 'total': len(entries), 'found': len(entries)})
+            progress({'stage': 'export', 'current': len(active), 'total': len(active), 'found': len(active)})
         render_previews(staging, report, progress)
         write_gallery(staging, report)
         (staging/'Отчёт.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -1110,7 +1472,8 @@ def extract(source, output=None, progress=None):
         if raw_workspace is not None:
             raw_workspace.cleanup()
         if pdfium_document is not None:
-            pdfium_document.close()
+            with PDFIUM_LOCK:
+                pdfium_document.close()
         if reader is not None:
             reader.close()
     return report

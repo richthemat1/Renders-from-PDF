@@ -67,3 +67,11 @@ export function dateLabel(value: string): string {
     minute: "2-digit",
   });
 }
+
+export function plural(count: number, forms: [string, string, string]): string {
+  const value = Math.abs(Math.trunc(count));
+  const lastTwo = value % 100;
+  if (lastTwo >= 11 && lastTwo <= 14) return forms[2];
+  const last = value % 10;
+  return last === 1 ? forms[0] : last >= 2 && last <= 4 ? forms[1] : forms[2];
+}

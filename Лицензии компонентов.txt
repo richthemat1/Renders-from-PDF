@@ -1,4 +1,4 @@
-Third-party license notices for PDF Photos 3.14.
+Third-party license notices for PDF Photos 3.27.
 Built using Python and PyInstaller.
 Optional OCR calls the Windows-provided Windows.Media.Ocr API through Windows PowerShell 5.1.
 Microsoft Windows OCR binaries and language packs are not redistributed with this program.
@@ -8242,7 +8242,7 @@ Igor Pavlov and Amir Szekely, the authors of the LZMA compression module for NSI
 ========================================================================
 Bundled interface fonts and icons
 
-Fonts and icons used by the Figma reference. Bundled for offline use.
+Fonts and icons used by the application interface. Bundled for offline use.
 Roboto: https://github.com/googlefonts/roboto-2
 Material Symbols: https://github.com/google/material-design-icons
 Material Symbols subset: arrow_back,arrow_forward,check,chevron_right,close,description,download,folder_open,grid_view,help,history,image,info,open_in_new,search,settings,stop,upload,warning

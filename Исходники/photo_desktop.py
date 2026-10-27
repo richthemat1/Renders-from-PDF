@@ -48,7 +48,7 @@ class NativeBridge:
             # pywebview accepts letters and spaces in filter labels, but no hyphens.
             paths = self._window.create_file_dialog(webview.FileDialog.OPEN, allow_multiple=True,
                                                     file_types=('Презентации PDF (*.pdf)',))
-            return self._jobs.start(paths) if paths else self._jobs.snapshot()
+            return self._jobs.prepare(paths) if paths else self._jobs.snapshot()
 
     def choose_result(self):
         self._guard()
@@ -67,6 +67,49 @@ class NativeBridge:
         with self._dialogs:
             folders = self._window.create_file_dialog(webview.FileDialog.FOLDER)
             return self._jobs.set_output('custom', folders[0]) if folders else self._jobs.snapshot()
+
+    def relocate_result(self, id):
+        self._guard()
+        if not isinstance(id, str):
+            raise ValueError('Укажите результат из истории.')
+        if self._jobs.busy or self._unsaved:
+            raise ValueError('Сначала завершите обработку и сохраните или сбросьте правки.')
+        import webview
+        with self._dialogs:
+            # Resolve the history ID before opening the OS picker.
+            with self._jobs._lock:
+                previous = self._jobs._history_item(id)['output']
+            folders = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+            if not folders:
+                return None
+            with self._server.lock:
+                if self._server.closing.is_set():
+                    raise ValueError('Программа закрывается. Повторите выбор папки после запуска.')
+                report = self._jobs.relocate_history(id, folders[0])
+                for key, folder in list(self._server.folders.items()):
+                    if folder == Path(previous).resolve() and folder != Path(report['output']):
+                        del self._server.folders[key]
+                return self._server._register(report['output'], report)
+
+    def open_history_folder(self, id):
+        self._guard()
+        if not isinstance(id, str):
+            raise ValueError('Укажите результат из истории.')
+        open_local(self._jobs.history_folder(id))
+        return True
+
+    def open_help(self):
+        self._guard()
+        bases = [Path(sys.executable).resolve().parent] if getattr(sys, 'frozen', False) else []
+        bases.extend([Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)),
+                      Path(__file__).resolve().parent.parent])
+        for base in bases:
+            path = base / 'Как пользоваться.txt'
+            if path.is_file():
+                open_local(path)
+                return True
+        raise ValueError('Полная инструкция «Как пользоваться.txt» не найдена рядом с программой. '
+                         'Она входит в установщик и переносимый архив.')
 
     def open_result(self, id, relative=''):
         self._guard()
@@ -141,6 +184,26 @@ def runtime_error(message):
         print(text, file=sys.stderr)
 
 
+def bind_file_drop(window, on_drop):
+    """Install the native file receiver on the trusted desktop document."""
+    from webview.dom import DOMEventHandler
+    # A DOMEventHandler serializes the event, including currentTarget=document.
+    # Sending that DOM tree for every dragover freezes large React galleries.
+    # Mouse movement stays in JS; the native bridge only receives real files.
+    window.run_js('''(() => {
+        document.addEventListener('dragover', (event) => {
+            if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+        });
+        document.addEventListener('drop', (event) => {
+            if (!event.dataTransfer?.files.length) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        });
+    })()''')
+    window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
+
+
 def open_desktop(initial_files=(), state_path=None, debug=False):
     enable_dpi_awareness()
     log_path = configure_logging()
@@ -158,7 +221,6 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
     closing = Event()
     try:
         import webview
-        from webview.dom import DOMEventHandler
         window = webview.create_window(f'Фото из PDF · {VERSION}', server.url, js_api=bridge,
                                        width=1380, height=960, min_size=(780, 620),
                                        background_color='#f4f6f8', text_select=True)
@@ -195,7 +257,7 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
                 bridge._guard()
                 if bridge._unsaved:
                     raise ValueError('Сначала сохраните или сбросьте правки текущего результата.')
-                jobs.start(paths)
+                jobs.prepare(paths)
                 # The React shell follows this public DOM event without accepting native paths.
                 window.evaluate_js('window.dispatchEvent(new Event("pdf-photos-job-started"))')
             except Exception as error:
@@ -206,14 +268,13 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
         def on_loaded():
             if window.get_current_url() != server.url:
                 return
-            window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
-            window.dom.document.events.dragover += DOMEventHandler(lambda _: None, prevent_default=True)
+            bind_file_drop(window, on_drop)
 
         window.events.loaded += on_loaded
         window.events.closing += on_closing
         def start_initial():
             if initial_files:
-                jobs.start(initial_files)
+                jobs.prepare(initial_files)
         # Force modern Chromium: the old mshtml fallback cannot run the React editor.
         icon = app_icon_path()
         webview.start(start_initial, gui='edgechromium', debug=debug, private_mode=True,

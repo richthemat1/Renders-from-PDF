@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from threading import Thread
 
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageStat
 from pypdf import PdfReader
 
 from photo_layout import clean_text, variant_numbers
@@ -154,11 +154,14 @@ class WindowsOcr:
 
 
 def photo_panels(image):
-    """Dense rectangular components separated by white gutters; no fixed grid."""
+    """Dense rectangular components separated by light gutters; no fixed grid."""
     with image.convert('L') as gray:
         gray.thumbnail((1100, 1100))
         width, height = gray.size
-        mask = gray.point(lambda value: 255 if value < 238 else 0)
+        background = median(gray.getpixel(corner) for corner in
+                            ((0, 0), (width-1, 0), (0, height-1), (width-1, height-1)))
+        threshold = min(238, background-12) if background >= 210 else 238
+        mask = gray.point(lambda value: 255 if value < threshold else 0)
     with mask:
         eroded = mask.filter(ImageFilter.MinFilter(7))
     with eroded:
@@ -191,10 +194,15 @@ def photo_panels(image):
         corners = [(left, top, left+edge, top+edge), (right-edge+1, top, right+1, top+edge),
                    (left, bottom-edge+1, left+edge, bottom+1),
                    (right-edge+1, bottom-edge+1, right+1, bottom+1)]
-        rectangular = count/(w*h) > .55
+        density = count/(w*h)
+        corner_fill = []
         for corner in corners:
             with mask.crop(corner) as crop:
-                rectangular &= ImageStat.Stat(crop).mean[0] > 80
+                corner_fill.append(ImageStat.Stat(crop).mean[0] > 80)
+        # A bright cloud can occupy one corner of an otherwise dense photo.
+        # Sparse diagrams still need all four corners, as before.
+        rectangular = density > .55 and (all(corner_fill)
+                        or (density > .95 and sum(corner_fill) >= 3))
         if not rectangular:
             uncertain = True
             continue
@@ -212,81 +220,194 @@ def photo_panels(image):
     return [box for row in rows for box in sorted(row, key=lambda b: b[0])]
 
 
+def _area(box):
+    return max(0, box['x1']-box['x0'])*max(0, box['bottom']-box['top'])
+
+
+def _inside(line, box):
+    x, y = (line['x0']+line['x1'])/2, (line['top']+line['bottom'])/2
+    return box['x0'] <= x <= box['x1'] and box['top'] <= y <= box['bottom']
+
+
+def _merge_ocr_lines(existing, recognised):
+    """Selectable PDF text remains authoritative when an OCR line duplicates it."""
+    lines = list(existing)
+    for line in recognised:
+        if not any(clean_text(old['text']).casefold() == clean_text(line['text']).casefold()
+                   and abs(old['top']-line['top']) < max(4, line['size'])
+                   and abs(old['x0']-line['x0']) < max(8, line['size']) for old in lines):
+            lines.append(line)
+    return sorted(lines, key=lambda line: (line['top'], line['x0']))
+
+
+def _compound_background(image, panels):
+    """Reject busy diagrams whose content leaks outside the proposed rectangles."""
+    with image.convert('L') as gray:
+        gray.thumbnail((320, 320))
+        sx, sy = gray.width/image.width, gray.height/image.height
+        outside = Image.new('L', gray.size, 255)
+        draw = ImageDraw.Draw(outside)
+        for left, top, right, bottom in panels:
+            draw.rectangle((int(left*sx), int(top*sy), int(right*sx+.99), int(bottom*sy+.99)), fill=0)
+        with outside:
+            histogram = gray.histogram(mask=outside)
+        background = median(gray.getpixel(corner) for corner in
+                            ((0, 0), (gray.width-1, 0), (0, gray.height-1), (gray.width-1, gray.height-1)))
+        start, end = max(0, int(background)-12), min(256, int(background)+13)
+        return background >= 210 and sum(histogram[start:end])/max(1, sum(histogram)) > .93
+
+
+def _compound_text(engine, image, original, panels):
+    """Remove confirmed photographs only in the OCR copy, never in exported pixels."""
+    full_lines = engine.recognise(image, original)
+    sx = (original['x1']-original['x0'])/image.width
+    sy = (original['bottom']-original['top'])/image.height
+    boxes = [dict(x0=original['x0']+box[0]*sx, top=original['top']+box[1]*sy,
+                  x1=original['x0']+box[2]*sx, bottom=original['top']+box[3]*sy) for box in panels]
+    for box in boxes:
+        text = [line for line in full_lines if _inside(line, box)]
+        if len(text) >= 3 and sum(len(line['text']) for line in text) >= 45:
+            raise ValueError('Внутри прямоугольников плотный текст таблицы или схемы; требуется проверка.')
+    with image.convert('RGB') as labels:
+        draw = ImageDraw.Draw(labels)
+        for left, top, right, bottom in panels:
+            draw.rectangle((left, top, right-1, bottom-1), fill='white')
+        lines = _merge_ocr_lines(full_lines, engine.recognise(labels, original))
+    headings = [line for line in lines if not any(_inside(line, box) for box in boxes)
+                and len(re.findall(r'[^\W\d_]', line['text'])) >= 3]
+    if not headings:
+        raise ValueError('У составного растра не прочитаны подписи; требуется проверка разрезания.')
+    if re.search(r'\b(?:таблиц\w*|ситуационн\w*|схем\w*|экспликац\w*|ТЭП|карта|план)\b',
+                 ' '.join(line['text'] for line in headings), re.I):
+        raise ValueError('Подписи указывают на таблицу, план или схему; растр сохранён целиком.')
+    return lines
+
+
 def analyse_scans(source, pages, resource_paths, progress=None):
-    candidates = [page for page in pages if not page['lines'] and len(page['images']) == 1
-                  and (page['images'][0]['x1']-page['images'][0]['x0'])*
-                      (page['images'][0]['bottom']-page['images'][0]['top']) > page['width']*page['height']*.80]
+    candidates = []
+    for page in pages:
+        full_page = (not page['lines'] and len(page['images']) == 1
+                     and _area(page['images'][0]) > page['width']*page['height']*.80)
+        images = [im for im in page['images'] if full_page or (
+                  not im.get('repeated_static') and not im.get('fully_occluded')
+                  and _area(im) >= page['width']*page['height']*.15
+                  and min(im['srcsize']) >= 300)]
+        if images:
+            candidates.append((page, images, full_page))
     if not candidates:
         return
     with ExitStack() as stack:
         reader = stack.enter_context(PdfReader(source))
         engine = None
         startup_error = None
-        for page in candidates:
+        for page, originals, full_page in candidates:
             if progress:
+                # Let cancellation escape rather than turning it into an OCR warning.
                 progress({'stage': 'ocr', 'current': page['number'], 'total': len(pages), 'found': 0})
-            original = page['images'][0]
-            page['scan'] = {'page': page['number'], 'panels': 0, 'text_source': 'windows_ocr'}
-            try:
-                if startup_error:
-                    raise RuntimeError(startup_error)
-                if engine is None:
-                    try:
-                        engine = stack.enter_context(WindowsOcr())
-                    except Exception as error:
-                        startup_error = str(error)
-                        raise
-                pdf_page = reader.pages[page['number']-1]
-                path = resource_paths(pdf_page).get(original['object_id'])
-                if path is None:
-                    raise ValueError('Для скана не найден отдельный ресурс.')
-                with pdf_page.images[path].image as image:
-                    a, b, c, d = original.get('matrix', (1, 0, 0, 1))
-                    if b or c or a < 0 or d < 0:
-                        raise ValueError('Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.')
-                    ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
-                    if abs(image.width/image.height/ratio-1) > .025:
-                        raise ValueError('Поворот или деформация скана: разрезание отключено.')
-                    try:
-                        page['lines'] = engine.recognise(image, original)
-                    except Exception as error:
-                        # A late response after a timeout must never name another page.
-                        startup_error = 'Распознавание остановлено после ошибки OCR: '+str(error)
-                        raise
-                    page['scan']['lines'] = len(page['lines'])
-                    if not page['lines']:
-                        continue
-                    panels = photo_panels(image)
-                    if not panels:
-                        page['scan']['kept_whole'] = True
-                        continue
-                    sx = (original['x1']-original['x0'])/image.width
-                    sy = (original['bottom']-original['top'])/image.height
-                    page['images'] = [dict(original, x0=original['x0']+b[0]*sx,
-                                           top=original['top']+b[1]*sy, x1=original['x0']+b[2]*sx,
-                                           bottom=original['top']+b[3]*sy, scan_crop_px=b, scan_order=index,
-                                           source_bbox=[original[k] for k in ('x0', 'top', 'x1', 'bottom')])
-                                      for index, b in enumerate(panels)]
-                    page['scan']['panels'] = len(panels)
-            except Exception as error:
-                page['scan'].update(error=str(error), kept_whole=True)
-                page['scan_warning'] = {'page': page['number'], 'reason': 'OCR: '+str(error),
-                                        'fallback': 'Исходная картинка страницы сохранена целиком.'}
+            pdf_page = reader.pages[page['number']-1]
+            paths = resource_paths(pdf_page)
+            for original in originals:
+                record = None
+                try:
+                    path = paths.get(original['object_id'])
+                    if path is None:
+                        if not full_page:
+                            continue
+                        raise ValueError('Для скана не найден отдельный ресурс.')
+                    with pdf_page.images[path].image as image:
+                        # A normal photograph must not start OCR or produce scan warnings.
+                        panels = None if full_page else photo_panels(image)
+                        if not full_page and len(panels) < 2:
+                            continue
+                        scan = page.setdefault('scan', {'page': page['number'], 'panels': 0,
+                                               'text_source': 'windows_ocr', 'full_page': full_page,
+                                               'sources': []})
+                        record = {'bbox': [original[k] for k in ('x0', 'top', 'x1', 'bottom')],
+                                  'object_id': original['object_id'], 'panels': 0}
+                        scan['sources'].append(record)
+                        a, b, c, d = original.get('matrix', (1, 0, 0, 1))
+                        if b or c or a < 0 or d < 0:
+                            raise ValueError('Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.')
+                        ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
+                        if abs(image.width/image.height/ratio-1) > .025:
+                            raise ValueError('Поворот или деформация скана: разрезание отключено.')
+                        if not full_page and (original['x0'] < -1 or original['top'] < -1
+                                or original['x1'] > page['width']+1 or original['bottom'] > page['height']+1):
+                            raise ValueError('Часть составного растра находится за краем страницы; требуется проверка.')
+                        if not full_page and not _compound_background(image, panels):
+                            raise ValueError('Между прямоугольниками нет простого однотонного фона; требуется проверка.')
+                        if startup_error:
+                            raise RuntimeError(startup_error)
+                        if engine is None:
+                            try:
+                                engine = stack.enter_context(WindowsOcr())
+                            except Exception as error:
+                                startup_error = str(error)
+                                raise
+                        try:
+                            lines = (engine.recognise(image, original) if full_page
+                                     else _compound_text(engine, image, original, panels))
+                        except RuntimeError as error:
+                            # A late response after a timeout must never name another page.
+                            startup_error = 'Распознавание остановлено после ошибки OCR: '+str(error)
+                            raise
+                        page['lines'] = _merge_ocr_lines(page['lines'], lines)
+                        scan['lines'] = scan.get('lines', 0)+len(lines)
+                        if not lines:
+                            continue
+                        panels = photo_panels(image) if full_page else panels
+                        if not panels:
+                            scan['kept_whole'] = True
+                            continue
+                        sx = (original['x1']-original['x0'])/image.width
+                        sy = (original['bottom']-original['top'])/image.height
+                        replacements = [dict(original, x0=original['x0']+box[0]*sx,
+                                             top=original['top']+box[1]*sy, x1=original['x0']+box[2]*sx,
+                                             bottom=original['top']+box[3]*sy, scan_crop_px=box,
+                                             source_bbox=record['bbox']) for box in panels]
+                        position = next(i for i, im in enumerate(page['images']) if im is original)
+                        page['images'][position:position+1] = replacements
+                        record['panels'] = len(panels)
+                        scan['panels'] += len(panels)
+                except Exception as error:
+                    scan = page.setdefault('scan', {'page': page['number'], 'panels': 0,
+                                          'text_source': 'windows_ocr', 'full_page': full_page, 'sources': []})
+                    if record is not None:
+                        record.update(error=str(error), kept_whole=True)
+                    if not scan['panels']:
+                        scan.update(error=str(error), kept_whole=True)
+                    page['scan_warning'] = {'page': page['number'], 'reason': 'OCR: '+str(error),
+                                            'fallback': 'Исходная картинка страницы сохранена целиком.'}
+            if page.get('scan', {}).get('panels'):
+                # photo_panels already tolerates small offsets within one row.
+                for index, image in enumerate(page['images']):
+                    image['scan_order'] = index
 
 
 def column_caption(page, region, match):
     """A confirmed column header also names panels below the first row."""
     if not page.get('scan', {}).get('panels') or match['status'] == 'review' or variant_numbers(match.get('title')):
         return match
-    headers = [line for line in page['captions'] if line['top'] < page['height']*.25
+    sources = [source for source in page['scan'].get('sources', []) if source['panels']
+               and source['bbox'][0] <= region['x0']+1 and source['bbox'][1] <= region['top']+1
+               and source['bbox'][2] >= region['x1']-1 and source['bbox'][3] >= region['bottom']-1]
+    if page['scan'].get('full_page') is False and len(sources) != 1:
+        return match
+    left, top, right, bottom = sources[0]['bbox'] if sources else (0, 0, page['width'], page['height'])
+    width, height = right-left, bottom-top
+    headers = [line for line in page['captions'] if top <= line['top'] < top+height*.25
+               and left <= (line['x0']+line['x1'])/2 <= right
                and len(variant_numbers(line['text'])) == 1]
     if len(set().union(*(variant_numbers(line['text']) for line in headers))) < 2:
         return match
     candidates = []
     for header in headers:
         supports = [box for box in page['regions']
-                    if 0 <= box['top']-header['bottom'] < page['height']*.08
-                    and abs(box['x0']-header['x0']) < page['width']*.04]
+                    if 0 <= box['top']-header['bottom'] < height*.08
+                    and box['x0'] <= (header['x0']+header['x1'])/2 <= box['x1']
+                    and (abs(box['x0']-header['x0']) < width*.04
+                         or abs((box['x0']+box['x1']-header['x0']-header['x1'])/2)
+                            < (box['x1']-box['x0'])*.25)]
         for box in supports:
             overlap = max(0, min(box['x1'], region['x1'])-max(box['x0'], region['x0']))
             if overlap/(region['x1']-region['x0']) > .85 and region['top'] >= box['top']-2:
@@ -302,7 +423,8 @@ def column_caption(page, region, match):
 
 
 def whole_scan_caption(page, match):
-    if not page.get('scan') or page['scan'].get('panels') or page['scan'].get('error'):
+    if (not page.get('scan') or page['scan'].get('full_page') is False
+            or page['scan'].get('panels') or page['scan'].get('error')):
         return match
     headers = [line for line in page['captions'] if page['height']*.13 <= line['top'] < page['height']*.25]
     if not headers:

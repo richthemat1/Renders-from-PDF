@@ -1,5 +1,6 @@
 """Token-scoped desktop frontend and API sharing the existing transactional PDF editor."""
 from http.server import ThreadingHTTPServer
+from io import BytesIO
 import json
 import logging
 import mimetypes
@@ -9,6 +10,7 @@ from threading import Lock, RLock, Thread
 from urllib.parse import unquote, urlsplit
 
 from photo_edit import EditConflict, EditError, apply_edits, rename_item
+from photo_export import PDFIUM_LOCK
 from photo_jobs import normalized_report, read_result
 from photo_server import MAX_BODY, PreviewServer, handler as preview_handler
 
@@ -84,6 +86,29 @@ class DesktopServer(PreviewServer):
         return {'id': id, 'base_url': f'{self.origin}/{id}/',
                 'title': Path(report['source']).stem, 'report': report}
 
+    def preview(self, id, index):
+        """Render a registered report entry; the caller never supplies a disk path."""
+        from photo_edit import entry_pdf_source
+        import pypdfium2
+        folder = self.folders[id]
+        report = read_result(folder)
+        path, page_index = entry_pdf_source(folder, report, index)
+        with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
+            page = document[page_index]
+            try:
+                scale = 1600 / max(page.get_width(), page.get_height())
+                bitmap = page.render(scale=scale)
+                try:
+                    with bitmap.to_pil() as image:
+                        image.thumbnail((1600, 1600))
+                        buffer = BytesIO()
+                        image.save(buffer, 'PNG')
+                        return buffer.getvalue()
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
+
 
 def desktop_handler(server):
     class Handler(preview_handler(server)):
@@ -129,6 +154,11 @@ def desktop_handler(server):
                         if relative == 'api/state':
                             return self.reply(200, server.jobs.snapshot())
                         parts = relative.split('/')
+                        if (len(parts) == 5 and parts[:2] == ['api', 'results']
+                                and parts[3] == 'preview'):
+                            if parts[2] not in server.folders or not parts[4].isascii() or not parts[4].isdigit():
+                                return self.error(404, 'Изображение не найдено.')
+                            return self.reply(200, server.preview(parts[2], int(parts[4])), 'image/png')
                         if len(parts) == 3 and parts[:2] == ['api', 'results']:
                             if parts[2] not in server.folders:
                                 return self.error(404, 'Результат не найден.')
@@ -139,8 +169,11 @@ def desktop_handler(server):
                     if relative == 'api/state':
                         return self.reply(200, {'revision': read_result(server.folders[kind])['revision']})
                     return self.file(server.folders[kind], relative)
-            except (OSError, ValueError, TypeError, KeyError) as error:
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError, IndexError) as error:
                 return self.error(400, f'Не удалось открыть результат: {error}')
+            except Exception as error:
+                LOGGER.exception('Desktop read failed: %s', relative)
+                return self.error(500, f'Не удалось показать результат: {error}. Попробуйте открыть сам PDF.')
 
         do_HEAD = do_GET
 
@@ -181,10 +214,19 @@ def desktop_handler(server):
                 return self.error(404, 'Не найдено.')
             if kind == 'app':
                 parts = relative.split('/')
-                operation = relative[4:] if relative in ('api/cancel', 'api/settings', 'api/open') else None
+                operation = relative[4:] if relative in ('api/cancel', 'api/settings', 'api/sidebar', 'api/open') else None
                 result_id = None
+                record_id = None
+                if relative == 'api/jobs/confirm':
+                    operation = 'confirm'
+                if (len(parts) == 4 and parts[:2] == ['api', 'history']
+                        and parts[3] in ('forget', 'repeat')):
+                    operation, record_id = 'history-' + parts[3], parts[2]
+                if (len(parts) == 4 and parts[:2] == ['api', 'failures']
+                        and parts[3] in ('forget', 'retry')):
+                    operation, record_id = 'failure-' + parts[3], parts[2]
                 if (len(parts) == 4 and parts[:2] == ['api', 'results']
-                        and parts[3] in ('apply', 'rename')):
+                        and parts[3] in ('apply', 'rename', 'undo-save')):
                     operation, result_id = parts[3], parts[2]
             else:
                 operation = relative[4:] if relative in ('api/apply', 'api/rename') else None
@@ -208,6 +250,22 @@ def desktop_handler(server):
                         if set(payload) != {'mode'} or payload['mode'] not in ('nearby', 'results'):
                             raise ValueError('Папку сохранения выбирают через диалог приложения.')
                         return self.reply(200, server.jobs.set_output(payload['mode']))
+                    if operation == 'sidebar':
+                        if set(payload) != {'width', 'hidden'}:
+                            raise ValueError('Укажите ширину и состояние боковой панели.')
+                        return self.reply(200, server.jobs.set_sidebar(payload['width'], payload['hidden']))
+                    if operation == 'confirm':
+                        if set(payload) != {'token', 'proceed'}:
+                            raise ValueError('Подтвердите повторную обработку выбранного PDF.')
+                        return self.reply(200, server.jobs.confirm_repeat(payload['token'], payload['proceed']))
+                    actions = {'history-forget': server.jobs.forget_history,
+                               'history-repeat': server.jobs.repeat_history,
+                               'failure-forget': server.jobs.forget_failure,
+                               'failure-retry': server.jobs.retry_failure}
+                    if operation in actions:
+                        if payload:
+                            raise ValueError('Действие доступно только по идентификатору из истории.')
+                        return self.reply(200, actions[operation](record_id))
                     if operation == 'open':
                         if set(payload) != {'id'} or not isinstance(payload['id'], str):
                             raise ValueError('Укажите идентификатор результата из истории.')
@@ -225,6 +283,11 @@ def desktop_handler(server):
                         message = ('Имя не изменилось.' if change is None else
                                    f'Переименовано: «{change["from"]}» → «{change["to"]}».')
                         response = {'ok': True, 'revision': report['revision'], 'message': message}
+                    elif operation == 'undo-save':
+                        from photo_edit import restore_last_save
+                        report, backup = restore_last_save(folder, payload)
+                        response = {'ok': True, 'revision': report['revision'], 'backup': backup,
+                                    'message': 'Последнее сохранение отменено. Предыдущие изображения восстановлены.'}
                     else:
                         report, backup = apply_edits(folder, payload)
                         message = ('Изменений нет.' if backup is None else

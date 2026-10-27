@@ -311,14 +311,19 @@ class PhotoExport(unittest.TestCase):
             self.assertEqual(len({e['file'] for e in report['images']}), 1)
             self.assertEqual([e['pdf_page'] for e in report['images']], [1, 2])
 
-    def test_no_text_and_tiny_images_are_still_saved(self):
+    def test_no_text_photo_is_saved_and_tiny_fragment_has_an_audit_record(self):
         with tempfile.TemporaryDirectory() as root:
             report = self.run_export(make_pdf(root, [{'images': [
                 {'box': (50, 150, 800, 500)},
                 {'box': (10, 10, 12, 12), 'size': (16, 16), 'color': '#dddddd'}]}]))
-            self.assertEqual(len(report['images']), 2)
-            self.assertEqual({e['status'] for e in report['images']}, {'unsigned'})
+            result = [e for e in report['images'] if not e.get('removed')]
+            self.assertEqual(len(result), 1)
+            self.assertEqual({e['status'] for e in result}, {'unsigned'})
+            # The filtered fragment is kept only as a removed, restorable service copy.
+            self.assertEqual([e.get('suppressed') for e in report['images'] if e.get('removed')], [True])
             self.assertTrue(all(Path(report['output'], e['file']).is_file() for e in report['images']))
+            self.assertEqual([(item['suppression_code'], item['bbox']) for item in report['suppressed']],
+                             [('small_fragment', [10, 10, 22, 22])])
 
     def test_two_titles_above_one_collage_request_review_without_aborting(self):
         with tempfile.TemporaryDirectory() as root:
@@ -380,8 +385,12 @@ class PhotoExport(unittest.TestCase):
                                  {'box': (50, 30, 200, 45), 'size': (800, 180), 'color': '#dddddd'}],
                       'text': [('Двор '+letter, 50, 120, 18)]} for letter in ['А', 'Б', 'В']]
             report = self.run_export(make_pdf(root, pages))
-            self.assertEqual(report['counts_by_status'], {'unsigned': 3, 'named': 3})
-            self.assertEqual(len(report['images']), 6)
+            self.assertEqual(report['counts_by_status'], {'named': 3})
+            result = [entry for entry in report['images'] if not entry.get('removed')]
+            self.assertEqual([entry['title'] for entry in result], ['Двор А', 'Двор Б', 'Двор В'])
+            self.assertEqual(len(result), 3)
+            self.assertTrue(all(entry.get('suppressed') for entry in report['images'] if entry.get('removed')))
+            self.assertEqual([item['suppression_code'] for item in report['suppressed']], ['repeated_static']*3)
 
     def test_windows_folder_names_are_safe_and_collisions_do_not_merge_titles(self):
         with tempfile.TemporaryDirectory() as root:

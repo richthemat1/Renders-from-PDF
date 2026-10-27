@@ -1,0 +1,255 @@
+/* Figma 10:47, adapted to Manrope and the application's blue accent. */
+.viewer-preview-dialog.dialog[open] {
+  width: min(1280px, calc(100vw - 80px));
+  height: min(872px, calc(100dvh - 80px));
+  max-height: calc(100dvh - 80px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 24px 80px rgb(40 36 63 / 18%);
+}
+.viewer-preview-dialog.dialog::backdrop {
+  background: rgb(26 31 51 / 34%);
+  backdrop-filter: blur(5px);
+}
+.viewer-preview-dialog.dialog .dialog-heading {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 88px;
+  margin: 0;
+  padding: 18px 24px;
+}
+.viewer-preview-dialog .dialog-heading-copy {
+  flex: 1;
+  min-width: 0;
+}
+.viewer-preview-dialog .dialog-heading-copy h2 {
+  margin: 0;
+  padding: 0;
+  max-height: 3.9em;
+  overflow-y: auto;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.viewer-preview-dialog .preview-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.viewer-preview-dialog .preview-source-meta > span:nth-child(2) { color: #929bac; }
+.viewer-preview-dialog .preview-header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.viewer-preview-dialog .preview-open-pdf {
+  height: 36px;
+  min-height: 36px;
+  padding: 0 14px;
+  gap: 8px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.viewer-preview-dialog .preview-action-separator {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+}
+.viewer-preview-dialog .dialog-heading > .icon-btn {
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  border-radius: 9px;
+}
+.viewer-preview-dialog .preview-stage {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 160px;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  border-block: 1px solid var(--line);
+  background: #f6f7f9;
+  overflow: hidden;
+}
+.viewer-preview-dialog .preview-image-scroll {
+  position: absolute;
+  inset: 18px 88px 66px;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 3px;
+}
+.viewer-preview-dialog .preview-image-canvas img { border-radius: 3px; }
+.viewer-preview-dialog .preview-page-button {
+  position: absolute;
+  top: calc(50% - 24px);
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 4px 16px rgb(51 48 79 / 6%);
+}
+.viewer-preview-dialog .preview-page-button:hover:not(:disabled) {
+  color: var(--accent-dark);
+  background: #eef1ff;
+}
+.viewer-preview-dialog .preview-previous { left: 24px; }
+.viewer-preview-dialog .preview-next { right: 24px; }
+.viewer-preview-dialog .preview-zoom-tools {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 40px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgb(51 48 79 / 6%);
+}
+.viewer-preview-dialog .preview-zoom-tools .icon-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+.viewer-preview-dialog .preview-zoom-tools > .preview-scale {
+  width: 68px;
+  min-width: 68px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.viewer-preview-dialog .preview-zoom-tools > .preview-zoom-separator {
+  width: 1px;
+  height: 18px;
+  margin: 0;
+  background: var(--line);
+}
+.viewer-preview-dialog .preview-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 124px;
+  margin: 0;
+  padding: 24px 32px;
+}
+.viewer-preview-dialog .preview-info-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.viewer-preview-dialog .preview-explanation {
+  flex: 1;
+  min-width: 0;
+  max-height: min(27dvh, 180px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.viewer-preview-dialog .preview-explanation strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.viewer-preview-dialog .preview-explanation p {
+  margin: 7px 0 0;
+  max-width: 75ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.viewer-preview-dialog .preview-explanation .preview-fallback { color: #85601e; }
+.viewer-preview-dialog .preview-shortcuts {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.viewer-preview-dialog .preview-location {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(30%, 280px);
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: #eef1ff;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.viewer-preview-dialog .preview-location > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viewer-preview-dialog .preview-location.is-removed { background: #f4e9ed; color: #825261; }
+@media (max-width: 800px), (max-height: 700px) {
+  .viewer-preview-dialog.dialog[open] {
+    width: calc(100vw - 32px);
+    height: calc(100dvh - 32px);
+    max-height: calc(100dvh - 32px);
+    border-radius: 16px;
+  }
+  .viewer-preview-dialog.dialog .dialog-heading { min-height: 80px; padding: 14px 16px; gap: 12px; }
+  .viewer-preview-dialog .dialog-heading-copy h2 { font-size: 18px; }
+  .viewer-preview-dialog .preview-footer { min-height: 104px; padding: 18px 20px; }
+}
+@media (max-width: 600px) {
+  .viewer-preview-dialog.dialog .dialog-heading { gap: 8px; padding: 12px; }
+  .viewer-preview-dialog .dialog-heading-copy h2 { font-size: 16px; }
+  .viewer-preview-dialog .preview-header-actions { gap: 0; }
+  .viewer-preview-dialog .preview-action-separator,
+  .viewer-preview-dialog .preview-open-pdf > span,
+  .viewer-preview-dialog .preview-open-pdf > svg:last-child { display: none; }
+  .viewer-preview-dialog .preview-open-pdf { width: 36px; padding: 0; justify-content: center; }
+  .viewer-preview-dialog .preview-source-meta { gap: 2px 6px; }
+  .viewer-preview-dialog .preview-image-scroll { inset: 12px 48px 64px; }
+  .viewer-preview-dialog .preview-page-button { width: 32px; height: 36px; border-radius: 9px; }
+  .viewer-preview-dialog .preview-previous { left: 8px; }
+  .viewer-preview-dialog .preview-next { right: 8px; }
+  .viewer-preview-dialog .preview-footer { flex-wrap: wrap; min-height: 112px; gap: 8px; padding: 16px; }
+  .viewer-preview-dialog .preview-explanation { flex-basis: calc(100% - 24px); max-height: 23dvh; }
+  .viewer-preview-dialog .preview-location { margin-left: 24px; max-width: calc(100% - 24px); }
+}

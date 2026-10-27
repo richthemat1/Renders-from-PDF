@@ -1,27 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Check,
-  ChevronRight,
   CircleHelp,
-  FileImage,
   FileText,
   FolderOpen,
   History,
   ImagePlus,
-  Images,
   LoaderCircle,
-  Settings2,
-  ShieldCheck,
-  Square,
-  Upload,
+  SlidersHorizontal,
   X,
   AlertTriangle,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
-import { dateLabel, errorText, native, request } from "./api";
+import { dateLabel, errorText, native, plural, request } from "./api";
 import { Dialog, Empty, Shell, StatusNote } from "./components";
-import type { Result, Snapshot } from "./types";
+import type { HistoryItem, NoticeAction, ProcessingFailure, Result, Snapshot } from "./types";
 import { Viewer } from "./Viewer";
+import { Settings } from "./Settings";
+import { ProcessingPage } from "./ProcessingPage";
+import "./app-ux.css";
 
 type Page = "work" | "history" | "settings" | "viewer";
 export function App() {
@@ -29,16 +28,48 @@ export function App() {
   const [connection, setConnection] = useState("");
   const [page, setPage] = useState<Page>("work");
   const [result, setResult] = useState<Result | null>(null);
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(
+  const [notice, setNotice] = useState<{ text: string; error: boolean; action?: NoticeAction } | null>(
     null,
   );
   const [waiting, setWaiting] = useState(false);
   const [help, setHelp] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [fileDrag, setFileDrag] = useState(false);
+  const [, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState(false);
+  const saveCurrent = useRef<(() => Promise<boolean>) | null>(null);
+  const registerSave = useCallback((save: (() => Promise<boolean>) | null) => { saveCurrent.current = save; }, []);
   const dirtyRef = useRef(false);
-  dirtyRef.current = dirty;
+  const trackDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  }, []);
+  useLayoutEffect(() => { window.scrollTo(0, 0); }, [page, result?.id]);
+  useEffect(() => {
+    let depth = 0;
+    const clear = () => { depth = 0; setFileDrag(false); };
+    const enter = (event: DragEvent) => {
+      if (page !== "work" || state?.busy || !event.dataTransfer?.types.includes("Files")) return;
+      depth += 1;
+      setFileDrag(true);
+    };
+    const leave = () => { if (--depth <= 0) clear(); };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", clear);
+    window.addEventListener("dragend", clear);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", clear);
+      window.removeEventListener("dragend", clear);
+      window.removeEventListener("blur", clear);
+      clear();
+    };
+  }, [page, state?.busy]);
   useEffect(() => {
     let cancelled = false,
       timer: ReturnType<typeof setTimeout>;
@@ -74,7 +105,7 @@ export function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   const notify = useCallback(
-    (text: string, error = false) => setNotice({ text, error }),
+    (text: string, error = false, action?: NoticeAction) => setNotice({ text, error, action }),
     [],
   );
   useEffect(() => {
@@ -96,24 +127,24 @@ export function App() {
     },
     [notify],
   );
-  function guard(action: () => void) {
-    if (dirtyRef.current) setPending(() => action);
+  const guard = useCallback((action: () => void) => {
+    if (dirtyRef.current) { setLeaveError(false); setPending(() => action); }
     else action();
-  }
+  }, []);
   function navigate(next: Page) {
     guard(() => {
-      setDirty(false);
+      trackDirty(false);
       setPage(next);
     });
   }
   const choose = useCallback(() => {
     if (!state?.busy && !waiting)
-      void run(async () => {
+      guard(() => void run(async () => {
         const next = await native("choose_pdfs");
         setState(next);
         setPage("work");
-      });
-  }, [state?.busy, waiting, run]);
+      }));
+  }, [state?.busy, waiting, run, guard]);
   useEffect(() => {
     const started = () => {
       if (!dirtyRef.current) setPage("work");
@@ -124,29 +155,103 @@ export function App() {
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (
-        event.ctrlKey &&
+        (event.ctrlKey || event.metaKey) &&
         event.code === "KeyO" &&
         !document.querySelector("dialog[open]")
       ) {
         event.preventDefault();
-        if (!dirtyRef.current) choose();
+        choose();
       }
-      if (
-        event.code === "Escape" &&
-        state?.busy &&
-        !document.querySelector("dialog[open]")
-      )
-        void run(async () => setState(await request<Snapshot>("cancel", {})));
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [choose, state?.busy, run]);
+  }, [choose]);
   async function openHistory(id: string) {
     await run(async () => {
       const next = await request<Result>("open", { id });
+      trackDirty(false);
       setResult(next);
       setPage("viewer");
     });
+  }
+  async function saveAndContinue() {
+    const action = pending;
+    if (!action || !saveCurrent.current || leaving) return;
+    setLeaving(true);
+    setLeaveError(false);
+    try {
+      if (await saveCurrent.current()) {
+        setPending(null);
+        trackDirty(false);
+        action();
+      } else setLeaveError(true);
+    } catch (error) {
+      notify(errorText(error), true);
+      setLeaveError(true);
+    } finally { setLeaving(false); }
+  }
+  function historyAction(item: HistoryItem, action: "folder" | "repeat" | "relocate" | "forget") {
+    guard(() => void run(async () => {
+      if (action === "folder") await native("open_history_folder", item.id);
+      else if (action === "relocate") {
+        const next = await native("relocate_result", item.id);
+        if (next) { setResult(next); setPage("viewer"); }
+      } else {
+        setState(await request<Snapshot>(`history/${item.id}/${action}`, {}));
+        if (action === "repeat") setPage("work");
+        else notify("Запись убрана из истории. Файлы результата сохранены.");
+      }
+    }));
+  }
+  function failureAction(item: ProcessingFailure, action: "retry" | "forget") {
+    void run(async () => {
+      setState(await request<Snapshot>(`failures/${item.id}/${action}`, {}));
+      if (action === "retry") setPage("work");
+    });
+  }
+  function chooseFailureOutput() {
+    void run(async () => {
+      const next = await native("choose_output");
+      setState(next);
+      if (next.settings.mode !== state?.settings.mode || next.settings.folder !== state?.settings.folder)
+        notify("Папка результатов изменена. Нажмите «Повторить» у нужного файла.");
+    });
+  }
+  const matchingHistory = (state?.history ?? []).filter((item) => item.name.toLocaleLowerCase("ru").includes(historyQuery.toLocaleLowerCase("ru")));
+  const matchingFailures = (state?.failures ?? []).filter((item) => item.name.toLocaleLowerCase("ru").includes(historyQuery.toLocaleLowerCase("ru")));
+  function failureList(items: ProcessingFailure[]) {
+    if (!items.length) return null;
+    return <section className="failure-panel" aria-label="Необработанные файлы">
+      <div className="section-title"><h2><AlertTriangle size={18} />Не обработано: {items.length}</h2></div>
+      <p>Эти файлы требуют повторной обработки. Причины сохраняются между запусками приложения.</p>
+      {items.map((item) => <article className="failure-row" key={item.id}>
+        <div><strong>{item.name}</strong><p>{item.reason}</p><small>{dateLabel(item.failed_at)}</small></div>
+        <div className="failure-actions">
+          <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={15} />Повторить</button>
+          <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку</button>
+          <button className="icon-btn" disabled={waiting} aria-label={`Убрать ошибку из истории: ${item.name}`} title="Убрать запись из истории" onClick={() => failureAction(item, "forget")}><X size={16} /></button>
+        </div>
+      </article>)}
+    </section>;
+  }
+  function historyRow(item: HistoryItem) {
+    const repeats = (state?.history ?? []).filter((other) => other.source.replaceAll("\\", "/").toLocaleLowerCase() === item.source.replaceAll("\\", "/").toLocaleLowerCase()).length > 1;
+    return <div className="history-entry" key={item.id}>
+      <button className="history-row" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
+        <span className="file-icon"><FileText size={25} /></span>
+        <span className="history-name"><strong>{item.name}</strong>
+          <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.documents} PDF · {dateLabel(item.finished_at)}{repeats && " · Есть другие выгрузки этого PDF"}</small>
+          <small className="history-path" title={item.output}>{item.output}</small>
+          <small className={!item.available ? "history-unavailable" : ""}>{!item.available ? "Папка недоступна — укажите новое расположение" : item.review || item.unsigned ? `Проверить: ${item.review + item.unsigned}` : "Готово"}</small>
+        </span>
+      </button>
+      <div className="history-actions">
+        {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку: ${item.name}`}><FolderOpen size={15} /><span>Папка</span></button>
+          : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={15} />Указать папку</button>}
+        <button className="btn compact secondary" disabled={waiting || state?.busy} aria-label={`Обработать заново: ${item.name}`} onClick={() => historyAction(item, "repeat")}><RotateCcw size={15} /><span>Заново</span></button>
+        <button className="icon-btn" disabled={waiting} aria-label={`Убрать из истории: ${item.name}`} title="Убрать запись из истории, сохранив файлы" onClick={() => historyAction(item, "forget")}><Trash2 size={16} /></button>
+      </div>
+    </div>;
   }
   function previous() {
     guard(
@@ -154,17 +259,18 @@ export function App() {
         void run(async () => {
           const next = await native("choose_result");
           if (next) {
-            setDirty(false);
+            trackDirty(false);
             setResult(next);
             setPage("viewer");
           }
         }),
     );
   }
-  const footer = (
+  const workNavigation = (
     <>
       <button
         className={`project-link ${page === "work" ? "active" : ""}`}
+        title="Обработка PDF"
         onClick={() => navigate("work")}
       >
         <span>
@@ -175,6 +281,7 @@ export function App() {
       </button>
       <button
         className={`project-link ${page === "history" ? "active" : ""}`}
+        title="История обработки"
         onClick={() => navigate("history")}
       >
         <span>
@@ -182,16 +289,21 @@ export function App() {
           История обработки
         </span>
       </button>
+    </>
+  );
+  const appUtilities = (
+    <>
       <button
         className={`project-link ${page === "settings" ? "active" : ""}`}
+        title="Настройки"
         onClick={() => navigate("settings")}
       >
         <span>
-          <Settings2 size={17} />
+          <SlidersHorizontal size={17} />
           Настройки
         </span>
       </button>
-      <button className="project-link" onClick={() => setHelp(true)}>
+      <button className="project-link" title="Как пользоваться" onClick={() => setHelp(true)}>
         <span>
           <CircleHelp size={17} />
           Как пользоваться
@@ -199,6 +311,7 @@ export function App() {
       </button>
     </>
   );
+  const footer = <>{workNavigation}{appUtilities}</>;
   const chrome = (
     <>
       {connection && (
@@ -214,6 +327,13 @@ export function App() {
         >
           {notice.error ? <AlertTriangle size={18} /> : <Check size={18} />}
           <span>{notice.text}</span>
+          {notice.action && <button className="toast-action" onClick={() => {
+            const action = notice.action;
+            if (action) void run(async () => {
+              await action.run();
+              setNotice((current) => current === notice ? null : current);
+            });
+          }} disabled={waiting}>{notice.action.label}</button>}
           <button aria-label="Скрыть сообщение" onClick={() => setNotice(null)}>
             <X size={17} />
           </button>
@@ -222,32 +342,64 @@ export function App() {
       {pending && (
         <Dialog
           title="Есть несохранённые изменения"
+          busy={leaving}
           onClose={() => setPending(null)}
         >
           <p>
-            Вернуться к результату или перейти без сохранения? Уже сохранённые
-            PDF останутся на месте.
+            Сохраните правки и продолжите выбранное действие либо вернитесь к редактору.
           </p>
+          {leaveError && <p className="dialog-error" role="alert">Не удалось сохранить правки. Вернитесь к редактору: ваши изменения остаются там.</p>}
           <div className="dialog-actions">
-            <button className="btn secondary" onClick={() => setPending(null)}>
+            <button className="btn secondary" disabled={leaving} onClick={() => setPending(null)}>
               Вернуться к правкам
             </button>
             <button
               className="btn danger"
+              disabled={leaving}
               onClick={() => {
                 const action = pending;
                 setPending(null);
-                setDirty(false);
+                trackDirty(false);
                 action();
               }}
             >
               Перейти без сохранения
             </button>
+            <button className="btn primary" disabled={leaving || !saveCurrent.current} onClick={() => void saveAndContinue()}>
+              {leaving && <LoaderCircle size={16} className="spin" />}Сохранить и продолжить
+            </button>
           </div>
         </Dialog>
       )}
+      {state?.pending_repeat && <Dialog title={state.pending_repeat.files.length === 1 ? "Этот PDF уже обработан" : "Эти PDF уже обработаны"}
+        busy={waiting} onClose={() => {
+          const token = state.pending_repeat!.token;
+          void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
+        }}>
+        <p>Можно открыть прежний результат или создать новую выгрузку. Уже готовые папки сохранятся.</p>
+        <ul className="repeat-list">{state.pending_repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>{dateLabel(file.finished_at)}</span></li>)}</ul>
+        <div className="dialog-actions">
+          <button className="btn secondary" disabled={waiting} onClick={() => {
+            const token = state.pending_repeat!.token;
+            void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
+          }}>Отмена</button>
+          {state.pending_repeat.files.some(file => file.available) && <button className="btn secondary" disabled={waiting} onClick={() => {
+            const previous = state.pending_repeat!.files.find(file => file.available)!;
+            const token = state.pending_repeat!.token;
+            void run(async () => {
+              setState(await request<Snapshot>("jobs/confirm", {token, proceed:false}));
+              const next = await request<Result>("open", {id:previous.previous_id});
+              setResult(next); setPage("viewer");
+            });
+          }}>Открыть прошлый результат</button>}
+          <button className="btn primary" disabled={waiting} onClick={() => {
+            const token = state.pending_repeat!.token;
+            void run(async () => { setState(await request<Snapshot>("jobs/confirm", {token, proceed:true})); setPage("work"); });
+          }}>Обработать заново</button>
+        </div>
+      </Dialog>}
       {help && (
-        <Dialog title="Как пользоваться" onClose={() => setHelp(false)}>
+        <Dialog title="Как пользоваться" className="help-dialog" onClose={() => setHelp(false)}>
           <ol className="help-list">
             <li>
               Выберите PDF или перетащите файлы и папки из Проводника. Обработка
@@ -261,12 +413,16 @@ export function App() {
               Включите «Редактировать», выберите изображения и перенесите в
               нужный вариант. Сохраните правки.
             </li>
+            <li>Выбор сохраняется между разделами. Флажки и Ctrl+щелчок добавляют карточки; счётчик «Скрыто» учитывает выбранное в других разделах.</li>
+            <li>«Вернуть в папку подписи» убирает картинку из варианта. В разделе «Убранные» можно восстановить карточки, в том числе после сохранения.</li>
+            <li>В крупном просмотре стрелки ←/→ листают изображения, колесо меняет масштаб, двойной щелчок приближает изображение.</li>
           </ol>
           <p>
             Исходные PDF не меняются. Предыдущие версии файлов результата
             сохраняются в резервных копиях. Переносимый «Просмотр.html»
             находится в папке результата.
           </p>
+          <div className="dialog-actions"><button className="btn secondary" onClick={() => void run(async () => { await native("open_help"); })}><FileText size={16} />Открыть полную инструкцию</button></div>
           <p className="muted">
             Ctrl+O — выбрать PDF · Ctrl+K — поиск · Ctrl+A — выделить видимые ·
             Ctrl+Z — отменить правку · Delete — убрать выбранное.
@@ -284,8 +440,9 @@ export function App() {
           footer={footer}
           notify={notify}
           onResult={setResult}
-          onDirty={setDirty}
+          onDirty={trackDirty}
           onBack={() => navigate("history")}
+          onSaveReady={registerSave}
         />
         {chrome}
       </>
@@ -295,40 +452,14 @@ export function App() {
       ? "История обработки"
       : page === "settings"
         ? "Настройки"
-        : "Рабочее пространство";
+        : "Обработка PDF";
   return (
     <>
       <Shell
         motionKey={page}
-        footer={footer}
-        navigation={
-          <>
-            <div className="nav-label">Рабочее пространство</div>
-            <button
-              className="project-link active"
-              onClick={() => navigate(page)}
-            >
-              <span>
-                {page === "work" ? (
-                  <FileImage size={17} />
-                ) : page === "history" ? (
-                  <History size={17} />
-                ) : (
-                  <Settings2 size={17} />
-                )}
-                {title}
-              </span>
-            </button>
-            <div className="sidebar-tip">
-              <ShieldCheck size={20} />
-              <p>
-                Файлы остаются у вас.
-                <br />
-                Вся обработка выполняется локально.
-              </p>
-            </div>
-          </>
-        }
+        footer={appUtilities}
+        version={state?.version}
+        navigation={workNavigation}
         header={
           <>
             <span className="topbar-title">{title}</span>
@@ -340,7 +471,7 @@ export function App() {
           </>
         }
       >
-        <div className="content">
+        <div className={`content${page === "settings" ? " settings-content" : page === "work" ? " work-content" : ""}`}>
           {!state ? (
             <Empty
               icon={
@@ -367,189 +498,21 @@ export function App() {
                 </div>
               )}
               {page === "work" && (
-                <>
-                  <div className="page-heading">
-                    <div>
-                      <h1>Из PDF — в готовые материалы</h1>
-                      <p>
-                        Извлеките изображения. Проверьте подписи. Соберите
-                        варианты.
-                      </p>
-                    </div>
-                    <button
-                      className="btn secondary"
-                      onClick={previous}
-                      disabled={waiting}
-                    >
-                      <FolderOpen size={17} />
-                      Открыть прошлый результат
-                    </button>
-                  </div>
-                  <section
-                    className={`upload-zone ${state.busy ? "is-busy" : ""}`}
-                    aria-labelledby="upload-title"
-                  >
-                    <div className="upload-icon">
-                      <Upload size={30} strokeWidth={1.6} />
-                    </div>
-                    <h2 id="upload-title">
-                      {state.busy
-                        ? "Готовлю ваши материалы"
-                        : "Перетащите PDF сюда"}
-                    </h2>
-                    <p>
-                      {state.busy
-                        ? state.detail
-                        : "Один файл, несколько презентаций или папка из Проводника"}
-                    </p>
-                    {state.busy ? (
-                      <button
-                        className="btn secondary"
-                        disabled={state.cancelling || waiting}
-                        onClick={() =>
-                          void run(async () =>
-                            setState(await request<Snapshot>("cancel", {})),
-                          )
-                        }
-                      >
-                        <Square size={14} />
-                        {state.cancelling
-                          ? "Останавливаю…"
-                          : "Остановить обработку"}
-                      </button>
-                    ) : (
-                      <button
-                        className="btn primary"
-                        onClick={choose}
-                        disabled={waiting}
-                      >
-                        <ImagePlus size={18} />
-                        Выбрать PDF <kbd>Ctrl O</kbd>
-                      </button>
-                    )}
-                    <span className="upload-note">
-                      Исходные файлы не изменяются
-                    </span>
-                  </section>
-                  <div className="destination">
-                    <FolderOpen size={17} />
-                    <span>
-                      Сохранять:{" "}
-                      <strong title={state.settings.label}>
-                        {state.settings.label}
-                      </strong>
-                    </span>
-                    <button
-                      className="text-btn"
-                      disabled={state.busy}
-                      onClick={() => navigate("settings")}
-                    >
-                      Изменить
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                  <section className="job-panel" aria-labelledby="job-status">
-                    <div className="section-title">
-                      <h2 id="job-status" role="status">
-                        {state.status}
-                      </h2>
-                      <span className="muted tabular">
-                        {Math.round(state.progress)}%
-                      </span>
-                    </div>
-                    <div
-                      className="progress-track"
-                      role="progressbar"
-                      aria-label="Обработка PDF"
-                      aria-valuenow={Math.round(state.progress)}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                    >
-                      <div
-                        style={{ transform: `scaleX(${state.progress / 100})` }}
-                      />
-                    </div>
-                    <div className="job-totals">
-                      {[
-                        ["Изображений", state.totals.images],
-                        ["Готовых PDF", state.totals.documents],
-                        ["Без подписи", state.totals.unsigned],
-                        ["На проверку", state.totals.review],
-                      ].map(([label, count]) => (
-                        <div key={label}>
-                          <strong>{count}</strong>
-                          <span>{label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {state.current_output && (
-                      <button
-                        className="btn primary"
-                        disabled={waiting}
-                        onClick={() => {
-                          const record = state.history.find(
-                            (item) => item.output === state.current_output,
-                          );
-                          if (record) void openHistory(record.id);
-                        }}
-                      >
-                        <Images size={17} />
-                        Открыть результат
-                        <ArrowRight size={17} />
-                      </button>
-                    )}
-                  </section>
-                  {!!state.logs.length && (
-                    <section className="events">
-                      <details open={state.busy}>
-                        <summary>
-                          События обработки<span>{state.logs.length}</span>
-                        </summary>
-                        <ol>
-                          {state.logs.map((item) => (
-                            <li key={item.id} className={`log-${item.level}`}>
-                              {item.text}
-                            </li>
-                          ))}
-                        </ol>
-                      </details>
-                    </section>
-                  )}
-                  {!!state.history.length && (
-                    <section className="recent">
-                      <div className="section-title">
-                        <h2>Последние результаты</h2>
-                        <button
-                          className="text-btn"
-                          onClick={() => navigate("history")}
-                        >
-                          Вся история
-                          <ArrowRight size={15} />
-                        </button>
-                      </div>
-                      {state.history.slice(0, 3).map((item) => (
-                        <button
-                          className="history-row"
-                          key={item.id}
-                          disabled={waiting || !item.available}
-                          onClick={() => void openHistory(item.id)}
-                        >
-                          <span className="file-icon">
-                            <FileText size={23} />
-                          </span>
-                          <span className="history-name">
-                            <strong>{item.name}</strong>
-                            <small>
-                              {item.images} изображений · {item.variants}{" "}
-                              варианта · {dateLabel(item.finished_at)}
-                            </small>
-                          </span>
-                          <ChevronRight size={18} />
-                        </button>
-                      ))}
-                    </section>
-                  )}
-                </>
+                <ProcessingPage state={state} waiting={waiting} fileDrag={fileDrag}
+                  onChoose={choose} onPrevious={previous}
+                  onCancel={() => void run(async () => setState(await request<Snapshot>("cancel", {})))}
+                  onSettings={() => navigate("settings")}
+                  onOpenResult={() => {
+                    const output = state.current_output?.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase();
+                    const record = state.history.find((item) => item.output.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase() === output);
+                    if (record) void openHistory(record.id);
+                    else notify("Результат не найден в истории. Откройте его папку вручную.", true,
+                      { label: "Выбрать папку результата", run: previous });
+                  }}
+                  onHistory={() => navigate("history")}
+                  onOpenHistory={(item) => void openHistory(item.id)}
+                  failures={failureList(state.failures ?? [])}
+                />
               )}
               {page === "history" && (
                 <>
@@ -575,190 +538,34 @@ export function App() {
                     value={historyQuery}
                     onChange={(e) => setHistoryQuery(e.target.value)}
                   />
-                  {!state.history.length ? (
-                    <Empty
-                      icon={<History size={32} />}
-                      title="Здесь появятся ваши результаты"
-                      action={
-                        <button
-                          className="btn primary"
-                          onClick={() => navigate("work")}
-                        >
-                          Обработать первый PDF
-                          <ArrowRight size={17} />
-                        </button>
-                      }
-                    >
-                      Обработайте презентацию или откройте папку с прошлым
-                      результатом.
+                  {failureList(matchingFailures)}
+                  {!state.history.length && !(state.failures?.length) ? (
+                    <Empty icon={<History size={32} />} title="Здесь появятся ваши результаты"
+                      action={<button className="btn primary" onClick={() => navigate("work")}>Обработать первый PDF<ArrowRight size={17} /></button>}>
+                      Обработайте презентацию или откройте папку с прошлым результатом.
                     </Empty>
                   ) : (
-                    <div className="history-list">
-                      {state.history
-                        .filter((item) =>
-                          item.name
-                            .toLocaleLowerCase("ru")
-                            .includes(historyQuery.toLocaleLowerCase("ru")),
-                        )
-                        .map((item) => (
-                          <button
-                            key={item.id}
-                            className="history-row"
-                            disabled={waiting || !item.available}
-                            onClick={() => void openHistory(item.id)}
-                          >
-                            <span className="file-icon">
-                              <FileText size={25} />
-                            </span>
-                            <span className="history-name">
-                              <strong>{item.name}</strong>
-                              <small>
-                                {item.images} изображений · {item.documents} PDF
-                                · {dateLabel(item.finished_at)}
-                              </small>
-                              <small
-                                className="history-path"
-                                title={item.output}
-                              >
-                                {item.output}
-                              </small>
-                            </span>
-                            <span
-                              className={`history-status ${item.review || item.unsigned ? "attention" : ""}`}
-                            >
-                              {!item.available
-                                ? "Папка недоступна"
-                                : item.review || item.unsigned
-                                  ? `Проверить: ${item.review + item.unsigned}`
-                                  : "Готово"}
-                            </span>
-                            <ChevronRight size={18} />
-                          </button>
-                        ))}
-                    </div>
+                    <div className="history-list">{matchingHistory.map(historyRow)}</div>
                   )}
-                  {!!state.history.length &&
-                    !state.history.some((item) =>
-                      item.name
-                        .toLocaleLowerCase("ru")
-                        .includes(historyQuery.toLocaleLowerCase("ru")),
-                    ) && (
-                      <Empty
-                        icon={<History size={30} />}
-                        title="Результат не найден"
-                      >
-                        Попробуйте часть названия или откройте нужную папку
-                        вручную.
-                      </Empty>
-                    )}
+                  {!!(state.history.length || state.failures?.length) && !matchingHistory.length && !matchingFailures.length && (
+                    <Empty icon={<History size={30} />} title="Результат не найден">
+                      Попробуйте часть названия или откройте нужную папку вручную.
+                    </Empty>
+                  )}
                 </>
               )}
               {page === "settings" && (
-                <>
-                  <div className="page-heading">
-                    <div>
-                      <h1>Настройки</h1>
-                      <p>Как сохранять следующие результаты обработки.</p>
-                    </div>
-                  </div>
-                  <section className="settings-section">
-                    <h2>Папка результатов</h2>
-                    <p className="muted">
-                      Каждая презентация сохраняется в отдельную папку. Уже
-                      готовые результаты не перемещаются.
-                    </p>
-                    <fieldset disabled={state.busy || waiting}>
-                      <legend className="sr-only">
-                        Расположение новых результатов
-                      </legend>
-                      {[
-                        [
-                          "nearby",
-                          "Рядом с исходным PDF",
-                          "Папка «Название презентации — PDF» рядом с документом.",
-                        ],
-                        [
-                          "results",
-                          "В подпапке «Результаты»",
-                          "Отдельная общая папка рядом с каждым исходным документом.",
-                        ],
-                        [
-                          "custom",
-                          "В выбранной папке",
-                          state.settings.folder ||
-                            "Выберите папку на этом компьютере.",
-                        ],
-                      ].map(([mode, label, detail]) => (
-                        <label
-                          className={`setting-option ${state.settings.mode === mode ? "selected" : ""}`}
-                          key={mode}
-                        >
-                          <input
-                            type="radio"
-                            name="output"
-                            checked={state.settings.mode === mode}
-                            onChange={() =>
-                              void run(async () =>
-                                setState(
-                                  mode === "custom"
-                                    ? await native("choose_output")
-                                    : await request<Snapshot>("settings", {
-                                        mode,
-                                      }),
-                                ),
-                              )
-                            }
-                          />
-                          <span>
-                            <strong>{label}</strong>
-                            <small>{detail}</small>
-                          </span>
-                          {mode === "custom" && (
-                            <button
-                              type="button"
-                              className="text-btn"
-                              onClick={() =>
-                                void run(async () =>
-                                  setState(await native("choose_output")),
-                                )
-                              }
-                            >
-                              Выбрать
-                              <FolderOpen size={16} />
-                            </button>
-                          )}
-                        </label>
-                      ))}
-                    </fieldset>
-                    {state.busy && (
-                      <p className="muted">
-                        Расположение можно изменить после завершения обработки.
-                      </p>
-                    )}
-                  </section>
-                  <section className="settings-section">
-                    <h2>О приложении</h2>
-                    <div className="about-row">
-                      <span>Фото из PDF</span>
-                      <strong>{state.version}</strong>
-                    </div>
-                    <div className="about-row">
-                      <span>Обработка файлов</span>
-                      <span>Локально, без отправки в интернет</span>
-                    </div>
-                    <button
-                      className="btn secondary"
-                      onClick={() =>
-                        void run(async () => {
-                          await native("open_log");
-                        })
-                      }
-                    >
-                      <FileText size={17} />
-                      Открыть технический журнал
-                    </button>
-                  </section>
-                </>
+                <Settings
+                  state={state}
+                  waiting={waiting}
+                  onModeChange={(mode) => void run(async () => setState(
+                    mode === "custom"
+                      ? await native("choose_output")
+                      : await request<Snapshot>("settings", { mode }),
+                  ))}
+                  onChooseFolder={() => void run(async () => setState(await native("choose_output")))}
+                  onOpenLog={() => void run(async () => { await native("open_log"); })}
+                />
               )}
             </>
           )}

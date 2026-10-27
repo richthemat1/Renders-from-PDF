@@ -9,15 +9,64 @@ SHORT_VARIANT = re.compile(r'^[ВBV]\s*[-№]?\s*(\d+)$', re.I)
 VARIANT_LABEL = re.compile(r'\bвариант\s*№?\s*(\d+)\b', re.I)
 NUMBERED_NAME = re.compile(r'^(?:№\s*)?(\d+)[.)]?\s+(.+)$')
 COMPARISON_HEADING = re.compile(r'\bсравн\w*\b.*\bвариант\w*\b', re.I)
+SELECTED_MARKER = re.compile(r'^(?:ВПМ|Выбранный\s+вариант)$', re.I)
+SELECTION_REFERENCE = re.compile(
+    r'^(ВПМ|Выбранный\s+вариант)\s*[:—–-]?\s*'
+    r'(?:(?:вариант\s*№?\s*(\d+))|(?:№?\s*(\d+)\s*(?:вариант)?))$', re.I)
+PLAN_CAPTION = re.compile(r'\b(?:схем\w*|ситуационн\w*|генплан\w*|карт[аыуе]\w*|ПОЗУ|планировочн\w*)\b', re.I)
 
 
 def clean_text(value):
-    return re.sub(r'\s+', ' ', unicodedata.normalize('NFC', value)).strip(' \t\r\n.')
+    text = re.sub(r'\s+', ' ', unicodedata.normalize('NFC', value)).strip(' \t\r\n.')
+    text = re.sub(r'^[—–\-•]+\s+', '', text)
+    # A known joined caption phrase; avoid guessing word boundaries in arbitrary names.
+    return re.sub(r'\b(стеновая)(панель)\b', r'\1 \2', text, flags=re.I)
+
+
+def deduplicate_words(words):
+    """Prefer the later of two overprinted words, keeping real adjacent repetition."""
+    joined = []
+    index = 0
+    while index < len(words):
+        word = dict(words[index])
+        if word['text'] == '№' and index+1 < len(words):
+            next_word = words[index+1]
+            if (re.fullmatch(r'\d+', next_word['text'])
+                    and abs(word['top']-next_word['top']) < 2
+                    and -.5 <= next_word['x0']-word['x1'] <= .75):
+                word.update(text='№'+next_word['text'], x1=next_word['x1'],
+                            bottom=max(word['bottom'], next_word['bottom']))
+                index += 1
+        joined.append(word)
+        index += 1
+    kept = []
+    for word in joined:
+        text = re.sub(r'\s+', '', word['text']).casefold()
+        replacement = None
+        for index, old in enumerate(kept):
+            old_text = re.sub(r'\s+', '', old['text']).casefold()
+            same = text == old_text
+            number = bool(re.fullmatch(r'№?\d+[.)]?', text) and re.fullmatch(r'№?\d+[.)]?', old_text))
+            if not (same or number):
+                continue
+            height = min(word['bottom']-word['top'], old['bottom']-old['top'])
+            width = min(word['x1']-word['x0'], old['x1']-old['x0'])
+            if height <= 0 or width <= 0 or abs(word['top']-old['top']) > max(1.5, height*.15):
+                continue
+            overlap = max(0, min(word['x1'], old['x1'])-max(word['x0'], old['x0']))
+            if overlap/width >= (.72 if number else .85) and abs(word['x0']-old['x0']) <= max(2, width*.30):
+                replacement = index
+                break
+        if replacement is not None:
+            kept[replacement] = word
+        else:
+            kept.append(word)
+    return kept
 
 
 def text_lines(words):
     rows = []
-    for word in sorted(words, key=lambda w: (w['top'], w['x0'])):
+    for word in sorted(deduplicate_words(words), key=lambda w: (w['top'], w['x0'])):
         size = float(word.get('size', 12))
         row = next((r for r in reversed(rows[-4:])
                     if abs(r[0]['top']-word['top']) <= max(2, min(4, size*.22))), None)
@@ -165,6 +214,9 @@ def caption_with_variant_context(page, region, match):
             or variant_numbers(match.get('title'))
             or any(variant_numbers(title) for title in match['candidates'])):
         return match
+    if (region_is_clipped(page, region) or region.get('repeated_static')
+            or PLAN_CAPTION.search(match.get('title') or '')):
+        return match
     # Section headings name the content, not logos and small decorative elements.
     if (region['x1']-region['x0'] < page['width']*.07
             or region['bottom']-region['top'] < page['height']*.08):
@@ -181,6 +233,34 @@ def caption_with_variant_context(page, region, match):
                 variant_source=context['kind'], variant_source_page=context['page'],
                 reason=match['reason']+' Вариант определён по заголовку '
                        f'на исходной странице {context["page"]}.')
+
+
+def region_is_clipped(page, region):
+    left, top = page.get('origin', (0, 0))
+    return (region['x0'] < left-.5 or region['top'] < top-.5
+            or region['x1'] > left+page['width']+.5
+            or region['bottom'] > top+page['height']+.5)
+
+
+def prepare_selected_variants(pages):
+    """Use only explicit selection-to-number relations found in actual table cells."""
+    references = [dict(reference, page=page['number']) for page in pages
+                  for reference in page.get('selection_references', [])]
+    numbers = {reference['variant'] for reference in references}
+    chosen = references[0] if len(numbers) == 1 else None
+    for page in pages:
+        page['selected_variant'] = chosen
+
+
+def selected_caption_with_variant(page, match):
+    selected = page.get('selected_variant')
+    if not selected or match['status'] != 'named' or not SELECTED_MARKER.fullmatch(match.get('title') or ''):
+        return match
+    return dict(match, title=f'Вариант {selected["variant"]} — {match["title"]}',
+                variant_source='selection_table', variant_source_page=selected['page'],
+                selection_reference=selected,
+                reason=match['reason']+' Номер выбранного варианта прямо указан в ячейке таблицы '
+                       f'на исходной странице {selected["page"]}.')
 
 
 def tile_groups(images):
@@ -233,7 +313,14 @@ def caption_for(page, region):
         if len(re.findall(r'[^\W\d_]', line['text'], re.UNICODE)) < 3:
             continue
         overlap = max(0, min(region['x1'], line['x1'])-max(region['x0'], line['x0']))
-        if overlap/max(1, min(width, line['x1']-line['x0'])) < .45:
+        selected_marker = SELECTED_MARKER.fullmatch(line['text'])
+        margin_marker = (selected_marker and line['x0'] < page['width']*.10
+                         and 0 <= region['top']-line['bottom'] <= page['height']*.075
+                         and len([box for box in page.get('regions', [region])
+                                  if abs(box['top']-region['top']) < page['height']*.06
+                                  and (box['x1']-box['x0'])*(box['bottom']-box['top'])
+                                      >= page['width']*page['height']*.04]) == 1)
+        if overlap/max(1, min(width, line['x1']-line['x0'])) < .45 and not margin_marker:
             continue
         # A label painted inside one photo cannot name an adjacent photo.
         center_x = (line['x0']+line['x1'])/2
@@ -283,7 +370,7 @@ def caption_for(page, region):
                     'candidates': [best['text'], other['text']],
                     'reason': 'Неоднозначная связь изображения с соседними подписями.'}
     title = best['text']
-    if side == 'above':
+    if side == 'above' and not SELECTED_MARKER.fullmatch(title):
         parents = [line for line in page['captions'] if line is not best
                    and line['size'] >= best['size']*1.18
                    and 0 < best['top']-line['bottom'] < page['height']*.20

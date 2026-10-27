@@ -1,6 +1,7 @@
 """Local workspace preferences and the history of actual completed exports."""
 from contextlib import contextmanager
 from datetime import datetime
+import hashlib
 import json
 import logging
 import os
@@ -9,10 +10,11 @@ import shutil
 import time
 import uuid
 
-from photo_export import safe_name, unused_folder
+from photo_export import planned_output
 
 LOGGER = logging.getLogger('pdf-photos')
 MODES = ('nearby', 'results', 'custom')
+DEFAULT_SIDEBAR = {'width': 248, 'hidden': False}
 
 
 @contextmanager
@@ -56,13 +58,16 @@ class WorkspaceState:
         self.path = Path(path) if path is not None else Path(
             os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'PDF-Photos' / 'workspace.json'
         self.output_mode, self.output_folder = 'nearby', ''
-        self.history, self.warning, self._corrupt = [], '', False
+        self.sidebar = dict(DEFAULT_SIDEBAR)
+        self.history, self.failures, self.warning, self._corrupt = [], [], '', False
         self._pending_history, self._settings_changed = {}, False
+        self._sidebar_changed = False
+        self._forgotten_history, self._forgotten_failures, self._pending_failures = set(), set(), {}
         self._load()
 
     def _load(self):
         try:
-            self.output_mode, self.output_folder, self.history = self._read()
+            self.output_mode, self.output_folder, self.history, self.failures, self.sidebar = self._read()
         except FileNotFoundError:
             return
         except (OSError, UnicodeError, ValueError) as error:
@@ -92,7 +97,40 @@ class WorkspaceState:
                 seen.add(key)
             if len(valid) == 100:
                 break
-        return mode, folder, valid
+        failures, seen_failures = [], set()
+        candidates = value.get('failures', [])
+        for item in candidates[:500] if isinstance(candidates, list) else []:
+            if self._valid_failure(item) and item['id'] not in seen_failures:
+                failures.append(item)
+                seen_failures.add(item['id'])
+            if len(failures) == 100:
+                break
+        sidebar = value.get('sidebar')
+        if not self._valid_sidebar(sidebar):
+            sidebar = dict(DEFAULT_SIDEBAR)
+        return mode, folder, valid, failures, sidebar
+
+    @staticmethod
+    def _valid_sidebar(sidebar):
+        return (isinstance(sidebar, dict) and set(sidebar) == {'width', 'hidden'}
+                and type(sidebar['width']) is int and 248 <= sidebar['width'] <= 520
+                and type(sidebar['hidden']) is bool)
+
+    @staticmethod
+    def _valid_failure(item):
+        if not isinstance(item, dict) or item.get('action') not in ('retry', 'choose_output'):
+            return False
+        if any(not isinstance(item.get(key), str) or not item[key]
+               for key in ('id', 'source', 'name', 'reason', 'failed_at')):
+            return False
+        if not Path(item['source']).is_absolute() or len(item['id']) != 32:
+            return False
+        try:
+            int(item['id'], 16)
+            datetime.fromisoformat(item['failed_at'])
+        except ValueError:
+            return False
+        return True
 
     @staticmethod
     def _valid_record(item):
@@ -116,16 +154,19 @@ class WorkspaceState:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with state_lock(self.path):
                 try:
-                    mode, folder, history = self._read()
+                    mode, folder, history, failures, sidebar = self._read()
                 except FileNotFoundError:
-                    mode, folder, history = 'nearby', '', []
+                    mode, folder, history, failures, sidebar = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR)
                 except (UnicodeError, ValueError):
                     backup = self.path.with_name(self.path.name + '.corrupt-' + uuid.uuid4().hex[:10])
                     shutil.copy2(self.path, backup)
-                    mode, folder, history = 'nearby', '', []
+                    mode, folder, history, failures, sidebar = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR)
                 if self._settings_changed:
                     mode, folder = self.output_mode, self.output_folder
-                current = {os.path.normcase(item['output']): item for item in history}
+                if self._sidebar_changed:
+                    sidebar = dict(self.sidebar)
+                current = {os.path.normcase(item['output']): item for item in history
+                           if os.path.normcase(item['output']) not in self._forgotten_history}
                 updates = []
                 for key, item in reversed(list(self._pending_history.items())):
                     if key in current:
@@ -134,12 +175,22 @@ class WorkspaceState:
                     updates.append(item)
                 merged = (updates + [item for key, item in current.items()
                                      if key not in self._pending_history])[:100]
-                value = {'schema': 1, 'output_mode': mode, 'output_folder': folder, 'history': merged}
+                merged_failures = (list(reversed(list(self._pending_failures.values()))) +
+                                   [item for item in failures if item['id'] not in self._pending_failures
+                                    and item['id'] not in self._forgotten_failures])[:100]
+                value = {'schema': 2, 'output_mode': mode, 'output_folder': folder, 'history': merged,
+                         'failures': merged_failures, 'sidebar': sidebar}
                 temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                 os.replace(temporary, self.path)
                 self.history = merged
+                self.failures = merged_failures
+                self.sidebar = sidebar
                 self._pending_history.clear()
+                self._pending_failures.clear()
+                self._forgotten_history.clear()
+                self._forgotten_failures.clear()
                 self._settings_changed = False
+                self._sidebar_changed = False
                 self._corrupt = False
             self.warning = ''
             return True
@@ -165,22 +216,33 @@ class WorkspaceState:
         self._settings_changed = True
         return self.save()
 
+    def set_sidebar(self, width, hidden):
+        sidebar = {'width': width, 'hidden': hidden}
+        if not self._valid_sidebar(sidebar):
+            raise ValueError('Ширина боковой панели должна быть целым числом от 248 до 520, а скрытие — true или false.')
+        self.sidebar = sidebar
+        self._sidebar_changed = True
+        saved = self.save()
+        if not saved:
+            self.warning = 'Не удалось сохранить вид боковой панели. В этом сеансе изменения продолжают работать.'
+        return saved
+
     def destination(self, source):
         source = Path(source).resolve()
         if self.output_mode == 'nearby':
             return None
         parent = source.parent / 'Результаты' if self.output_mode == 'results' else Path(self.output_folder)
-        return unused_folder(parent / (safe_name(source.stem, 78) + ' — PDF'))
+        return planned_output(source, parent)
 
     @property
     def output_label(self):
         return {'nearby': 'Рядом с исходным файлом', 'results': 'В папке «Результаты» рядом с исходным файлом',
                 'custom': self.output_folder}[self.output_mode]
 
-    def remember(self, report, processed=True):
+    def remember(self, report, processed=True, previous=None):
         output = str(Path(report['output']).resolve())
         key = os.path.normcase(output)
-        previous = next((item for item in self.history if os.path.normcase(item['output']) == key), None)
+        previous = previous or next((item for item in self.history if os.path.normcase(item['output']) == key), None)
         source = Path(report['source'])
         try:
             size = source.stat().st_size
@@ -195,9 +257,58 @@ class WorkspaceState:
                 'unsigned': counts.get('unsigned', 0), 'review': counts.get('review', 0),
                 'errors': len(report.get('errors', [])), 'warnings': len(report.get('warnings', [])),
                 'finished_at': stamp, 'imported': previous.get('imported', False) if previous else not processed}
+        if isinstance(report.get('source_sha256'), str):
+            item['source_sha256'] = report['source_sha256']
         self.history = [item] + [entry for entry in self.history if os.path.normcase(entry['output']) != key]
         self.history = self.history[:100]
         self._pending_history.pop(key, None)
         self._pending_history[key] = item
+        self._forgotten_history.discard(key)
+        if processed:
+            self.clear_failures(source, save=False)
         self.save()
         return item
+
+    def forget(self, output, save=True):
+        key = os.path.normcase(str(Path(output).resolve()))
+        self.history = [item for item in self.history if os.path.normcase(item['output']) != key]
+        self._pending_history.pop(key, None)
+        self._forgotten_history.add(key)
+        return self.save() if save else True
+
+    def relocate(self, output, report):
+        key = os.path.normcase(str(Path(output).resolve()))
+        previous = next((item for item in self.history if os.path.normcase(item['output']) == key), None)
+        if previous is None:
+            raise ValueError('Результат не найден в истории.')
+        self.forget(output, save=False)
+        return self.remember(report, processed=False, previous=previous)
+
+    def remember_failure(self, source, error, action='retry'):
+        source = str(Path(source).resolve())
+        id = hashlib.sha256(os.path.normcase(source).encode('utf-8')).hexdigest()[:32]
+        item = {'id': id, 'source': source, 'name': Path(source).name,
+                'reason': str(error) or 'Не удалось обработать PDF.', 'action': action,
+                'failed_at': datetime.now().isoformat(timespec='seconds')}
+        self.failures = [item] + [entry for entry in self.failures if entry['id'] != id]
+        self.failures = self.failures[:100]
+        self._pending_failures.pop(id, None)
+        self._pending_failures[id] = item
+        self._forgotten_failures.discard(id)
+        self.save()
+        return item
+
+    def forget_failure(self, id, save=True):
+        self.failures = [item for item in self.failures if item['id'] != id]
+        self._pending_failures.pop(id, None)
+        self._forgotten_failures.add(id)
+        return self.save() if save else True
+
+    def clear_failures(self, source, save=True):
+        key = os.path.normcase(str(Path(source).resolve()))
+        # Clear a failure written by another window even when this instance is stale.
+        self.forget_failure(hashlib.sha256(key.encode('utf-8')).hexdigest()[:32], save=False)
+        for item in self.failures[:]:
+            if os.path.normcase(item['source']) == key:
+                self.forget_failure(item['id'], save=False)
+        return self.save() if save else True
