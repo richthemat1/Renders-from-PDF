@@ -1,0 +1,53 @@
+/* One review task per result; counts live in the navigation, diagnostics appear only when present. */
+.viewer-content .review-summary { margin-block: 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; font-size: 13px; line-height: 1.5; container: review-summary / inline-size; }
+.review-summary-warnings { color: #9a6819; }
+.review-summary-warnings[aria-expanded="true"], .review-summary-warnings:hover:not(:disabled) { background: #fffbf2; }
+.review-summary-warnings:disabled { color: var(--muted); cursor: default; }
+.review-summary-errors { color: #a14355; }
+.review-summary [aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.review-summary-recommendation { margin: 0; padding: 8px 16px; border-top: 1px solid var(--line); background: #fffbf2; color: #9a6819; line-height: 20px; }
+.review-issue-list { margin: 0; padding: 0; list-style: none; }
+.review-issue { border-top: 1px solid var(--line); }
+.review-issue-row { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; align-items: center; min-height: 44px; gap: 8px 16px; padding: 7px 16px; }
+.review-issue-page { font-weight: 650; }
+.review-issue-message { min-width: 0; overflow-wrap: anywhere; }
+.review-issue.is-error .review-issue-page { color: #a14355; }
+.review-issue-actions { display: flex; align-items: center; gap: 16px; }
+.review-summary .text-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 3px 6px; margin-inline: -6px; font-size: 13px; line-height: 20px; }
+.review-issue-toggle { color: var(--muted); }
+.review-issue-toggle[aria-expanded="true"] { color: var(--accent); }
+.review-issue-find + .review-issue-toggle { padding-left: 16px; border-left: 1px solid var(--line); border-radius: 0; }
+.review-issue-detail { padding: 0 16px 12px 98px; }
+.review-issue-detail p { margin: 0; padding: 8px 12px; border-radius: 6px; background: #f5f4fa; color: var(--muted); line-height: 20px; overflow-wrap: anywhere; }
+.review-summary [hidden] { display: none; }
+.review-summary-header { display: flex; align-items: center; gap: 12px 14px; min-height: 64px; padding: 12px 16px; }
+.review-summary-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px; background: #eef1ff; color: var(--accent); }
+.review-summary.is-complete .review-summary-icon { background: #e9f6f1; color: #2f8a6d; }
+.review-summary-task { flex: 1; min-width: 0; }
+.review-summary-count { display: block; font-size: 14px; font-weight: 650; line-height: 20px; }
+.review-summary-help { margin: 2px 0 0; color: var(--muted); line-height: 20px; }
+.review-summary .review-summary-start { flex-shrink: 0; min-height: 36px; height: 36px; padding: 6px 14px; gap: 8px; border-radius: 8px; font-size: 13px; }
+.review-summary-diagnostics { display: flex; align-items: center; flex-wrap: wrap; min-height: 36px; gap: 4px 20px; padding: 4px 16px; border-top: 1px solid var(--line); background: #f8f9fc; color: var(--muted); font-size: 12px; }
+.review-summary-warnings, .review-summary-errors { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin-inline: -8px; padding: 2px 8px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
+.review-summary-errors:hover, .review-summary-errors[aria-expanded="true"] { background: #fff0f2; }
+.review-summary-services { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.review-summary-services strong { color: var(--ink); font-weight: 650; }
+.review-summary-services > svg { flex-shrink: 0; }
+.review-summary-services .text-btn { font-size: 12px; }
+@container review-summary (max-width: 800px) {
+  .review-issue-row { grid-template-columns: 66px minmax(0, 1fr); }
+  .review-issue-actions { grid-column: 2; flex-wrap: wrap; }
+}
+@container review-summary (max-width: 500px) {
+  .review-summary-header { flex-wrap: wrap; }
+  .review-summary .review-summary-start { flex-basis: 100%; justify-content: center; }
+  .review-issue-row { gap: 8px; padding-inline: 12px; grid-template-columns: 50px minmax(0, 1fr); }
+  .review-issue-detail { padding-left: 70px; padding-right: 12px; }
+  .review-issue-actions { gap: 8px; }
+}
+@media (max-height: 800px) {
+  .review-summary-header { min-height: 48px; padding-block: 8px; }
+  .review-summary-icon { width: 30px; height: 30px; }
+  .review-summary-help { display: none; }
+  .viewer-content .review-summary { margin-block: 12px; }
+}

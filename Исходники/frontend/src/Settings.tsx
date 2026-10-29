@@ -1,4 +1,4 @@
-import { Check, FileText, FolderOpen, FolderOutput, Info, ShieldCheck } from "lucide-react";
+import { FileText, FolderOpen, FolderOutput, Info, ShieldCheck } from "lucide-react";
 import type { Snapshot } from "./types";
 import "./settings-visual.css";
 
@@ -28,7 +28,6 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onOpenL
             <p>Как сохранять следующие результаты обработки.</p>
           </div>
         </div>
-        <span className="settings-version"><Check size={14} aria-hidden="true" />Версия {state.version}</span>
       </header>
 
       <section className="settings-panel settings-output" aria-labelledby="settings-output-title">

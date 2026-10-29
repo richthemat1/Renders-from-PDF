@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processingView } from "./processing-model";
+import { failureMessage, processingView } from "./processing-model";
 import type { HistoryItem, Snapshot } from "./types";
 
 const result: HistoryItem = {
@@ -7,6 +7,25 @@ const result: HistoryItem = {
   source: "C:\\PDF\\Презентация.pdf", images: 33, documents: 25, variants: 3,
   unsigned: 11, review: 2, errors: 0, warnings: 4, size: 100, finished_at: "2026-10-27T12:00:00", available: true, imported: false,
 };
+
+describe("processing failure recovery", () => {
+  it("explains a broken PDF without recommending another output folder", () => {
+    expect(failureMessage({ reason: "No /Root object! - Is this really a PDF?", action: "retry" })).toContain("Файл может быть повреждён");
+  });
+  it("keeps the useful localized output error and translates unknown English failures", () => {
+    expect(failureMessage({ reason: "Путь слишком длинный", action: "choose_output" })).toBe("Путь слишком длинный");
+    expect(failureMessage({ reason: "Permission denied", action: "choose_output" })).toContain("доступ к папке");
+    expect(failureMessage({ reason: "Unexpected failure", action: "retry" })).toContain("Не удалось обработать PDF");
+  });
+  it("offers a readable recovery for encrypted PDFs", () => {
+    expect(failureMessage({ reason: "File is encrypted with a password", action: "retry" })).toContain("копию без пароля");
+  });
+  it("does not mistake Cyrillic filenames for a localized technical explanation", () => {
+    const reason = "[Errno 13] Permission denied: 'C:\\Результаты\\файл.pdf'";
+    expect(failureMessage({ reason, action: "choose_output" })).toContain("доступ к папке");
+    expect(failureMessage({ reason: "Cannot read Презентация.pdf", action: "retry" })).toContain("Не удалось обработать PDF");
+  });
+});
 
 function snapshot(patch: Partial<Snapshot> = {}): Snapshot {
   return {

@@ -188,8 +188,8 @@ class RealQualityUI(unittest.TestCase):
         expect(navigation.get_by_role('button', name='Все изображения 3', exact=True)).to_be_visible()
         expect(navigation.get_by_role('button', name='На проверку 1', exact=True)).to_be_visible()
         expect(navigation.get_by_role('button', name='Без подписи 1', exact=True)).to_be_visible()
-        expect(self.page.locator('.review-banner strong')).to_have_text('Нужно проверить: 2')
-        expect(self.page.locator('.suppressed-summary')).to_have_text('Пропущено служебных элементов: 80')
+        expect(self.page.locator('.review-summary-count')).to_have_text('Нужно проверить: 2')
+        expect(self.page.locator('.review-summary-services')).to_contain_text('Пропущены служебные элементы: 80')
         expect(self.page.locator('.report-notes')).to_have_count(0)
         self.assertEqual(self.page.locator('.asset-card').evaluate_all(
             'cards => cards.map(card => Number(card.dataset.id))'), [1, 2, 3])

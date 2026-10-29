@@ -1,6 +1,7 @@
 """Token-scoped desktop frontend and API sharing the existing transactional PDF editor."""
 from http.server import ThreadingHTTPServer
 from io import BytesIO
+import hashlib
 import json
 import logging
 import mimetypes
@@ -89,11 +90,36 @@ class DesktopServer(PreviewServer):
     def preview(self, id, index):
         """Render a registered report entry; the caller never supplies a disk path."""
         from photo_edit import entry_pdf_source
-        import pypdfium2
         folder = self.folders[id]
         report = read_result(folder)
         path, page_index = entry_pdf_source(folder, report, index)
+        return self._render_page(path, page_index)
+
+    def source_preview(self, id, index):
+        """Read the original slide belonging to a registered report entry."""
+        report = read_result(self.folders[id])
+        if type(index) is not int or not 0 <= index < len(report['images']):
+            raise ValueError('Изображение не найдено.')
+        page = report['images'][index].get('page')
+        if type(page) is not int or not 1 <= page <= report['pages']:
+            raise ValueError('Номер исходной страницы не указан в отчёте.')
+        path = Path(report['source']).resolve()
+        if path.suffix.lower() != '.pdf' or not path.is_file():
+            raise ValueError('Исходный PDF недоступен. Он мог быть перемещён или удалён. '
+                             'Готовые PDF остаются в папке результата.')
+        if report.get('source_sha256'):
+            with path.open('rb') as stream:
+                if hashlib.file_digest(stream, 'sha256').hexdigest() != report['source_sha256']:
+                    raise ValueError('Исходный PDF изменился после обработки. '
+                                     'Для проверки нужна прежняя копия исходного файла.')
+        return self._render_page(path, page - 1)
+
+    @staticmethod
+    def _render_page(path, page_index):
+        import pypdfium2
         with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
+            if not 0 <= page_index < len(document):
+                raise ValueError('В исходном PDF больше нет этой страницы.')
             page = document[page_index]
             try:
                 scale = 1600 / max(page.get_width(), page.get_height())
@@ -155,10 +181,11 @@ def desktop_handler(server):
                             return self.reply(200, server.jobs.snapshot())
                         parts = relative.split('/')
                         if (len(parts) == 5 and parts[:2] == ['api', 'results']
-                                and parts[3] == 'preview'):
+                                and parts[3] in ('preview', 'source')):
                             if parts[2] not in server.folders or not parts[4].isascii() or not parts[4].isdigit():
                                 return self.error(404, 'Изображение не найдено.')
-                            return self.reply(200, server.preview(parts[2], int(parts[4])), 'image/png')
+                            render = server.source_preview if parts[3] == 'source' else server.preview
+                            return self.reply(200, render(parts[2], int(parts[4])), 'image/png')
                         if len(parts) == 3 and parts[:2] == ['api', 'results']:
                             if parts[2] not in server.folders:
                                 return self.error(404, 'Результат не найден.')

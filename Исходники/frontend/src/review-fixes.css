@@ -1,0 +1,61 @@
+/* Review workspace: the material stays visible in the supported low Windows window. */
+.viewer-content .viewer-facts { display: flex; flex-wrap: wrap; gap: 2px 0; }
+.viewer-content .viewer-facts > span + span::before { content: "·"; margin-inline: 8px; color: #b6b9c8; }
+.viewer-content .asset-card { display: flex; flex-direction: column; }
+.viewer-content .asset-image { flex: 0 0 auto; }
+.viewer-content .asset-info { flex: 1; display: flex; flex-direction: column; }
+.viewer-content .asset-title { align-items: flex-start; min-height: 42px; }
+.viewer-content .asset-meta { margin-top: auto; padding-top: 8px; }
+.viewer-content .asset-info .asset-group { min-height: 18px; }
+.viewer-content .clear-selection { flex-shrink: 0; white-space: nowrap; font-size: 12px; }
+.viewer-content .clear-selection:disabled { opacity: .45; cursor: default; }
+.preview-taskbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 24px;
+  border-top: 1px solid var(--line);
+}
+.preview-view-switch, .preview-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.preview-view-switch .btn[aria-pressed="true"] { color: var(--accent-dark); background: #eef1ff; border-color: #b2bbed; }
+.preview-taskbar .btn { min-height: 34px; font-size: 12px; }
+.viewer-preview-dialog .source-preview-state { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 52ch; padding: 20px; color: var(--muted); text-align: center; font-size: 13px; }
+.source-preview-state p { margin: 0; line-height: 1.6; }
+.failure-details { margin-block: 8px; font-size: 12px; }
+.failure-details summary { cursor: pointer; color: var(--muted); }
+.failure-details p { overflow-wrap: anywhere; }
+@media (max-height: 800px) {
+  .app-shell .viewer-content { padding-top: 12px; }
+  .viewer-content .breadcrumbs { margin-bottom: 4px; }
+  .viewer-content .viewer-heading { flex-wrap: nowrap; align-items: center; gap: 12px; margin-bottom: 0; }
+  .viewer-content .viewer-heading > div { min-width: 0; }
+  .viewer-content .viewer-heading h1 { font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .viewer-content .viewer-heading p { margin-top: 4px; font-size: 12px; }
+  .viewer-content .viewer-heading > .btn { flex-shrink: 0; min-height: 34px; height: 34px; }
+  .viewer-content .edit-panel:not(.is-floating) .edit-panel-top,
+  .viewer-content .edit-panel:not(.is-floating) .editor-instructions,
+  .viewer-content .edit-panel:not(.is-floating) .editor-removed { display: none; }
+  .viewer-content .edit-panel:not(.is-floating) { padding: 10px 12px; }
+  .viewer-content .edit-panel:not(.is-floating) .selection-tools { margin: 0; padding: 0; border: 0; }
+  .viewer-content .library-header { margin-block: 10px 8px; gap: 8px; }
+  .viewer-content .editor-tools-anchor { margin-top: 8px; }
+  .viewer-content .asset-grid { padding-top: 4px; }
+  .viewer-content .asset-image { aspect-ratio: auto; height: 144px; }
+  .viewer-preview-dialog.dialog .preview-footer { min-height: 72px; padding: 12px 16px; }
+  .preview-taskbar { padding: 8px 16px; }
+}
+@container (max-width: 1240px) {
+  .viewer-content .edit-panel:not(.is-floating) .select-visible > span:last-child { display: none; }
+}
+@media (max-width: 850px) {
+  .preview-taskbar { padding-inline: 12px; }
+  .viewer-preview-dialog .preview-header-actions { gap: 8px; }
+  .viewer-preview-dialog .preview-open-pdf { padding-inline: 8px; font-size: 12px; }
+}
+@container (max-width: 680px) {
+  .viewer-content .selection-summary { gap: 8px; }
+  .viewer-content .selection-summary .clear-selection { padding-inline: 4px; }
+}

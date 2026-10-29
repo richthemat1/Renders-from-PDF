@@ -191,30 +191,6 @@
   line-height: 1.35;
 }
 
-.processing-page .processing-upload.is-compact {
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  padding: 20px;
-}
-
-.processing-upload.is-compact .processing-upload-icon {
-  width: 48px;
-  height: 48px;
-}
-
-.processing-page .processing-upload.is-compact h3 {
-  font-size: 16px;
-  letter-spacing: -0.015em;
-}
-
-.processing-page .processing-upload.is-compact p {
-  font-size: 12px;
-}
-
-.processing-page .processing-upload.is-compact kbd {
-  color: var(--processing-muted);
-  background: #f5f6fa;
-}
-
 .processing-page .processing-upload.is-drag-over {
   border-color: var(--accent-dark);
   background: #e7ecff;
@@ -750,6 +726,63 @@
   margin: 0;
 }
 
+/* Figma 28:632: completed result and next-file selection share the first row. */
+.processing-layout { min-width: 0; }
+.processing-layout.has-next-pdf {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, min(34%, 376px));
+  align-items: start;
+  gap: 24px;
+}
+.has-next-pdf > .processing-operation { container: processing-result / inline-size; }
+.processing-next-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 506px;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid #b9c2ee;
+  border-radius: 16px;
+  background: #fff;
+}
+.processing-next-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.processing-next-panel h2 > svg { flex-shrink: 0; color: var(--accent); }
+.processing-page .processing-next-panel .processing-upload {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 28px 22px;
+  text-align: center;
+}
+.processing-next-panel .processing-upload-icon { flex-shrink: 0; border-radius: 16px; }
+.processing-page .processing-next-panel .processing-upload h3 { font-size: 20px; line-height: 1.3; }
+.processing-page .processing-next-panel .processing-upload p { margin-top: 12px; color: var(--processing-muted); }
+.processing-next-panel .processing-upload > .btn { width: 100%; min-height: 46px; justify-content: center; }
+.processing-next-local { display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--processing-muted); font-size: 12px; line-height: 1.5; text-align: center; }
+.processing-next-local > svg { flex-shrink: 0; }
+@container processing-result (max-width: 640px) {
+  .has-next-pdf .processing-operation-header { grid-template-columns: 48px minmax(0, 1fr); }
+  .has-next-pdf .processing-operation-header > .processing-main-action { grid-column: 2; justify-self: start; }
+  .processing-page .has-next-pdf .job-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+@media (max-height: 800px) {
+  .processing-next-panel { height: clamp(360px, calc(100dvh - 232px), 506px); }
+  .processing-page .processing-next-panel .processing-upload { gap: 14px; padding: 18px 14px; }
+  .processing-next-panel .processing-upload-icon { width: 48px; height: 48px; }
+}
+
 @container processing-page (max-width: 780px) {
   .processing-page .processing-upload {
     grid-template-columns: 64px minmax(0, 1fr);
@@ -758,9 +791,20 @@
     grid-column: 2;
     justify-self: start;
   }
-  .processing-page .processing-upload.is-compact {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
+}
+
+@container processing-page (max-width: 620px) {
+  .processing-layout.has-next-pdf { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .processing-next-panel { order: -1; height: auto; gap: 12px; padding: 16px; }
+  .processing-page .processing-next-panel .processing-upload { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 14px; padding: 16px; text-align: left; }
+  .processing-next-panel .processing-upload-icon { width: 48px; height: 48px; }
+  .processing-next-panel .processing-upload > .btn { grid-column: auto; width: auto; min-height: 40px; }
+  .processing-page .processing-next-panel .processing-upload h3 { font-size: 18px; }
+  .processing-page .processing-next-panel .processing-upload p { margin-top: 6px; font-size: 12px; }
+}
+@container processing-page (max-width: 420px) {
+  .processing-page .processing-next-panel .processing-upload { grid-template-columns: 48px minmax(0, 1fr); }
+  .processing-next-panel .processing-upload > .btn { grid-column: 1 / -1; width: 100%; }
 }
 
 @container processing-page (max-width: 680px) {
@@ -786,8 +830,7 @@
     gap: 20px;
     padding: 18px;
   }
-  .processing-page .processing-upload,
-  .processing-page .processing-upload.is-compact {
+  .processing-page .processing-upload {
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     padding: 20px;
@@ -798,9 +841,6 @@
   }
   .processing-page .processing-upload h3 {
     font-size: 20px;
-  }
-  .processing-page .processing-upload.is-compact h3 {
-    font-size: 16px;
   }
   .processing-page .processing-status-copy h2 {
     font-size: 20px;

@@ -458,3 +458,289 @@
 @media (prefers-reduced-motion: reduce) {
   .sidebar-tooltip { animation: none; }
 }
+
+/* Groups «Варианты» and «Подписи» read as section headings, like «Проект» and «Статус». */
+.app-shell > .sidebar .nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  margin: 25px 0 6px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-shell > .sidebar .nav-group-toggle > svg:first-child {
+  display: none;
+}
+
+.app-shell > .sidebar .nav-group-toggle > b {
+  margin-left: auto;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell > .sidebar .nav-group-toggle > svg:last-child {
+  flex-shrink: 0;
+  margin-right: -2px;
+  transition: transform 140ms ease-out;
+}
+
+.app-shell > .sidebar .nav-group-toggle[aria-expanded="false"] > svg:last-child {
+  transform: rotate(-90deg);
+}
+
+.app-shell > .sidebar .nav-group-toggle:hover {
+  background: #222836;
+  color: var(--sidebar-ink);
+}
+
+.app-shell > .sidebar .nav-group-toggle:focus-visible {
+  outline: 2px solid #9aa8ff;
+  outline-offset: -2px;
+}
+
+.app-shell > .sidebar #variant-navigation[hidden],
+.app-shell > .sidebar #folder-navigation[hidden] {
+  display: none;
+}
+
+.app-shell > .sidebar #folder-navigation {
+  padding-bottom: 4px;
+}
+
+/* Variant and caption markers: a dot in the full menu, a numbered chip in the rail. */
+.app-shell > .sidebar .variant-dot {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.app-shell > .sidebar .variant-dot > i {
+  display: none;
+}
+
+.app-shell > .sidebar .variant-dot.folder-dot {
+  width: 5px;
+  height: 5px;
+  margin: 0 6.5px;
+  background: #5d6478;
+}
+
+.app-shell > .sidebar .project-link.active .folder-dot {
+  background: #c4ceff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell > .sidebar .nav-group-toggle > svg:last-child { transition: none; }
+}
+
+/* Collapsed rail: one 40px column of equal 44×36 targets on a single centre line. */
+.app-shell.is-sidebar-collapsed > .sidebar .brand {
+  gap: 8px;
+  min-height: 88px;
+  padding: 10px 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .brand-mark {
+  width: 32px;
+  height: 32px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .brand-mark img {
+  width: 32px;
+  height: 32px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-collapse {
+  width: 32px;
+  height: 28px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar > nav {
+  padding: 10px 14px 12px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link,
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle {
+  justify-content: center;
+  width: 44px;
+  min-height: 36px;
+  margin-inline: auto;
+  padding: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link + .project-link {
+  margin-top: 2px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .back-link {
+  margin-bottom: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-label,
+.app-shell.is-sidebar-collapsed > .sidebar .nav-label.spaced {
+  width: 28px;
+  margin: 10px auto;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link.active::before {
+  left: -14px;
+  top: calc(50% - 10px);
+  height: 20px;
+  border-radius: 0 2px 2px 0;
+}
+
+/* A group in the rail: its icon plus a small chevron, separated like a section. */
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle {
+  position: relative;
+  gap: 0;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  padding-top: 10px;
+  border-radius: 0 0 8px 8px;
+  color: var(--sidebar-muted);
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 8px;
+  right: 8px;
+  height: 1px;
+  background: #2b303e;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle:hover {
+  border-radius: 8px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle:hover::before {
+  opacity: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle > svg:first-child {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle > span,
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle > b {
+  display: none;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle > svg:last-child {
+  position: absolute;
+  right: 3px;
+  bottom: 5px;
+  width: 10px;
+  height: 10px;
+  margin: 0;
+}
+
+/* «Статус» follows a group, so its divider shares the group's spacing. */
+.app-shell.is-sidebar-collapsed > .sidebar #variant-navigation + .nav-label {
+  margin-top: 12px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot,
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot.folder-dot {
+  width: 24px;
+  height: 22px;
+  margin: 0;
+  border-radius: 6px;
+  background: #9293ff2e;
+  color: #c4c5ff;
+  box-shadow: inset 0 0 0 1px #9293ff55;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot > i {
+  display: block;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot.color-1 {
+  background: #61b8a42e;
+  color: #8fd6c5;
+  box-shadow: inset 0 0 0 1px #61b8a455;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot.color-2 {
+  background: #e9a4742e;
+  color: #f3c39f;
+  box-shadow: inset 0 0 0 1px #e9a47455;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot.color-3 {
+  background: #d79cde2e;
+  color: #e9c0ee;
+  box-shadow: inset 0 0 0 1px #d79cde55;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .variant-dot.folder-dot {
+  background: #272d3a;
+  color: #a4aabd;
+  box-shadow: inset 0 0 0 1px #343b4c;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link.active .variant-dot {
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-utilities {
+  padding: 8px 14px 12px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-bottom,
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-utilities:has(.sidebar-version) .sidebar-bottom {
+  grid-template-columns: 44px;
+  gap: 2px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .sidebar-bottom .project-link {
+  min-height: 36px;
+}
+
+@media (max-height: 800px) {
+  .app-shell.is-sidebar-collapsed > .sidebar .brand {
+    min-height: 80px;
+    padding: 8px 0;
+    gap: 6px;
+  }
+
+  .app-shell.is-sidebar-collapsed > .sidebar .project-link,
+  .app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle,
+  .app-shell.is-sidebar-collapsed > .sidebar .sidebar-bottom .project-link {
+    min-height: 32px;
+  }
+
+  .app-shell.is-sidebar-collapsed > .sidebar .nav-group-toggle {
+    min-height: 40px;
+    padding-top: 8px;
+    margin-top: 6px;
+  }
+
+  .app-shell.is-sidebar-collapsed > .sidebar .nav-label,
+  .app-shell.is-sidebar-collapsed > .sidebar .nav-label.spaced {
+    margin-block: 6px;
+  }
+}

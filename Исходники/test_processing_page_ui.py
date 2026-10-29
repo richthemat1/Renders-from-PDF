@@ -131,6 +131,51 @@ class ProcessingPageUI(unittest.TestCase):
         self.assertEqual(self.jobs.snapshot()['current_output'], state['current_output'])
         self.assertEqual(self.errors, [])
 
+    def test_finished_result_keeps_next_pdf_beside_it_and_the_picker_works(self):
+        source = self.source('Жилой дом — длинное название презентации для проверки следующего файла')
+        self.jobs.start([source])
+        state = self.jobs.wait(15)
+        self.assertEqual(state['job']['outcome'], 'complete')
+        self.refresh()
+        result = self.page.locator('.processing-operation')
+        next_pdf = self.page.get_by_role('complementary', name='Новая обработка', exact=True)
+        for width, height in ((1600, 1000), (1440, 900), (1100, 760), (800, 640), (780, 620)):
+            with self.subTest(viewport=(width, height)):
+                self.page.set_viewport_size({'width': width, 'height': height})
+                expect(next_pdf).to_be_visible()
+                expect(next_pdf.get_by_role('button', name='Выбрать PDF', exact=True)).to_be_in_viewport(ratio=1)
+                left, right = result.bounding_box(), next_pdf.bounding_box()
+                self.assertAlmostEqual(left['y'], right['y'], delta=2)
+                self.assertGreaterEqual(right['x'], left['x'] + left['width'] + 16)
+                self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > innerWidth'))
+        self.page.evaluate('''snapshot => {
+            window.nextPickerCalls = 0;
+            window.pywebview = {api: {choose_pdfs: async () => {
+                window.nextPickerCalls += 1;
+                return snapshot;
+            }}};
+        }''', state)
+        next_pdf.get_by_role('button', name='Выбрать PDF', exact=True).click()
+        self.assertEqual(self.page.evaluate('window.nextPickerCalls'), 1)
+        expect(next_pdf.get_by_role('button', name='Выбрать PDF', exact=True)).to_be_enabled()
+        self.page.keyboard.press('Control+o')
+        self.page.wait_for_function('window.nextPickerCalls === 2')
+        expect(result).to_contain_text(source.name)
+        expect(self.page.get_by_role('button', name='Выбрать PDF', exact=True)).to_have_count(1)
+        self.assertEqual(self.errors, [])
+
+    def test_narrow_finished_view_puts_next_pdf_before_the_result(self):
+        self.jobs.start([self.source('Узкое окно')])
+        self.jobs.wait(15)
+        self.page.set_viewport_size({'width': 640, 'height': 620})
+        self.refresh()
+        next_pdf = self.page.get_by_role('complementary', name='Новая обработка', exact=True)
+        expect(next_pdf.get_by_role('button', name='Выбрать PDF', exact=True)).to_be_in_viewport(ratio=1)
+        next_rect = next_pdf.bounding_box()
+        result_rect = self.page.locator('.processing-operation').bounding_box()
+        self.assertLessEqual(next_rect['y'] + next_rect['height'], result_rect['y'])
+        self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > innerWidth'))
+
     def test_failed_new_batch_cannot_display_old_success(self):
         old, broken = self.source('Старый успешный'), self.source('Неудачная очередь')
         self.jobs.start([old])

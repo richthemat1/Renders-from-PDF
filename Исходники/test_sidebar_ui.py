@@ -19,6 +19,7 @@ class SidebarUI(unittest.TestCase):
     setUp = desktop_ui.DesktopUI.setUp
     card = desktop_ui.DesktopUI.card
     edit = desktop_ui.DesktopUI.edit
+    extend_gallery = desktop_ui.DesktopUI.extend_gallery
     save = desktop_ui.DesktopUI.save
 
     def separator(self):
@@ -132,6 +133,7 @@ class SidebarUI(unittest.TestCase):
         self.assertEqual(self.errors, [])
 
     def test_floating_tools_follow_the_actual_workspace_after_resize_and_hide(self):
+        self.extend_gallery()
         self.page.set_viewport_size({'width': 1380, 'height': 620})
         self.edit()
         self.card(0).get_by_role('checkbox').check()

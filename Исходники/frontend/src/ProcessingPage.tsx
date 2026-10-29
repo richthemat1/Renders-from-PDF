@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
+  BadgeCheck,
   ChevronRight,
   ChevronUp,
-  CircleCheck,
   CircleStop,
   FileInput,
   FilePlus2,
@@ -41,20 +41,19 @@ interface ProcessingPageProps {
   failures: ReactNode;
 }
 
-function UploadZone({ compact, fileDrag, waiting, onChoose }: {
-  compact: boolean;
+function UploadZone({ fileDrag, waiting, onChoose }: {
   fileDrag: boolean;
   waiting: boolean;
   onChoose(): void;
 }) {
-  return <section className={`upload-zone processing-upload${compact ? " is-compact" : ""}${fileDrag ? " is-drag-over" : ""}`} aria-labelledby="upload-title">
-    <span className="processing-upload-icon"><FileInput size={compact ? 24 : 30} strokeWidth={1.7} /></span>
+  return <section className={`upload-zone processing-upload${fileDrag ? " is-drag-over" : ""}`} aria-labelledby="upload-title">
+    <span className="processing-upload-icon"><FileInput size={30} strokeWidth={1.7} /></span>
     <div className="processing-upload-copy">
       <h3 id="upload-title">{fileDrag ? "Отпустите PDF для обработки" : "Перетащите PDF сюда"}</h3>
       <p>Один файл, несколько презентаций или папка из Проводника</p>
     </div>
-    <button className={`btn ${compact ? "secondary" : "primary"}`} onClick={onChoose} disabled={waiting} aria-keyshortcuts="Control+O">
-      <FilePlus2 size={16} />Выбрать PDF<kbd aria-hidden="true">Ctrl O</kbd>
+    <button className="btn primary" onClick={onChoose} disabled={waiting} aria-keyshortcuts="Control+O">
+      <FilePlus2 size={17} />Выбрать PDF<kbd aria-hidden="true">Ctrl O</kbd>
     </button>
   </section>;
 }
@@ -101,12 +100,13 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
     {failures}
 
+    <div className={`processing-layout${view.showJob && !processing ? " has-next-pdf" : ""}`}>
     <section className={`processing-operation${view.showJob ? ` job-panel is-${view.outcome}` : ""}`} data-outcome={view.outcome} aria-labelledby={view.showJob ? "job-status" : "new-processing-title"}>
       <div className="processing-operation-body">
         {view.showJob ? <>
           <div className="processing-operation-header">
             <span className="processing-status-icon">
-              {processing ? <LoaderCircle size={25} className="spin" /> : complete ? <CircleCheck size={25} /> : view.outcome === "cancelled" ? <CircleStop size={25} /> : <TriangleAlert size={25} />}
+              {processing ? <LoaderCircle size={25} className="spin" /> : complete ? <BadgeCheck size={25} /> : view.outcome === "cancelled" ? <CircleStop size={25} /> : <TriangleAlert size={25} />}
             </span>
             <div className="processing-status-copy">
               <h2 id="job-status" role="status">{view.title}</h2>
@@ -152,7 +152,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
           </div>
         </> : <>
           <div className="processing-new-title"><h2 id="new-processing-title">Новая обработка</h2><p>PDF → изображения и варианты</p></div>
-          <UploadZone compact={false} fileDrag={fileDrag} waiting={waiting} onChoose={onChoose} />
+          <UploadZone fileDrag={fileDrag} waiting={waiting} onChoose={onChoose} />
           <OriginalsNote />
         </>}
       </div>
@@ -164,7 +164,12 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       </footer>
     </section>
 
-    {view.showJob && !processing && <UploadZone compact fileDrag={fileDrag} waiting={waiting} onChoose={onChoose} />}
+    {view.showJob && !processing && <aside className="processing-next-panel" aria-labelledby="next-processing-title">
+      <h2 id="next-processing-title"><FilePlus2 size={18} />Новая обработка</h2>
+      <UploadZone fileDrag={fileDrag} waiting={waiting} onChoose={onChoose} />
+      <p className="processing-next-local"><ShieldCheck size={14} /><span>Обработка на вашем компьютере</span></p>
+    </aside>}
+    </div>
 
     {state.logs.length > 0 && <section className="events processing-events" aria-label="События обработки">
       <details open={eventsOpen}>

@@ -149,7 +149,7 @@ class AppUX(unittest.TestCase):
         failures = self.page.get_by_role('region', name='Необработанные файлы')
         expect(failures).to_contain_text('Проверочная ошибка PDF')
         expect(failures.get_by_role('button', name='Повторить', exact=True)).to_be_visible()
-        expect(failures.get_by_role('button', name='Выбрать другую папку', exact=True)).to_be_visible()
+        expect(failures.get_by_role('button', name='Выбрать другую папку', exact=True)).to_have_count(0)
         failures.get_by_role('button', name='Убрать ошибку из истории:', exact=False).click()
         expect(failures).to_have_count(0)
         self.assertEqual(self.jobs.snapshot()['failures'], [])

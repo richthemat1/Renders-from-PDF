@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -24,8 +25,8 @@ import {
   Shapes,
   Search,
   Tag,
+  Tags,
   Trash2,
-  TriangleAlert,
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
 import { ActionMenu, Dialog, Empty, Shell, StatusNote } from "./components";
@@ -46,9 +47,11 @@ import {
 } from "./editor";
 import type { Draft } from "./editor";
 import { EditorToolbar } from "./EditorToolbar";
+import { ReviewSummary } from "./ReviewSummary";
 import type { NoticeAction, Result } from "./types";
 import "./viewer-ux.css";
 import "./preview-visual.css";
+import "./review-fixes.css";
 
 type Rename = {
   kind: "variant" | "folder" | "file";
@@ -66,22 +69,6 @@ function textEntry(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && !!target.closest(
     'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select,[contenteditable]:not([contenteditable="false"])',
   );
-}
-function reportIssue(value: unknown, error: boolean) {
-  const data = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const page = Number(data.page) || null;
-  const image = Number(data.image) || null;
-  const detail = typeof value === "string" ? value :
-    [data.message, data.error, data.reason].find((text) => typeof text === "string") as string | undefined;
-  const scan = /ocr|распознав|скан/i.test(detail || "");
-  const message = error
-    ? (detail || "Не удалось извлечь изображение. Проверьте исходную страницу PDF.")
-    : scan
-      ? "Не удалось распознать подпись на скане. Проверьте изображение вручную."
-      : data.fallback
-        ? `Изображение сохранено снимком области страницы. ${String(data.fallback)}`
-        : (detail || "Проверьте изображение и его подпись вручную.");
-  return { page, image, message, detail: scan && detail ? detail : undefined, error };
 }
 export function Viewer({
   result,
@@ -119,6 +106,12 @@ export function Viewer({
   const [copyTarget, setCopyTarget] = useState("same");
   const [number, setNumber] = useState("1");
   const [preview, setPreview] = useState<number | null>(null);
+  const [sourcePage, setSourcePage] = useState(false);
+  const [sourcePreview, setSourcePreview] = useState<{ key: string; url?: string; error?: string }>({ key: "" });
+  const [variantsOpen, setVariantsOpen] = useState(true);
+  const [foldersOpen, setFoldersOpen] = useState(() => new Set(result.report.images
+    .filter((image) => !image.removed && image.variant === null && image.status === "named")
+    .map((image) => image.folder)).size <= 8);
   const [previewOrder, setPreviewOrder] = useState<number[]>([]);
   const [zoom, setZoom] = useState(1);
   const [previewBounds, setPreviewBounds] = useState({ width: 0, height: 0 });
@@ -143,6 +136,13 @@ export function Viewer({
   const savingState = useRef(saving);
   savingState.current = saving;
   const { report } = result;
+  useEffect(() => {
+    if (filter.startsWith("variant:")) setVariantsOpen(true);
+    if (filter.startsWith("folder:")) setFoldersOpen(true);
+  }, [filter]);
+  useLayoutEffect(() => {
+    document.querySelector<HTMLElement>("nav .project-link.active")?.scrollIntoView({ block: "nearest" });
+  }, [filter, variantsOpen, foldersOpen]);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; dragImage.current?.remove(); };
@@ -229,8 +229,6 @@ export function Viewer({
   const removedRows = removed.map((id) => allRows[id]);
   const serviceRows = service.map((id) => allRows[id]);
   const showStatusTabs = filter === "all" || filter.startsWith("variant:");
-  const issues = [...(report.errors || []).map((value) => reportIssue(value, true)),
-    ...(report.warnings || []).map((value) => reportIssue(value, false))];
   const variants = useMemo(
     () => Object.keys(draft.variants).sort((a, b) => Number(a) - Number(b)),
     [draft],
@@ -279,6 +277,7 @@ export function Viewer({
     review: rows.filter((row) => row.status === "review").length,
     unsigned: rows.filter((row) => row.status === "unsigned").length,
   };
+  const reviewComplete = filter === "needs-review" && !query.trim() && counts.review + counts.unsigned === 0;
   const activeTitle = filter.startsWith("variant:")
     ? variantLabel(report, filter.slice(8))
     : filter.startsWith("folder:")
@@ -527,7 +526,29 @@ export function Viewer({
     : previewRow?.image.removed ? "Изображение восстановлено в черновике. Сохраните правки, чтобы открыть его PDF."
     : pendingLocation ? `Изображение будет помещено в «${previewRow?.label}» после сохранения правок.`
     : previewRow?.image.reason || "Изображение извлечено из PDF. Подпись и расположение можно проверить в редакторе.";
-  const previewKey = `${preview}:${report.revision}`;
+  const previewSourceId = preview === null ? -1 : sourceId(draft, preview);
+  const sourceKey = `${result.id}:${previewSourceId}:${report.revision}`;
+  const previewKey = `${sourceKey}:${sourcePage ? "source" : "image"}`;
+  const source = sourcePreview.key === sourceKey ? sourcePreview : null;
+  useEffect(() => {
+    if (!sourcePage || previewSourceId < 0) return;
+    const controller = new AbortController();
+    let objectUrl: string | undefined;
+    const url = new URL(`api/results/${encodeURIComponent(result.id)}/source/${previewSourceId}?revision=${report.revision}`, document.baseURI);
+    void fetch(url, { signal: controller.signal }).then(async (response) => {
+      if (!response.ok) {
+        const value = await response.json();
+        throw new Error(value.error || "Не удалось показать исходную страницу PDF.");
+      }
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      objectUrl = URL.createObjectURL(blob);
+      setSourcePreview({ key: sourceKey, url: objectUrl });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setSourcePreview({ key: sourceKey, error: errorText(error) });
+    });
+    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [sourcePage, sourceKey, previewSourceId, result.id, report.revision]);
   const natural = previewNatural?.key === previewKey ? previewNatural : {
     width: previewRow?.image.size?.[0] || 1, height: previewRow?.image.size?.[1] || 1,
   };
@@ -552,6 +573,7 @@ export function Viewer({
     setPreviewNatural({ key: previewKey, width: image.naturalWidth, height: image.naturalHeight });
   }
   function showPreview(id: number) {
+    setSourcePage(false);
     setPreviewOrder(visibleIds);
     setPreview(id);
   }
@@ -564,7 +586,7 @@ export function Viewer({
     setZoom(1);
     setPreviewFailed(false);
     previewViewport.current?.scrollTo(0, 0);
-  }, [preview, report.revision]);
+  }, [preview, report.revision, sourcePage]);
   useEffect(() => {
     if (preview === null) return;
     const viewport = previewViewport.current;
@@ -573,7 +595,7 @@ export function Viewer({
       setZoom((value) => Math.max(0.25, Math.min(5, Math.round((value - event.deltaY * 0.003) * 100) / 100)));
     };
     const key = (event: KeyboardEvent) => {
-      if (textEntry(event.target) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (textEntry(event.target) || event.defaultPrevented || document.querySelector("[role=menu]") || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         const index = previewOrder.indexOf(preview);
@@ -691,19 +713,25 @@ export function Viewer({
           {sidebar("removed", "Убранные", removed.length, <Trash2 size={17} />)}
           {!!report.images.some((image) => image.suppressed || image.suppression_code) &&
             sidebar("service", "Служебные", service.length, <Shapes size={17} />)}
-          <div className="nav-label spaced">Варианты</div>
+          <button className="nav-group-toggle" aria-label={`Варианты: ${variants.length}`} title={`Варианты: ${variants.length}`}
+            aria-expanded={variantsOpen} aria-controls="variant-navigation"
+            onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
+            <Layers3 size={16} /><span>Варианты</span><b>{variants.length}</b><ChevronDown size={14} />
+          </button>
+          <div id="variant-navigation" hidden={!variantsOpen}>
           {variants.map((key, i) =>
             sidebar(
               `variant:${key}`,
               variantLabel(report, key),
               draft.variants[key].length,
-              <span className={`variant-dot color-${i % 4}`} />,
+              <span className={`variant-dot color-${i % 4}`} aria-hidden="true"><i>{i + 1}</i></span>,
               key,
             ),
           )}
           {!variants.length && (
             <p className="nav-empty">Варианты пока не определены</p>
           )}
+          </div>
           <div className="nav-label spaced">Статус</div>
           {sidebar(
             "review",
@@ -719,16 +747,20 @@ export function Viewer({
           )}
           {!!folders.length && (
             <>
-              <div className="nav-label spaced">Подписи</div>
-              <div className="category-list">
-                {folders.map((folder) =>
+              <button className="nav-group-toggle" aria-label={`Подписи: ${folders.length}`} title={`Подписи: ${folders.length}`}
+                aria-expanded={foldersOpen} aria-controls="folder-navigation"
+                onClick={(event) => { event.stopPropagation(); setFoldersOpen((value) => !value); }}>
+                <Tags size={16} /><span>Подписи</span><b>{folders.length}</b><ChevronDown size={14} />
+              </button>
+              <div id="folder-navigation" className="category-list" hidden={!foldersOpen}>
+                {folders.map((folder, i) =>
                   sidebar(
                     `folder:${folder}`,
                     folderLabel(report, folder),
                     rows.filter(
                       (row) => row.folder === folder && row.variant === null,
                     ).length,
-                    <Tag size={16} />,
+                    <span className="variant-dot folder-dot" aria-hidden="true"><i>{i + 1}</i></span>,
                   ),
                 )}
               </div>
@@ -787,8 +819,10 @@ export function Viewer({
         <div className="page-heading viewer-heading">
           <div>
             <h1>{result.title}</h1>
-            <p>
-              {report.pages} {plural(report.pages, ["страница", "страницы", "страниц"])} PDF · {report.documents.length} {plural(report.documents.length, ["готовый", "готовых", "готовых"])} PDF
+            <p className="viewer-facts">
+              <span>{rows.length} {plural(rows.length, ["изображение", "изображения", "изображений"])}</span>
+              <span>{variantCount} {plural(variantCount, ["вариант", "варианта", "вариантов"])}</span>
+              <span>{report.documents.length} {plural(report.documents.length, ["готовый", "готовых", "готовых"])} PDF из {report.pages} {plural(report.pages, ["страницы", "страниц", "страниц"])}</span>
             </p>
           </div>
           <button className="btn secondary" onClick={() => open()}>
@@ -796,122 +830,12 @@ export function Viewer({
             <span>Папка результата</span>
           </button>
         </div>
-        <div className="stats" aria-label="Итоги обработки">
-          <button
-            className={filter === "all" ? "selected" : ""}
-            onClick={() => {
-              setFilter("all");
-              setStatus("all");
-            }}
-          >
-            <span className="stat-icon blue">
-              <Images size={20} />
-            </span>
-            <span>
-              <strong>{rows.length}</strong>
-              <small>{plural(rows.length, ["Изображение", "Изображения", "Изображений"])}</small>
-            </span>
-          </button>
-          <div className="passive-stat">
-            <span className="stat-icon violet">
-              <FileText size={20} />
-            </span>
-            <span>
-              <strong>{report.pages}</strong>
-              <small>{plural(report.pages, ["Страница", "Страницы", "Страниц"])} PDF</small>
-            </span>
-          </div>
-          <div className="passive-stat">
-            <span className="stat-icon teal">
-              <Layers3 size={20} />
-            </span>
-            <span>
-              <strong>
-                {variantCount}
-              </strong>
-              <small>{plural(variantCount, ["Вариант", "Варианта", "Вариантов"])}</small>
-            </span>
-          </div>
-          <button
-            className={filter === "review" ? "selected" : ""}
-            onClick={() => {
-              setFilter("review");
-              setStatus("all");
-            }}
-          >
-            <span className="stat-icon amber">
-              <Clock3 size={20} />
-            </span>
-            <span>
-              <strong>{counts.review}</strong>
-              <small>На проверку</small>
-            </span>
-          </button>
-          <button
-            className={filter === "unsigned" ? "selected" : ""}
-            onClick={() => {
-              setFilter("unsigned");
-              setStatus("all");
-            }}
-          >
-            <span className="stat-icon rose">
-              <Tag size={20} />
-            </span>
-            <span>
-              <strong>{counts.unsigned}</strong>
-              <small>Без подписи</small>
-            </span>
-          </button>
-        </div>
-        {!!report.suppressed?.length && <p className="suppressed-summary">
-          Пропущено служебных элементов: {report.suppressed.length}
-          {!!service.length && <> · <button className="text-btn" onClick={() => {
-            setFilter("service"); setStatus("all"); setQuery("");
-          }}>Посмотреть и вернуть</button></>}
-        </p>}
-        {!!(counts.review + counts.unsigned) && (
-          <div className="review-banner">
-            <span className="review-icon">
-              <TriangleAlert size={20} />
-            </span>
-            <div>
-              <strong>
-                Нужно проверить: {counts.review + counts.unsigned}
-              </strong>
-              <span>
-                Проверьте подписи и перенесите изображения в нужный вариант.
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                setFilter("needs-review");
-                setStatus("all");
-              }}
-            >
-              Начать проверку
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
-        {!!(report.errors?.length || report.warnings?.length) && (
-          <details className="report-notes" open={!!report.errors?.length}>
-            <summary>
-              <TriangleAlert size={15} />
-              Предупреждения: {report.warnings?.length || 0} · Ошибки:{" "}
-              {report.errors?.length || 0}
-            </summary>
-            <ul className="report-issue-list">
-              {issues.map((issue, index) => <li key={index} className={issue.error ? "is-error" : ""}>
-                <TriangleAlert size={17} aria-hidden="true" />
-                <div><strong>{issue.page ? `Страница ${issue.page}` : issue.error ? "Ошибка обработки" : "Предупреждение"}</strong>
-                  <p>{issue.message}</p>
-                  {issue.detail && <details><summary>Подробности</summary><p>{issue.detail}</p></details>}
-                </div>
-                {issue.page && <button className="text-btn" onClick={() => revealIssue(issue.page!, issue.image)}>Показать страницу</button>}
-              </li>)}
-            </ul>
-          </details>
-        )}
+        <ReviewSummary key={result.id} review={counts.review} unsigned={counts.unsigned}
+          warnings={report.warnings || []} errors={report.errors || []}
+          serviceCount={report.suppressed?.length || 0} canRestoreService={service.length > 0}
+          onReview={() => { setFilter("needs-review"); setStatus("all"); setQuery(""); }}
+          onService={() => { setFilter("service"); setStatus("all"); setQuery(""); }}
+          onReveal={revealIssue} />
         {editing && (
           <EditorToolbar
             selected={selected.length}
@@ -939,6 +863,7 @@ export function Viewer({
                 ? ids.filter((id) => !visibleIdSet.has(id))
                 : [...new Set([...ids, ...visibleIds])];
             })}
+            onClearSelection={() => { setSelected([]); anchor.current = null; }}
             onMove={(target) => move(target)}
             onNewVariant={() => {
               setNumber(String(Math.max(0, ...variants.map(Number)) + 1));
@@ -993,7 +918,7 @@ export function Viewer({
             aria-label="Фильтр по статусу"
           >
             {[
-              ["all", "Все изображения"],
+              ["all", "Все"],
               ["named", "С подписью"],
               ["review", "На проверку"],
               ["unsigned", "Без подписи"],
@@ -1140,10 +1065,14 @@ export function Viewer({
           </div>
         ) : (
           <Empty
-            icon={<Images size={32} />}
-            title={filter === "removed" && !query.trim() ? "Убранных изображений нет"
+            icon={reviewComplete ? <Check size={32} /> : <Images size={32} />}
+            title={reviewComplete ? dirty ? "Спорные изображения распределены в черновике" : "Спорные изображения распределены"
+              : filter === "removed" && !query.trim() ? "Убранных изображений нет"
               : filter === "service" && !query.trim() ? "Служебных элементов нет" : "Изображения не найдены"}
             action={
+              reviewComplete && dirty ? <button className="btn primary" disabled={saving} onClick={() => void save()}>
+                {saving ? "Сохраняю…" : "Сохранить распределение"}
+              </button> :
               <button
                 className="btn secondary"
                 onClick={() => {
@@ -1156,7 +1085,8 @@ export function Viewer({
               </button>
             }
           >
-            {filter === "removed" ? "Убранные карточки появятся здесь. Их можно вернуть и после сохранения."
+            {reviewComplete ? dirty ? "Сохраните правки, чтобы записать распределение в готовые PDF." : "Правки сохранены. Можно перейти к просмотру всех изображений."
+              : filter === "removed" ? "Убранные карточки появятся здесь. Их можно вернуть и после сохранения."
               : filter === "service" ? "Все автоматически пропущенные элементы уже возвращены в результат."
               : "Измените поиск или фильтр. Убранные карточки находятся в разделе «Убранные»."}
           </Empty>
@@ -1169,19 +1099,41 @@ export function Viewer({
           title={previewRow.title}
           onClose={() => setPreview(null)}
           subtitle={<div className="preview-source-meta">
-            <span>Страница {previewRow.image.page}</span><span aria-hidden="true">·</span>
+            <span>Исходная страница {previewRow.image.page}</span><span aria-hidden="true">·</span>
             <span>{previewRow.image.size?.join(" × ")} px</span>
           </div>}
           headerActions={<div className="preview-header-actions">
-            <button className="btn primary preview-open-pdf" aria-label="Открыть PDF"
+            <button className="btn primary preview-open-pdf" aria-label="Открыть готовый PDF"
               disabled={removedSet.has(previewRow.id) || !!previewRow.image.removed}
-              title={removedSet.has(previewRow.id) ? "Верните изображение и сохраните результат, чтобы открыть PDF" : previewRow.image.removed ? "Сохраните восстановление, чтобы открыть PDF" : "Открыть PDF"}
+              title={removedSet.has(previewRow.id) ? "Верните изображение и сохраните результат, чтобы открыть PDF" : previewRow.image.removed ? "Сохраните восстановление, чтобы открыть PDF" : "Открыть сохранённый PDF результата"}
               onClick={() => open(previewRow.image.file)}>
-              <FileText size={16} /><span>Открыть PDF</span><ArrowUpRight size={14} />
+              <FileText size={16} /><span>Открыть готовый PDF</span><ArrowUpRight size={14} />
             </button>
             <span className="preview-action-separator" aria-hidden="true" />
           </div>}
         >
+          <div className="preview-taskbar">
+            <div className="preview-view-switch" role="group" aria-label="Что показать">
+              <button className="btn compact secondary" aria-pressed={!sourcePage}
+                onClick={() => setSourcePage(false)}><Images size={15} />Извлечённое изображение</button>
+              <button className="btn compact secondary" aria-pressed={sourcePage}
+                onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={15} />Исходная страница {previewRow.image.page}</button>
+            </div>
+            {editing && <div className="preview-edit-actions" aria-label="Правки открытого изображения">
+              <ActionMenu label="Перенести изображение" disabled={saving}
+                items={[...variants.map((key) => ({ value: key, label: variantLabel(report, key) })),
+                  { value: "return", label: "Вернуть в папку подписи / Все остальное", separator: true,
+                    disabled: previewRow.variant === null || removedSet.has(previewRow.id) }]}
+                onAction={(target) => target === "return"
+                  ? change({ type: "return-to-misc", ids: [previewRow.id] }) : move(target, [previewRow.id])} />
+              <button className="btn compact secondary" disabled={saving}
+                aria-label={removedSet.has(previewRow.id) ? "Вернуть изображение" : "Убрать изображение"}
+                onClick={() => change({ type: removedSet.has(previewRow.id) ? "restore" : "remove", ids: [previewRow.id] })}>
+                {removedSet.has(previewRow.id) ? <RotateCcw size={15} /> : <Trash2 size={15} />}
+                {removedSet.has(previewRow.id) ? "Вернуть" : "Убрать"}
+              </button>
+            </div>}
+          </div>
           <div className="preview-stage">
             <button
               className="icon-btn preview-page-button preview-previous"
@@ -1213,7 +1165,14 @@ export function Viewer({
               <div className="preview-image-canvas" style={{
                 width: Math.max(previewBounds.width, previewWidth), height: Math.max(previewBounds.height, previewHeight),
               }}>
-                {!previewFailed ? <img key={`${previewRow.id}:${report.revision}`} draggable={false}
+                {sourcePage ? source?.url ? <img key={previewKey} draggable={false}
+                  data-preview-kind="source" src={source.url} alt={`Исходная страница ${previewRow.image.page}`}
+                  style={{ width: previewWidth, height: previewHeight }} onLoad={previewLoaded} />
+                  : <div className="source-preview-state" role="status">
+                    {source?.error ? <><ImageOff size={32} /><strong>Исходный PDF недоступен</strong><p>{source.error}</p></>
+                      : <><Scan size={32} /><span>Открываю исходную страницу…</span></>}
+                  </div>
+                  : !previewFailed ? <img key={previewKey} draggable={false}
                   src={new URL(`api/results/${encodeURIComponent(result.id)}/preview/${sourceId(draft, previewRow.id)}?revision=${report.revision}`, document.baseURI).href}
                   alt={previewRow.title} style={{ width: previewWidth, height: previewHeight }}
                   onLoad={previewLoaded} onError={() => setPreviewFailed(true)} />

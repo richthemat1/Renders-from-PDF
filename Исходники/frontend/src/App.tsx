@@ -4,23 +4,30 @@ import {
   Check,
   CircleHelp,
   FileText,
+  Files,
   FolderOpen,
+  FolderOutput,
   History,
   ImagePlus,
+  Images,
   LoaderCircle,
   SlidersHorizontal,
   X,
   AlertTriangle,
   RotateCcw,
+  ScanEye,
+  Search,
   Trash2,
 } from "lucide-react";
-import { dateLabel, errorText, native, plural, request } from "./api";
+import { dateLabel, errorText, native, request } from "./api";
 import { Dialog, Empty, Shell, StatusNote } from "./components";
 import type { HistoryItem, NoticeAction, ProcessingFailure, Result, Snapshot } from "./types";
 import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import { ProcessingPage } from "./ProcessingPage";
+import { failureMessage } from "./processing-model";
 import "./app-ux.css";
+import "./history-visual.css";
 
 type Page = "work" | "history" | "settings" | "viewer";
 export function App() {
@@ -225,10 +232,12 @@ export function App() {
       <div className="section-title"><h2><AlertTriangle size={18} />Не обработано: {items.length}</h2></div>
       <p>Эти файлы требуют повторной обработки. Причины сохраняются между запусками приложения.</p>
       {items.map((item) => <article className="failure-row" key={item.id}>
-        <div><strong>{item.name}</strong><p>{item.reason}</p><small>{dateLabel(item.failed_at)}</small></div>
+        <div><strong>{item.name}</strong><p>{failureMessage(item)}</p>
+          {failureMessage(item) !== item.reason && <details className="failure-details"><summary>Технические подробности</summary><p>{item.reason}</p></details>}
+          <small>{dateLabel(item.failed_at)}</small></div>
         <div className="failure-actions">
           <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={15} />Повторить</button>
-          <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку</button>
+          {item.action === "choose_output" && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку</button>}
           <button className="icon-btn" disabled={waiting} aria-label={`Убрать ошибку из истории: ${item.name}`} title="Убрать запись из истории" onClick={() => failureAction(item, "forget")}><X size={16} /></button>
         </div>
       </article>)}
@@ -236,22 +245,35 @@ export function App() {
   }
   function historyRow(item: HistoryItem) {
     const repeats = (state?.history ?? []).filter((other) => other.source.replaceAll("\\", "/").toLocaleLowerCase() === item.source.replaceAll("\\", "/").toLocaleLowerCase()).length > 1;
-    return <div className="history-entry" key={item.id}>
-      <button className="history-row" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
-        <span className="file-icon"><FileText size={25} /></span>
-        <span className="history-name"><strong>{item.name}</strong>
-          <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.documents} PDF · {dateLabel(item.finished_at)}{repeats && " · Есть другие выгрузки этого PDF"}</small>
-          <small className="history-path" title={item.output}>{item.output}</small>
-          <small className={!item.available ? "history-unavailable" : ""}>{!item.available ? "Папка недоступна — укажите новое расположение" : item.review || item.unsigned ? `Проверить: ${item.review + item.unsigned}` : "Готово"}</small>
+    return <article className="history-entry history-card" key={item.id}>
+      <button className="history-row history-card-main" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
+        <span className="history-card-top">
+          <span className="file-icon"><FileText size={21} /></span>
+          <span className={`history-card-state${!item.available || item.errors ? " needs-attention" : ""}`}>
+            {!item.available || item.errors ? <AlertTriangle size={14} /> : item.review || item.unsigned ? <ScanEye size={14} /> : <Check size={14} />}
+            {!item.available ? "Папка недоступна" : item.review || item.unsigned ? `Проверить: ${item.review + item.unsigned}` : item.errors ? `Ошибки: ${item.errors}` : "Готово"}
+          </span>
+          <time dateTime={item.finished_at}>{dateLabel(item.finished_at)}</time>
+        </span>
+        <strong className="history-card-title" title={item.name}>{item.name}</strong>
+        <span className="history-card-metrics">
+          <span><span>Изображения<Images size={15} /></span><strong>{item.images}</strong></span>
+          <span><span>PDF<Files size={15} /></span><strong>{item.documents}</strong></span>
+        </span>
+        <span className="history-card-location">
+          <span><FolderOutput size={14} />Папка результата</span>
+          <span className="history-path" title={item.output}>{item.output}</span>
+          {!item.available && <span className="history-unavailable">Укажите новое расположение папки</span>}
+          {repeats && <span className="history-repeat-note">Есть другие выгрузки этого PDF</span>}
         </span>
       </button>
       <div className="history-actions">
         {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку: ${item.name}`}><FolderOpen size={15} /><span>Папка</span></button>
           : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={15} />Указать папку</button>}
         <button className="btn compact secondary" disabled={waiting || state?.busy} aria-label={`Обработать заново: ${item.name}`} onClick={() => historyAction(item, "repeat")}><RotateCcw size={15} /><span>Заново</span></button>
-        <button className="icon-btn" disabled={waiting} aria-label={`Убрать из истории: ${item.name}`} title="Убрать запись из истории, сохранив файлы" onClick={() => historyAction(item, "forget")}><Trash2 size={16} /></button>
+        <button className="icon-btn" disabled={waiting} aria-label={`Убрать из истории: ${item.name}`} title="Убрать запись из истории, сохранив файлы" onClick={() => historyAction(item, "forget")}><Trash2 size={18} /></button>
       </div>
-    </div>;
+    </article>;
   }
   function previous() {
     guard(
@@ -462,11 +484,7 @@ export function App() {
         header={
           <>
             <span className="topbar-title">{title}</span>
-            <StatusNote busy={state?.busy}>
-              {state?.busy
-                ? "Обработка PDF"
-                : `Версия ${state?.version ?? "…"}`}
-            </StatusNote>
+            {state?.busy && <StatusNote busy>Обработка PDF</StatusNote>}
           </>
         }
       >
@@ -514,7 +532,8 @@ export function App() {
                 />
               )}
               {page === "history" && (
-                <>
+                <div className="history-page">
+                  <div className="history-heading-search">
                   <div className="page-heading">
                     <div>
                       <h1>История обработки</h1>
@@ -529,6 +548,7 @@ export function App() {
                       Открыть папку результата
                     </button>
                   </div>
+                  <label className="history-search-control"><Search size={18} />
                   <input
                     className="history-search"
                     type="search"
@@ -537,6 +557,8 @@ export function App() {
                     value={historyQuery}
                     onChange={(e) => setHistoryQuery(e.target.value)}
                   />
+                  </label>
+                  </div>
                   {failureList(matchingFailures)}
                   {!state.history.length && !(state.failures?.length) ? (
                     <Empty icon={<History size={32} />} title="Здесь появятся ваши результаты"
@@ -551,7 +573,7 @@ export function App() {
                       Попробуйте часть названия или откройте нужную папку вручную.
                     </Empty>
                   )}
-                </>
+                </div>
               )}
               {page === "settings" && (
                 <Settings

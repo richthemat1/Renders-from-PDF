@@ -73,11 +73,11 @@ class ViewerUX(unittest.TestCase):
         self.page.reload()
         self.page.get_by_role('button', name='История обработки', exact=True).click()
         self.page.locator('.history-row').first.click()
-        self.page.locator('.report-notes summary').first.click()
-        expect(self.page.locator('.report-issue-list')).to_contain_text('Проверьте изображение вручную')
-        expect(self.page.locator('.report-notes pre')).to_have_count(0)
+        self.page.get_by_role('button', name='Предупреждения: 1', exact=True).click()
+        expect(self.page.locator('.review-issue-list')).to_contain_text('Подпись на скане не распознана')
+        expect(self.page.locator('.review-summary pre')).to_have_count(0)
         self.page.get_by_role('searchbox').fill('нет такой подписи')
-        self.page.get_by_role('button', name='Показать страницу', exact=True).click()
+        self.page.get_by_role('button', name='Найти изображение', exact=True).click()
         expect(self.page.get_by_role('searchbox')).to_have_value('')
         expect(self.card(2)).to_be_in_viewport()
 
@@ -126,7 +126,7 @@ class ViewerUX(unittest.TestCase):
         expect(image).to_have_attribute('src', re.compile(r'/api/results/[^/]+/preview/0\?revision=0$'))
         self.page.wait_for_function('document.querySelector(".preview-image-canvas img").naturalWidth > 640')
         self.page.keyboard.press('ArrowRight')
-        expect(self.page.get_by_role('dialog')).to_contain_text('Страница 2')
+        expect(self.page.get_by_role('dialog')).to_contain_text('Исходная страница 2')
         self.page.locator('.preview-image-scroll').dblclick()
         expect(self.page.locator('.preview-zoom-tools')).to_contain_text('200%')
         self.page.locator('.preview-image-scroll').hover()
@@ -162,7 +162,10 @@ class ViewerUX(unittest.TestCase):
         self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 1366)
         self.page.set_viewport_size({'width': 800, 'height': 640})
         self.assertLess(self.page.locator('.asset-card').first.bounding_box()['y'], 640)
-        self.assertLess(self.page.locator('.stats').bounding_box()['height'], 90)
+        expect(self.page.get_by_role('group', name='Итоги обработки')).to_have_count(0)
+        expect(self.page.locator('.asset-meta').first).to_be_in_viewport(ratio=1)
+        rect = self.page.locator('.asset-meta').first.bounding_box()
+        self.assertLess(rect['y'] + rect['height'], 640)
         self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 800)
 
     def test_selection_overlay_and_hover_handle_are_visible_and_distinct(self):
@@ -227,8 +230,6 @@ class ViewerUX(unittest.TestCase):
         expect(self.card(3).locator('.asset-group')).to_have_count(0)
         expect(self.card(0).locator('.asset-group')).to_have_css('text-transform', 'none')
         expect(self.page.locator('nav').get_by_role('button', name='Вид 10 1', exact=True)).to_have_attribute('title', 'Вид 10')
-        self.assertNotEqual(self.page.locator('.stats > .passive-stat').first.evaluate('e => getComputedStyle(e).backgroundColor'),
-                            self.page.locator('.stats > button').first.evaluate('e => getComputedStyle(e).backgroundColor'))
 
     def test_medium_toolbar_keeps_move_remove_and_compact_inline_height(self):
         self.page.set_viewport_size({'width': 1100, 'height': 620})

@@ -1,5 +1,18 @@
 import { plural } from "./api";
-import type { Snapshot } from "./types";
+import type { ProcessingFailure, Snapshot } from "./types";
+
+export function failureMessage(item: Pick<ProcessingFailure, "reason" | "action">): string {
+  // Cyrillic inside a quoted filename is not a localized explanation.
+  const localized = /^(?:PDF\s+)?[а-яё]{2,}(?:\s|:)/iu.test(item.reason.trim());
+  if (item.action === "choose_output") return localized ? item.reason
+    : "Не удалось сохранить результат. Проверьте доступ к папке и длину пути.";
+  if (/password|encrypted|парол/iu.test(item.reason))
+    return "PDF защищён паролем. Сохраните копию без пароля и выберите её для обработки.";
+  if (/no \/root|xref|invalid pdf|not a pdf|really a pdf|pdf.*(corrupt|damaged)|eof marker/iu.test(item.reason))
+    return "Не удалось прочитать PDF. Файл может быть повреждён. Откройте его в программе просмотра и сохраните новую копию.";
+  return localized ? item.reason
+    : "Не удалось обработать PDF. Проверьте, открывается ли он в программе просмотра, и попробуйте сохранить новую копию.";
+}
 
 type Outcome = NonNullable<Snapshot["job"]>["outcome"] | "status";
 

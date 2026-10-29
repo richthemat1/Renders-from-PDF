@@ -58,6 +58,16 @@ class DesktopUI(unittest.TestCase):
     def edit(self):
         self.page.get_by_role('button', name='Редактировать', exact=True).click()
 
+    def extend_gallery(self, count=40):
+        """Long UI fixture: reuse real PDF pages without changing their files."""
+        report = load_report(self.output)
+        originals = report['images']
+        report['images'] = [dict(originals[i % len(originals)]) for i in range(count)]
+        (self.output / 'Отчёт.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        self.page.reload()
+        self.page.get_by_role('button', name='История обработки', exact=True).click()
+        self.page.locator('.history-row').first.click()
+
     def save(self):
         with self.page.expect_response(lambda response: response.url.endswith('/apply') and response.request.method == 'POST'):
             self.page.get_by_role('button', name='Сохранить', exact=True).click()
@@ -233,12 +243,7 @@ class DesktopUI(unittest.TestCase):
         self.assertEqual(self.page.evaluate('window.nativeDropEvents'), ['drop'])
 
     def test_selection_actions_stay_accessible_at_the_end_of_a_large_gallery(self):
-        report = load_report(self.output)
-        report['images'] = [dict(report['images'][i % 4]) for i in range(40)]
-        (self.output / 'Отчёт.json').write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
-        self.page.reload()
-        self.page.get_by_role('button', name='История обработки', exact=True).click()
-        self.page.locator('.history-row').first.click()
+        self.extend_gallery()
         self.edit()
         self.card(39).get_by_role('checkbox').check()
         self.page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
@@ -255,6 +260,7 @@ class DesktopUI(unittest.TestCase):
         self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > innerWidth'))
 
     def test_toolbar_docks_below_the_gallery_and_returns_without_losing_selection(self):
+        self.extend_gallery()
         self.page.set_viewport_size({'width': 1380, 'height': 620})
         self.edit()
         toolbar = self.page.get_by_role('region', name='Инструменты редактора')
