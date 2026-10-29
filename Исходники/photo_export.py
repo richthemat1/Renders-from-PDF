@@ -37,7 +37,7 @@ pypdf.filters.MAX_DECLARED_STREAM_LENGTH = max(pypdf.filters.MAX_DECLARED_STREAM
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.34'
+VERSION = '3.35'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -50,6 +50,7 @@ OUTDATED_VARIANT = re.compile(r'\b(?:предыдущ|первоначальн|�
 SUPPRESSED_DIR = 'Служебные элементы'
 # The whole picture of every collage is kept here, so its cut can be checked, changed or undone.
 COLLAGES_DIR = 'Склейки'
+CUTOUTS_DIR = 'Вырезки'
 PDFIUM_LOCK = RLock()
 
 

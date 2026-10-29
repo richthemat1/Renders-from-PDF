@@ -1,4 +1,4 @@
-import type { ImageEntry, Report } from "./types";
+import type { ImageEntry, Rect, Report } from "./types";
 
 /** A frame of a collage in source pixels: left, top, right, bottom. */
 export type Box = [number, number, number, number];
@@ -6,18 +6,39 @@ export type Box = [number, number, number, number];
 export interface DraftFrame {
   cut: string;
   box: Box;
-  /** The card whose caption, variant and preview the frame starts from. */
+  /** The card whose caption, variant and preview the frame starts from; -1 for a page snapshot. */
   template: number;
   number: number;
+  /** A cutout's frame on its page. */
+  rect?: Rect;
+}
+/** What a cut made by the cutout editor comes from. */
+export interface DraftCutout {
+  record: string | null;
+  kind: "image" | "page";
+  page: number;
+  area: Rect;
+  size: [number, number];
 }
 export interface DraftCut {
   collage: string | null;
-  /** A picture that is not a collage yet, cut by hand. */
+  /** A picture that is not a collage yet, cut by hand; for cutouts, the picture they replace. */
   source: number | null;
   pieces: number[];
   /** Saved cards the cut replaces: earlier frames or the whole picture. */
   replaced: number[];
   trim: boolean;
+  cutout?: DraftCutout;
+}
+/** The cutouts of one picture (or the snapshots of one page) as the cutout editor leaves them. */
+export interface CutoutChange extends DraftCutout {
+  key: string;
+  /** The picture the cutouts replace; null for page snapshots. */
+  source: number | null;
+  /** Saved cards the change replaces: live earlier cutouts and, the first time, the picture itself. */
+  replace: number[];
+  rects: Rect[];
+  targets: (string | null | "keep")[];
 }
 interface DraftData {
   sourceCount: number;
@@ -48,6 +69,7 @@ export type Edit =
   | { type: "move-edge"; ids: number[]; edge: "start" | "end" }
   | { type: "cut"; key: string; collage: string | null; source: number | null; replace: number[];
       boxes: Box[]; targets: (string | null | "keep")[]; trim: boolean }
+  | { type: "cutouts"; changes: CutoutChange[] }
   | { type: "collage-check"; id: string }
   | { type: "collage-dismiss"; id: string }
   | { type: "undo" };
@@ -208,8 +230,91 @@ function cutDraft(draft: Draft, edit: Extract<Edit, { type: "cut" }>): Draft {
   });
 }
 
+/** A frame from shares of the page to pixels of its source, clamped to the source as the server does. */
+export function rectBox(rect: Rect, area: Rect, size: [number, number]): Box {
+  const [left, top, right, bottom] = area;
+  const x = (value: number) => Math.round((Math.min(Math.max(value, left), right) - left) / (right - left) * size[0]);
+  const y = (value: number) => Math.round((Math.min(Math.max(value, top), bottom) - top) / (bottom - top) * size[1]);
+  return [x(rect[0]), y(rect[1]), x(rect[2]), y(rect[3])];
+}
+export function boxRect(box: Box, area: Rect, size: [number, number]): Rect {
+  const [left, top, right, bottom] = area;
+  return [left + box[0] / size[0] * (right - left), top + box[1] / size[1] * (bottom - top),
+    left + box[2] / size[0] * (right - left), top + box[3] / size[1] * (bottom - top)];
+}
+
+function insertBefore(members: number[], ids: number[], before: number | undefined) {
+  const at = before === undefined ? -1 : members.indexOf(before);
+  members.splice(at < 0 ? members.length : at, 0, ...ids);
+}
+
+function applyCutout(draft: DraftData, change: CutoutChange): DraftData {
+  if (change.targets.length !== change.rects.length) throw new Error("Для каждой вырезки укажите, куда её поместить.");
+  const previous = draft.cuts[change.key];
+  const dropped = new Set(previous?.pieces ?? []);
+  const picture = change.kind === "image" ? change.source : null;
+  const live = (id: number) => draft.order.includes(id) && !isRemoved(draft, id);
+  // New cutouts take the place of the first earlier cutout, else of the picture itself.
+  const anchor = previous?.pieces.find(live) ?? change.replace.find((id) => id !== picture) ?? picture ?? undefined;
+  const anchorVariant = anchor === undefined ? null : draftVariant(draft, anchor)
+    ?? (isRemoved(draft, anchor) ? draft.removedFrom[anchor]?.variant ?? null : null);
+  const anchorMembers = anchorVariant === null ? [] : draft.variants[anchorVariant] ?? [];
+  const gone = new Set([...dropped, ...change.replace]);
+  const before = anchorMembers.slice(anchorMembers.indexOf(anchor!) + 1).find((id) => !gone.has(id));
+  const variants = Object.fromEntries(Object.entries(draft.variants).map(([key, members]) =>
+    [key, members.filter((id) => !gone.has(id))]));
+  let misc = draft.misc.filter((id) => !gone.has(id));
+  const order = draft.order.filter((id) => !dropped.has(id));
+  const frames = Object.fromEntries(Object.entries(draft.frames).filter(([id]) => !dropped.has(Number(id))));
+  const sourceVariants = { ...draft.sourceVariants };
+  const removedFrom = { ...draft.removedFrom };
+  for (const id of change.replace)
+    if (!isRemoved(draft, id)) removedFrom[id] = { variant: draftVariant(draft, id) };
+  let removed = [...new Set([...draft.removed.filter((id) => !dropped.has(id)),
+    ...change.replace.filter((id) => !draft.savedRemoved.includes(id))])];
+  let restored = draft.restored.filter((id) => !gone.has(id));
+  let replaced = [...new Set([...(previous?.replaced ?? []), ...change.replace])];
+  const start = Math.max(draft.sourceCount - 1, ...draft.order) + 1;
+  const pieces: number[] = [];
+  const kept: number[] = [];
+  change.rects.forEach((rect, index) => {
+    const id = start + index;
+    order.push(id);
+    pieces.push(id);
+    frames[id] = { cut: change.key, box: rectBox(rect, change.area, change.size), template: picture ?? -1, number: index + 1, rect };
+    sourceVariants[id] = picture === null ? null : draft.sourceVariants[picture] ?? null;
+    const target = change.targets[index];
+    const key = target === "keep" ? anchorVariant : target === null ? null : variantKey(target);
+    if (target !== "keep" && target !== null && key === null) throw new Error(VARIANT_KEY_ERROR);
+    if (key === null) misc.push(id);
+    else if (key === anchorVariant) kept.push(id);
+    else (variants[key] ??= []).push(id);
+  });
+  if (anchorVariant !== null && kept.length) insertBefore(variants[anchorVariant] ??= [], kept, before);
+  if (!change.rects.length && picture !== null && isRemoved(draft, picture)) {
+    // Without cutouts the picture comes back where its cutouts were.
+    removed = removed.filter((id) => id !== picture);
+    if (draft.savedRemoved.includes(picture)) restored = [...new Set([...restored, picture])];
+    replaced = replaced.filter((id) => id !== picture);
+    const back = anchor !== picture && anchorVariant !== null ? anchorVariant : removedFrom[picture]?.variant ?? null;
+    if (back !== null) insertBefore(variants[back] ??= [], [picture], anchor !== picture ? before : removedFrom[picture]?.before);
+    else if (draft.savedRemoved.includes(picture)) misc.push(picture);
+  }
+  const cuts = { ...draft.cuts };
+  if (pieces.length || replaced.length || change.record !== null)
+    cuts[change.key] = { collage: null, source: picture, pieces, replaced, trim: false,
+      cutout: { record: change.record, kind: change.kind, page: change.page, area: change.area, size: change.size } };
+  else delete cuts[change.key];
+  return { ...draft, order, frames, variants, misc: [...new Set(misc)], sourceVariants, removedFrom, removed, restored, cuts };
+}
+
 export function editDraft(draft: Draft, edit: Edit): Draft {
   if (edit.type === "cut") return cutDraft(draft, edit);
+  if (edit.type === "cutouts") {
+    let data = dataOf(draft);
+    for (const change of edit.changes) data = applyCutout(data, change);
+    return remember(draft, data);
+  }
   if (edit.type === "collage-check")
     return remember(draft, { ...dataOf(draft), collageChecked: [...new Set([...draft.collageChecked, edit.id])] });
   if (edit.type === "collage-dismiss")
@@ -225,6 +330,8 @@ export function editDraft(draft: Draft, edit: Edit): Draft {
       throw new Error("Номер варианта должен быть от 1 до 999.");
     if (edit.ids.some((id) => !Number.isInteger(id) || !draft.order.includes(id) || isRemoved(draft, id)))
       throw new Error("Для копирования выберите доступные изображения.");
+    if (edit.ids.some((id) => id in draft.frames))
+      throw new Error("Сначала сохраните кадры и вырезки: копировать можно сохранённые изображения.");
     const chosen = new Set(edit.ids);
     const ids = orderedIds(draft).filter((id) => chosen.has(id));
     if (!ids.length) return draft;
@@ -319,16 +426,27 @@ export function payload(draft: Draft, revision: number) {
   const wireIds = new Map(copies.map((id, index) => [id, draft.sourceCount + index]));
   // Frames follow the copies, cut by cut and frame by frame, exactly as the server appends them.
   const cuts: { collage?: string; source?: number; boxes: Box[]; trim?: boolean }[] = [];
+  const live = (id: number) => draft.order.includes(id) && !isRemoved(draft, id);
   for (const cut of Object.values(draft.cuts)) {
-    const pieces = cut.pieces.filter((id) => draft.order.includes(id) && !isRemoved(draft, id));
-    if (!pieces.length) continue;
+    const pieces = cut.pieces.filter(live);
+    if (cut.cutout || !pieces.length) continue;
     for (const id of pieces) wireIds.set(id, draft.sourceCount + wireIds.size);
     cuts.push({ ...(cut.collage === null ? { source: cut.source! } : { collage: cut.collage }),
       boxes: pieces.map((id) => draft.frames[id].box), ...(cut.trim ? { trim: true } : {}) });
   }
+  // Cutouts follow the frames of collages; a saved record left without cutouts takes them away.
+  const cutouts: { record?: string; source?: number; page?: number; rects: Rect[] }[] = [];
+  for (const cut of Object.values(draft.cuts)) {
+    const pieces = cut.pieces.filter(live);
+    const from = cut.cutout;
+    if (!from || (!pieces.length && (from.record === null || (cut.source !== null && isRemoved(draft, cut.source))))) continue;
+    for (const id of pieces) wireIds.set(id, draft.sourceCount + wireIds.size);
+    cutouts.push({ ...(from.record !== null ? { record: from.record } : from.kind === "image" ? { source: cut.source! } : { page: from.page }),
+      rects: pieces.map((id) => draft.frames[id].rect!) });
+  }
   const wire = (id: number) => wireIds.get(id) ?? id;
   const value: { revision: number; variants: Record<string, number[]>; removed: number[];
-    restored?: number[]; misc?: number[]; copies?: number[]; cuts?: typeof cuts;
+    restored?: number[]; misc?: number[]; copies?: number[]; cuts?: typeof cuts; cutouts?: typeof cutouts;
     collage_checked?: string[]; collage_dismissed?: string[] } = {
     revision,
     variants: Object.fromEntries(Object.entries(draft.variants).filter(([, ids]) => ids.length)
@@ -341,6 +459,7 @@ export function payload(draft: Draft, revision: number) {
   if (misc.length) value.misc = misc;
   if (copies.length) value.copies = copies.map((id) => draft.copies[id]);
   if (cuts.length) value.cuts = cuts;
+  if (cutouts.length) value.cutouts = cutouts;
   if (draft.collageChecked.length) value.collage_checked = draft.collageChecked;
   if (draft.collageDismissed.length) value.collage_dismissed = draft.collageDismissed;
   return value;
@@ -354,19 +473,30 @@ export function removedIds(draft: Draft): number[] {
     ...draft.savedRemoved.filter((id) => !draft.restored.includes(id))]);
   return draft.order.filter((id) => removed.has(id));
 }
-export function isRemoved(draft: Draft, id: number): boolean {
+export function isRemoved(draft: DraftData, id: number): boolean {
   return draft.removed.includes(id) || (draft.savedRemoved.includes(id) && !draft.restored.includes(id));
 }
 export function sourceId(draft: Draft, id: number): number {
-  return draft.copies[id] ?? draft.frames[id]?.template ?? id;
+  const template = draft.frames[id]?.template;
+  return draft.copies[id] ?? (template !== undefined && template >= 0 ? template : id);
+}
+/** A page snapshot not saved yet: no picture behind it, its place is «Без подписи» until moved. */
+function snapshotEntry(page: number, number: number): ImageEntry {
+  return { page, sequence: 900 + number, title: null, folder: "Без подписи", file: "", preview: null, variant: null,
+    pdf_page: 1, status: "unsigned", size: [0, 0], reason: `Вырезка со страницы ${page}, снимок страницы.`,
+    original_location: { folder: "Без подписи", status: "unsigned" } };
 }
 export function draftImage(draft: Draft, report: Report, id: number): ImageEntry {
   const frame = draft.frames[id];
   if (frame) {
-    const template = report.images[frame.template];
+    const from = draft.cuts[frame.cut]?.cutout;
+    const template = frame.template >= 0 ? report.images[frame.template] : snapshotEntry(from?.page ?? 0, frame.number);
     const [left, top, right, bottom] = frame.box;
-    return { ...template, size: [right - left, bottom - top], crop_px: frame.box, collage: frame.cut, cut: "manual",
-      removed: undefined, collage_replaced: undefined,
+    const origin = from
+      ? { collage: undefined, cutout: from.record ?? frame.cut, cut: "cutout" as const, method: frame.template >= 0 ? "manual_crop" : "page_render" }
+      : { collage: frame.cut, cut: "manual" as const };
+    return { ...template, size: [right - left, bottom - top], crop_px: frame.box, ...origin,
+      removed: undefined, collage_replaced: undefined, cutout_replaced: undefined,
       original_location: template.original_location ?? { folder: template.folder, status: template.status } };
   }
   const source = sourceId(draft, id);
@@ -439,7 +569,7 @@ export function selectRange(
     ? [clicked]
     : visible.slice(Math.min(start, end), Math.max(start, end) + 1);
 }
-export function draftVariant(draft: Draft, id: number): string | null {
+export function draftVariant(draft: DraftData, id: number): string | null {
   const key = Object.keys(draft.variants).find((key) =>
     draft.variants[key].includes(id),
   );

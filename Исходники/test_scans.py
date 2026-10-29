@@ -150,6 +150,26 @@ class CollageEdits(unittest.TestCase):
             self.assertEqual(next(c for c in restored['collages'] if c['id'] == first['id'])['state'], 'auto')
             self.assertEqual(load_report(output)['images'][0].get('removed'), None)
 
+    def test_a_copy_of_a_frame_is_a_picture_of_its_own_and_survives_a_new_cut(self):
+        from photo_edit import apply_edits
+        with tempfile.TemporaryDirectory() as root:
+            report = extract(collage_pdf(root))
+            output = Path(report['output'])
+            first = report['collages'][0]
+            variants = self.variants(report)
+            copy = len(report['images'])
+            variants['2'] = variants['2']+[copy]
+            saved, _ = apply_edits(output, {'revision': 0, 'variants': variants, 'removed': [], 'copies': [0]})
+            self.assertNotIn('collage', saved['images'][copy])
+            variants = self.variants(saved)
+            frames = [len(saved['images']), len(saved['images'])+1]
+            variants['1'] = frames
+            cut, _ = apply_edits(output, {'revision': 1, 'variants': variants, 'removed': [0, 1],
+                                          'cuts': [{'collage': first['id'], 'boxes': first['boxes']}]})
+            self.assertFalse(cut['images'][copy].get('removed'))
+            self.assertEqual(cut['images'][copy]['variant'], 2)
+            self.assertEqual([cut['images'][index]['collage'] for index in frames], [first['id']]*2)
+
     def test_suspected_row_is_offered_with_equal_lines_and_cut_into_native_frames(self):
         from photo_edit import apply_edits
         with tempfile.TemporaryDirectory() as root:

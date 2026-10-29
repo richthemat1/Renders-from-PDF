@@ -1,16 +1,15 @@
 """Token-scoped desktop frontend and API sharing the existing transactional PDF editor."""
 from http.server import ThreadingHTTPServer
 from io import BytesIO
-import hashlib
 import json
 import logging
 import mimetypes
 from pathlib import Path
 import secrets
 from threading import Lock, RLock, Thread
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-from photo_edit import EditConflict, EditError, apply_edits, find_seams, rename_item
+from photo_edit import EditConflict, EditError, apply_edits, find_seams, pages_info, rename_item, source_pdf
 from photo_export import PDFIUM_LOCK
 from photo_jobs import normalized_report, read_result
 from photo_server import MAX_BODY, PreviewServer, handler as preview_handler
@@ -103,30 +102,28 @@ class DesktopServer(PreviewServer):
         page = report['images'][index].get('page')
         if type(page) is not int or not 1 <= page <= report['pages']:
             raise ValueError('Номер исходной страницы не указан в отчёте.')
-        path = Path(report['source']).resolve()
-        if path.suffix.lower() != '.pdf' or not path.is_file():
-            raise ValueError('Исходный PDF недоступен. Он мог быть перемещён или удалён. '
-                             'Готовые PDF остаются в папке результата.')
-        if report.get('source_sha256'):
-            with path.open('rb') as stream:
-                if hashlib.file_digest(stream, 'sha256').hexdigest() != report['source_sha256']:
-                    raise ValueError('Исходный PDF изменился после обработки. '
-                                     'Для проверки нужна прежняя копия исходного файла.')
-        return self._render_page(path, page - 1)
+        return self._render_page(source_pdf(report), page - 1)
+
+    def page_image(self, id, number, thumb=False):
+        """Render a page of the registered result's source presentation for the cutout editor."""
+        report = read_result(self.folders[id])
+        if not 1 <= number <= report['pages']:
+            raise ValueError('В исходном PDF нет этой страницы.')
+        return self._render_page(source_pdf(report), number - 1, 240 if thumb else 2000)
 
     @staticmethod
-    def _render_page(path, page_index):
+    def _render_page(path, page_index, limit=1600):
         import pypdfium2
         with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
             if not 0 <= page_index < len(document):
                 raise ValueError('В исходном PDF больше нет этой страницы.')
             page = document[page_index]
             try:
-                scale = 1600 / max(page.get_width(), page.get_height())
+                scale = limit / max(page.get_width(), page.get_height())
                 bitmap = page.render(scale=scale)
                 try:
                     with bitmap.to_pil() as image:
-                        image.thumbnail((1600, 1600))
+                        image.thumbnail((limit, limit))
                         buffer = BytesIO()
                         image.save(buffer, 'PNG')
                         return buffer.getvalue()
@@ -181,11 +178,18 @@ def desktop_handler(server):
                             return self.reply(200, server.jobs.snapshot())
                         parts = relative.split('/')
                         if (len(parts) == 5 and parts[:2] == ['api', 'results']
-                                and parts[3] in ('preview', 'source')):
+                                and parts[3] in ('preview', 'source', 'page')):
                             if parts[2] not in server.folders or not parts[4].isascii() or not parts[4].isdigit():
                                 return self.error(404, 'Изображение не найдено.')
+                            if parts[3] == 'page':
+                                thumb = parse_qs(urlsplit(self.path).query).get('size') == ['thumb']
+                                return self.reply(200, server.page_image(parts[2], int(parts[4]), thumb), 'image/png')
                             render = server.source_preview if parts[3] == 'source' else server.preview
                             return self.reply(200, render(parts[2], int(parts[4])), 'image/png')
+                        if len(parts) == 4 and parts[:2] == ['api', 'results'] and parts[3] == 'pages':
+                            if parts[2] not in server.folders:
+                                return self.error(404, 'Результат не найден.')
+                            return self.reply(200, pages_info(server.folders[parts[2]]))
                         if len(parts) == 3 and parts[:2] == ['api', 'results']:
                             if parts[2] not in server.folders:
                                 return self.error(404, 'Результат не найден.')

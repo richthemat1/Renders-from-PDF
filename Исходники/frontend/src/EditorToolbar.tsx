@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, Ellipsis, FolderInput,
+  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, Crop, Ellipsis, FolderInput,
   LoaderCircle, Plus, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
 } from "lucide-react";
 import { ActionMenu, Dialog } from "./components";
@@ -38,6 +38,8 @@ interface Props {
   /** Open the cut editor for the one selected picture. */
   onCut(): void;
   canCut: boolean;
+  /** Open the page editor: on the one selected picture, else on the first page. */
+  onCutout(): void;
   onUndo(): void;
   onReset(): void;
   onSave(): void;
@@ -92,7 +94,6 @@ export function EditorToolbar(props: Props) {
     { value: "new", label: "Новый вариант", icon: <Plus size={16} />, disabled: noSelection },
     { value: "copy", label: "Создать копии выбранных", icon: <Copy size={16} />,
       disabled: props.saving || !props.selectedActive },
-    { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: props.saving || !props.canCut },
     { value: "up", label: "Раньше в варианте", icon: <ArrowUp size={16} />,
       disabled: props.saving || !props.canMoveUp },
     { value: "down", label: "Позже в варианте", icon: <ArrowDown size={16} />,
@@ -104,8 +105,11 @@ export function EditorToolbar(props: Props) {
     { value: "restore", label: "Вернуть убранные изображения", icon: <RotateCcw size={16} />,
       disabled: props.saving || !props.selectedRemoved },
     { value: "remove", label: "Убрать", icon: <Trash2 size={16} />, disabled: props.saving || !props.selectedActive, danger: true },
+    // Cutting stays below the everyday actions, so a low window still shows «Убрать» without scrolling.
+    { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: props.saving || !props.canCut, separator: true },
+    { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />, disabled: props.saving },
     { value: "undo", label: "Отменить шаг", icon: <Undo2 size={16} />,
-      disabled: props.saving || !props.canUndo },
+      disabled: props.saving || !props.canUndo, separator: true },
     { value: "reset", label: "Сбросить", icon: <RotateCcw size={16} />,
       disabled: props.saving || !props.dirty },
     { value: "removed", label: `Показать убранные (${props.removed})`, icon: <Trash2 size={16} /> },
@@ -119,6 +123,7 @@ export function EditorToolbar(props: Props) {
     else if (value === "new") props.onNewVariant();
     else if (value === "copy") props.onCopy();
     else if (value === "cut") props.onCut();
+    else if (value === "cutout") props.onCutout();
     else if (value === "up") props.onReorder(-1);
     else if (value === "down") props.onReorder(1);
     else if (value === "start" || value === "end") props.onMoveEdge(value);
@@ -217,6 +222,7 @@ export function EditorToolbar(props: Props) {
         <p>Счётчик показывает всё выделение, в том числе скрытые карточки. Перенос и удаление применяются ко всему выбору. «Снять выделение» убирает выбор только с видимых карточек; «Снять всё» и Escape снимают всё выделение.</p>
         <p>Перенесите выбранные в существующий или новый вариант. В меню переноса можно вернуть их в папку подписи / «Все остальное». Стрелки меняют порядок одной страницы, а «Ещё → В начало / В конец варианта» перемещает всю выбранную группу.</p>
         <p>«Ещё → Создать копии выбранных» дублирует выбранные карточки на месте или в другом варианте. Кнопка «Копия PDF» рядом с названием варианта дублирует весь его PDF, включая скрытые поиском страницы. Оригиналы сохраняются. Копии записываются по кнопке «Сохранить»; Ctrl+Z отменяет создание до сохранения.</p>
+        <p>«Ещё → Вырезать часть со страницы…» и «Вырезать часть…» на карточке открывают страницы исходного PDF: обведите рамкой нужную часть картинки, например рендер без схемы поверх него. Вырезка встаёт в вариант на место картинки, а сама картинка хранится в разделе «Вырезки», откуда её можно вернуть.</p>
         <p>Delete убирает выбранные из результата. Раздел «Убранные» позволяет вернуть отдельные карточки и после сохранения. В «Ещё» можно отменить последнее сохранение, пока нет новых правок.</p>
         <p>Двойной щелчок по карточке открывает подробный просмотр. ←/→ листают изображения; 1–9 переносят открытое изображение в существующий вариант с этим номером. Колесо мыши и двойной щелчок меняют масштаб.</p>
         <p>Ctrl+Z отменяет шаг. «Сбросить» отменяет все несохранённые правки. Ctrl+S сохраняет изменения в PDF с резервной копией. Escape снимает выделение.</p>

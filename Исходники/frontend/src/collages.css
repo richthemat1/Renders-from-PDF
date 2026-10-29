@@ -84,10 +84,15 @@ button.text-action { display: inline-flex; align-items: center; gap: 6px; paddin
 .cut-toggle input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .cut-workspace { display: flex; flex: 1; min-height: 0; }
-.cut-canvas { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-width: 0; padding: 24px 28px; background: #f4f5f8; overflow: auto; }
-.cut-stage { position: relative; width: min(100%, calc((100vh - 360px) * var(--ratio, 1.79))); max-width: 100%; max-height: calc(100vh - 330px); cursor: crosshair; outline: none; user-select: none; touch-action: none; }
+/* The picture takes the room the canvas really has, leaving space for the hints and a note. */
+.cut-canvas { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-width: 0; padding: 24px 28px; background: #f4f5f8; overflow: auto; container-type: size; }
+.cut-stage { position: relative; flex-shrink: 0; width: min(100%, calc((100cqh - 104px) * var(--ratio, 1.79))); cursor: crosshair; outline: none; user-select: none; touch-action: none; }
 .cut-stage > img { display: block; width: 100%; height: 100%; border-radius: 4px; object-fit: contain; pointer-events: none; }
 .cut-line { position: absolute; z-index: 2; }
+/* Where a click puts a new line, in the chosen direction. */
+.cut-guide { position: absolute; z-index: 1; pointer-events: none; filter: drop-shadow(0 0 1px #17202bb3); }
+.cut-guide.vertical { top: 0; bottom: 0; margin-left: -1px; border-left: 2px dashed #fffffff2; }
+.cut-guide.horizontal { left: 0; right: 0; margin-top: -1px; border-top: 2px dashed #fffffff2; }
 .cut-line.vertical { top: 0; bottom: 0; width: 15px; margin-left: -7px; cursor: col-resize; }
 .cut-line.horizontal { left: 0; right: 0; height: 15px; margin-top: -7px; cursor: row-resize; }
 .cut-line::before { content: ""; position: absolute; background: #fff; box-shadow: 0 0 0 1px #17202b59; }

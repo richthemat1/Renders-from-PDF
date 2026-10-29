@@ -19,9 +19,14 @@ export interface ImageEntry {
   collage?: string;
   /** A frame's box in the collage pixels. */
   crop_px?: [number, number, number, number];
-  cut?: "seam" | "manual";
+  cut?: "seam" | "manual" | "cutout";
   /** An earlier frame (or the whole picture) replaced by a new cut; kept for undo, not shown as removed. */
   collage_replaced?: boolean;
+  /** The cutout record this card was cut by: a part of a picture or a page snapshot. */
+  cutout?: string;
+  /** The picture or an earlier cutout replaced by cutouts of this record; not shown as removed. */
+  cutout_replaced?: string;
+  method?: string;
   manual?: boolean;
   group?: string;
   auto_folder?: string;
@@ -47,6 +52,7 @@ export interface Report {
   }[];
   variant_names?: Record<string, string>;
   collages?: Collage[];
+  cutouts?: CutoutRecord[];
   folder_labels?: Record<string, string>;
   suppressed?: unknown[];
   counts_by_status: Record<string, number>;
@@ -69,6 +75,29 @@ export interface Collage {
   boxes?: [number, number, number, number][];
   suggestion?: [number, number, number, number][];
   reason?: string;
+}
+/** Left, top, right, bottom as shares of the source page, from 0 to 1. */
+export type Rect = [number, number, number, number];
+/** Where cutouts of a picture or of a page snapshot come from. */
+export interface CutoutRecord {
+  id: string;
+  page: number;
+  /** image — parts of one picture in its pixels; page — snapshots of the page. */
+  kind: "image" | "page";
+  /** The picture the cutouts replace. */
+  image?: number;
+  /** The share of the page the source covers. */
+  area: Rect;
+  /** Pixels of the source: the picture, or the page snapshot. */
+  size: [number, number];
+  file?: string;
+  scale?: number;
+  title?: string | null;
+}
+/** The source pages as the cutout editor draws them. */
+export interface PagesInfo {
+  pages: { number: number; size: [number, number]; snapshot: [number, number] }[];
+  pictures: { image: number; page: number; area: Rect; size: [number, number] }[];
 }
 export interface Result {
   id: string;

@@ -58,6 +58,25 @@ class CollagesUI(unittest.TestCase):
         card.get_by_role('button', name='Разрезать…').click()
         editor = self.page.locator('dialog.cut-editor')
         expect(editor.locator('.cut-list li')).to_have_count(4)
+        # Renders edge to edge: trimming light margins would eat a light sky.
+        expect(editor.get_by_label('Обрезать светлые поля')).not_to_be_checked()
+        # The direction turns the lines already there, and a step back turns them again.
+        editor.get_by_role('button', name='Горизонтальная', exact=True).click()
+        expect(editor.locator('.cut-line.vertical')).to_have_count(0)
+        expect(editor.locator('.cut-line.horizontal')).to_have_count(3)
+        expect(editor.locator('.cut-list li').first).to_contain_text('2752 × 384 px')
+        expect(editor.locator('.cut-note')).to_contain_text('4 ряда поровну')
+        self.page.keyboard.press('Control+z')
+        expect(editor.locator('.cut-line.vertical')).to_have_count(3)
+        expect(editor.get_by_role('button', name='Вертикальная', exact=True)).to_have_attribute('aria-pressed', 'true')
+        # Enter on a button presses that button, not «Разрезать».
+        editor.get_by_role('button', name='Отмена', exact=True).focus()
+        self.page.keyboard.press('Enter')
+        expect(editor).to_have_count(0)
+        expect(card).to_contain_text('Возможно, склейка')
+        expect(self.page.locator('.editor-save')).to_be_disabled()
+        card.get_by_role('button', name='Разрезать…').click()
+        expect(editor.locator('.cut-list li')).to_have_count(4)
         editor.get_by_role('button', name='Убрать линии').click()
         expect(editor.locator('.cut-list li')).to_have_count(1)
         editor.get_by_role('button', name='Найти швы').click()
@@ -96,7 +115,14 @@ class CollagesUI(unittest.TestCase):
         editor = self.page.locator('dialog.cut-editor')
         expect(editor.locator('.cut-line.horizontal')).to_have_count(1)
         expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('1')
+        editor.get_by_label('Куда поместить кадр 2').select_option('2')
         editor.get_by_role('button', name='Разрезать на 2 кадра').click()
+        # Before saving too, the editor shows the frames where they went and the trimming chosen.
+        cards.first.get_by_role('button', name='Изменить разрезку').click()
+        expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('2')
+        editor.get_by_role('button', name='Отмена', exact=True).click()
         self.save()
         saved = load_report(self.output)
         first = saved['collages'][0]
@@ -106,7 +132,22 @@ class CollagesUI(unittest.TestCase):
         for frame, (top, bottom) in zip(frames, [(8, 420), (462, 872)]):
             # The line ran through the middle of the white band; trimming left one render each.
             self.assertLessEqual(abs(frame['size'][1]-(bottom-top)), 8)
-            self.assertEqual(frame['variant'], 1)
+        self.assertEqual([frame['variant'] for frame in frames], [1, 2])
+        sizes = [frame['size'] for frame in frames]
+        # A re-cut keeps every frame where it is now, with the same trimming.
+        cards.first.get_by_role('button', name='Изменить разрезку').click()
+        expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
+        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_value('1')
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('2')
+        editor.get_by_label('Куда поместить кадр 1').select_option('__misc')
+        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_value('__misc')
+        editor.get_by_role('button', name='Разрезать на 2 кадра').click()
+        self.save()
+        saved = load_report(self.output)
+        frames = [entry for entry in saved['images'] if entry.get('collage') == first['id'] and entry.get('cut') == 'manual'
+                  and not entry.get('removed') and not entry.get('collage_replaced')]
+        self.assertEqual([frame['variant'] for frame in frames], [None, 2])
+        self.assertEqual([frame['size'] for frame in frames], sizes)
         self.assertEqual(self.errors, [])
 
 

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  Crop,
   FileText,
   FolderOpen,
   GripVertical,
@@ -33,6 +34,7 @@ import {
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
 import { ActionMenu, Dialog, Empty, Shell, StatusNote } from "./components";
 import {
+  boxRect,
   createDraft,
   draftVariant,
   draftLocation,
@@ -54,13 +56,15 @@ import {
   variantParent,
   VARIANT_KEY_ERROR,
 } from "./editor";
-import type { Draft } from "./editor";
+import type { CutoutChange, Draft } from "./editor";
 import { EditorToolbar } from "./EditorToolbar";
 import { CollagesPage, CroppedImage, CutEditor, needsCheck } from "./Collages";
 import type { CollageView } from "./Collages";
+import { byPlace, CutoutEditor, CutoutsPage, pageUrl } from "./Cutouts";
+import type { CutoutResult, CutoutSource, PictureInfo } from "./Cutouts";
 import type { Box } from "./editor";
 import { ReviewSummary } from "./ReviewSummary";
-import type { NoticeAction, Result } from "./types";
+import type { NoticeAction, Rect, Result } from "./types";
 import "./viewer-ux.css";
 import "./preview-visual.css";
 import "./review-fixes.css";
@@ -115,6 +119,7 @@ export function Viewer({
   const [rename, setRename] = useState<Rename | null>(null);
   const [newVariant, setNewVariant] = useState(false);
   const [cutting, setCutting] = useState<CollageView | null>(null);
+  const [cutoutEditor, setCutoutEditor] = useState<{ page: number; picture?: number } | null>(null);
   const [copying, setCopying] = useState<{ ids: number[]; whole: boolean } | null>(null);
   const [copyTarget, setCopyTarget] = useState("same");
   const [number, setNumber] = useState("1");
@@ -238,7 +243,7 @@ export function Viewer({
   const isService = (id: number) => !!report.images[id]?.suppressed;
   // Frames replaced by a newer cut, and a picture cut into frames, live on in the collage, not among removed cards.
   const replacedIds = new Set([...Object.values(draft.cuts).flatMap((cut) => cut.replaced),
-    ...removedAll.filter((id) => report.images[id]?.collage_replaced)]);
+    ...removedAll.filter((id) => report.images[id]?.collage_replaced || report.images[id]?.cutout_replaced)]);
   const removed = removedAll.filter((id) => !isService(id) && !replacedIds.has(id));
   const service = removedAll.filter(isService);
   const rows = orderedIds(draft).map((id) => allRows[id]);
@@ -251,11 +256,15 @@ export function Viewer({
     const view = (key: string, collage: string | null, source: number | null, record: {
       page: number; size: [number, number]; title?: string | null; preview?: string | null; image?: number;
       state: CollageView["state"]; checked: boolean; boxes?: Box[]; suggestion?: Box[]; reason?: string;
-    }, saved: number[]): CollageView => {
+    }, saved: number[], known = new Map<number, Box>()): CollageView => {
       const cut = draft.cuts[key];
       const members = cut ? cut.pieces.filter(live) : saved;
       const boxes = cut ? members.map((id) => draft.frames[id].box)
         : record.state === "suspected" || record.state === "whole" ? [] : record.boxes ?? [];
+      const frames = members.flatMap((id) => {
+        const box = draft.frames[id]?.box ?? report.images[id]?.crop_px ?? known.get(id);
+        return box ? [{ box, variant: draftLocation(draft, report, id).variant }] : [];
+      });
       const whole = boxes.length === 1 && boxes[0][0] === 0 && boxes[0][1] === 0 &&
         boxes[0][2] === record.size[0] && boxes[0][3] === record.size[1];
       const first = members[0];
@@ -266,7 +275,7 @@ export function Viewer({
         preview: url(record.preview) ?? (record.image === undefined ? null : url(report.images[record.image]?.preview)),
         state: cut ? whole ? "whole" : "manual" : record.state,
         checked: record.checked || (collage !== null && draft.collageChecked.includes(collage)) || !!cut,
-        pending: !!cut, boxes: whole ? [] : boxes, suggestion: record.suggestion ?? [], members,
+        pending: !!cut, boxes: whole ? [] : boxes, suggestion: record.suggestion ?? [], members, frames, trim: cut?.trim,
         variant: location?.variant ?? null,
         variantLabel: location === null ? null : location.variant !== null ? variantLabel(report, location.variant)
           : folderLabel(report, location.folder),
@@ -276,11 +285,16 @@ export function Viewer({
     const views: CollageView[] = [];
     for (const record of report.collages ?? []) {
       if (record.state === "dismissed" || draft.collageDismissed.includes(record.id)) continue;
-      const saved = draft.order.filter((id) => !(id in draft.frames) && live(id) && report.images[id]?.collage === record.id);
-      views.push(view(record.id, record.id, null, { ...record, boxes: record.boxes, suggestion: record.suggestion }, saved));
+      const member = (id: number) => report.images[id]?.collage === record.id && report.images[id].copy_of === undefined;
+      const saved = draft.order.filter((id) => !(id in draft.frames) && live(id) && member(id));
+      // Automatic frames carry no box of their own: the record lists their boxes in the order of the frames.
+      const own = report.images.flatMap((entry, id) => member(id) && !entry.collage_replaced ? [id] : []);
+      const known = new Map(record.state === "auto" && own.length === record.boxes?.length
+        ? own.map((id, at) => [id, record.boxes![at]] as const) : []);
+      views.push(view(record.id, record.id, null, { ...record, boxes: record.boxes, suggestion: record.suggestion }, saved, known));
     }
     for (const [key, cut] of Object.entries(draft.cuts)) {
-      if (cut.collage !== null || cut.source === null) continue;
+      if (cut.cutout || cut.collage !== null || cut.source === null) continue;
       const image = report.images[cut.source];
       views.push(view(key, null, cut.source, { page: image.page, size: image.size, title: image.title,
         preview: image.preview, state: "manual", checked: true }, []));
@@ -292,8 +306,9 @@ export function Viewer({
   function collageOf(id: number): CollageView | undefined {
     const frame = draft.frames[id];
     if (frame) return collageByKey.get(frame.cut);
-    const key = report.images[id]?.collage;
-    return key === undefined ? undefined : collageByKey.get(key);
+    const image = report.images[id];
+    // A copy is a picture of its own even if an earlier version gave it the collage id.
+    return image?.collage === undefined || image.copy_of !== undefined ? undefined : collageByKey.get(image.collage);
   }
   function startCut(view: CollageView) {
     if (saving) return;
@@ -312,13 +327,86 @@ export function Viewer({
     startCut({ key: `m${id}`, collage: null, source: id, page: image.page, size: image.size,
       title: image.title || allRows[id]?.title || `Страница ${image.page}`,
       preview: image.preview ? fileUrl(result.base_url, image.preview) : null, state: "manual", checked: true,
-      pending: false, boxes: [], suggestion: [], members: [id], variant: location.variant,
+      pending: false, boxes: [], suggestion: [], members: [id], frames: [], variant: location.variant,
       variantLabel: location.variant !== null ? variantLabel(report, location.variant) : folderLabel(report, location.folder) });
   }
   function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean) {
     const replace = view.members.filter((id) => !(id in draft.frames));
     change({ type: "cut", key: view.key, collage: view.collage, source: view.source, replace, boxes, targets, trim });
     setCutting(null);
+  }
+  const liveCard = useCallback((id: number) => draft.order.includes(id) && !isRemoved(draft, id), [draft]);
+  // Every source of cutouts: saved records, merged with the draft, and sources cut only in the draft.
+  const cutoutViews = useMemo((): CutoutSource[] => {
+    const url = (path?: string | null) => path ? fileUrl(result.base_url, path) : null;
+    const view = (key: string, record: string | null, from: { kind: "image" | "page"; page: number; area: Rect;
+      size: [number, number]; image?: number | null; title?: string | null }, ids: number[]): CutoutSource => {
+      const pieces = ids.map((id) => ({ id, rect: draft.frames[id]?.rect ?? boxRect(report.images[id].crop_px!, from.area, from.size),
+        variant: draftLocation(draft, report, id).variant })).sort((a, b) => byPlace(a.rect, b.rect));
+      const picture = from.kind === "image" && from.image != null ? from.image : null;
+      const first = pieces[0]?.id ?? picture;
+      const location = first === null ? null : draftLocation(draft, report, first);
+      return {
+        key, record, kind: from.kind, page: from.page, source: picture, area: from.area, size: from.size,
+        title: from.kind === "page" ? `Страница ${from.page}`
+          : (picture === null ? null : allRows[picture]?.title) || from.title || `Страница ${from.page}`,
+        preview: from.kind === "page" ? pageUrl(result.id, from.page) : picture === null ? null : url(report.images[picture]?.preview),
+        pending: key in draft.cuts, pieces, variant: location?.variant ?? null,
+        variantLabel: location === null ? null : location.variant !== null ? variantLabel(report, location.variant)
+          : folderLabel(report, location.folder),
+      };
+    };
+    const views: CutoutSource[] = [];
+    for (const record of report.cutouts ?? []) {
+      const key = `cutout:${record.id}`;
+      const cut = draft.cuts[key];
+      views.push(view(key, record.id, record, cut ? cut.pieces.filter(liveCard)
+        : report.images.flatMap((entry, id) => entry.cutout === record.id && entry.copy_of === undefined && liveCard(id) ? [id] : [])));
+    }
+    for (const [key, cut] of Object.entries(draft.cuts))
+      if (cut.cutout && cut.cutout.record === null) views.push(view(key, null, { ...cut.cutout, image: cut.source }, cut.pieces.filter(liveCard)));
+    // Pictures of a page first, in reading order; its snapshots after them.
+    return views.sort((a, b) => a.page - b.page || (a.kind === b.kind ? byPlace(a.area, b.area) : a.kind === "page" ? 1 : -1));
+  }, [draft, report, result.base_url, result.id, allRows, liveCard]);
+  const shownCutouts = cutoutViews.filter((view) => view.pieces.length);
+  const cutoutCount = shownCutouts.reduce((sum, view) => sum + view.pieces.length, 0);
+  function cutoutOf(id: number): { view: CutoutSource; number: number } | undefined {
+    for (const view of shownCutouts) {
+      const at = view.pieces.findIndex((piece) => piece.id === id);
+      if (at >= 0) return { view, number: at + 1 };
+    }
+    return undefined;
+  }
+  const pictureInfo = useCallback((index: number): PictureInfo => {
+    const location = draftLocation(draft, report, index);
+    return { title: allRows[index]?.title || `Страница ${report.images[index]?.page}`,
+      preview: report.images[index]?.preview ? fileUrl(result.base_url, report.images[index].preview!) : null,
+      variant: location.variant,
+      variantLabel: location.variant !== null ? variantLabel(report, location.variant) : folderLabel(report, location.folder) };
+  }, [draft, report, allRows, result.base_url]);
+  /** Open the page editor on a card's page; a picture of its own starts with a frame at its edges. */
+  function startCutout(id?: number, page?: number) {
+    if (saving) return;
+    if (!editing) setEditing(true);
+    if (id === undefined) {
+      setCutoutEditor({ page: page ?? shownCutouts[0]?.page ?? 1 });
+      return;
+    }
+    const frame = draft.frames[id];
+    const image = report.images[frame && frame.template >= 0 ? frame.template : id];
+    const from = frame ? draft.cuts[frame.cut]?.cutout?.page : undefined;
+    const own = !frame && image && !image.cutout && image.copy_of === undefined;
+    setCutoutEditor({ page: from ?? image?.page ?? 1, picture: own ? id : undefined });
+  }
+  function applyCutouts(results: CutoutResult[]) {
+    const changes = results.map(({ source, rects, targets }): CutoutChange => {
+      const saved = source.pieces.map((piece) => piece.id).filter((id) => !(id in draft.frames));
+      const replace = [...saved, ...(rects.length && source.source !== null && liveCard(source.source) ? [source.source] : [])];
+      return { key: source.key, record: source.record, kind: source.kind, page: source.page, source: source.source,
+        area: source.area, size: source.size, replace, rects, targets };
+    });
+    change({ type: "cutouts", changes });
+    setCutoutEditor(null);
   }
   const variants = useMemo(
     () => Object.keys(draft.variants).sort(compareVariants),
@@ -381,6 +469,8 @@ export function Viewer({
           ? "Служебные элементы"
         : filter === "collages"
           ? "Склейки"
+        : filter === "cutouts"
+          ? "Вырезки"
         : filter === "all"
           ? "Изображения"
           : STATUS[filter as keyof typeof STATUS];
@@ -816,6 +906,7 @@ export function Viewer({
           {!!collageViews.length && sidebar("collages", "Склейки", collageViews.length,
             <span className={`nav-icon-attention${collageCheck ? " has-attention" : ""}`}
               title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={17} /></span>)}
+          {sidebar("cutouts", "Вырезки", cutoutCount, <Crop size={17} />)}
           <button className="nav-group-toggle" aria-label={`Варианты: ${variants.length}`} title={`Варианты: ${variants.length}`}
             aria-expanded={variantsOpen} aria-controls="variant-navigation"
             onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
@@ -987,6 +1078,7 @@ export function Viewer({
             onCopy={() => startCopy(selectedActive)}
             canCut={selectedActive.length === 1}
             onCut={() => cutImage(selectedActive[0])}
+            onCutout={() => startCutout(selectedActive.length === 1 ? selectedActive[0] : undefined)}
             onUndo={() => change({ type: "undo" })}
             onReset={() => setReset(true)}
             onSave={() => void save()}
@@ -998,6 +1090,10 @@ export function Viewer({
             onCheck={(view) => { if (!editing) setEditing(true); change({ type: "collage-check", id: view.collage! }); }}
             onDismiss={(view) => { if (!editing) setEditing(true); change({ type: "collage-dismiss", id: view.collage! }); }}
             onWhole={(view) => { if (!editing) setEditing(true); applyCut(view, [[0, 0, view.size[0], view.size[1]]], ["keep"], false); }} />
+        </> : filter === "cutouts" ? <>
+          <div className="library-header"><div><h2>Вырезки</h2><span>{cutoutCount}</span></div></div>
+          <CutoutsPage views={shownCutouts} saving={saving} onOpen={(page) => startCutout(undefined, page)}
+            onReturn={(view) => { if (!editing) setEditing(true); applyCutouts([{ source: view, rects: [], targets: [] }]); }} />
         </> : <>
         <div className="library-header">
           <div>
@@ -1090,6 +1186,9 @@ export function Viewer({
                     {row.id in draft.frames && collageOf(row.id)?.preview ? (
                       <CroppedImage src={collageOf(row.id)!.preview!} size={collageOf(row.id)!.size}
                         box={draft.frames[row.id].box} alt={row.title} />
+                    ) : row.id in draft.frames && cutoutOf(row.id)?.view.preview ? (
+                      <CroppedImage src={cutoutOf(row.id)!.view.preview!} size={cutoutOf(row.id)!.view.size}
+                        box={draft.frames[row.id].box} alt={row.title} />
                     ) : row.image.preview ? (
                       <img
                         draggable={false}
@@ -1143,6 +1242,14 @@ export function Viewer({
                     return number > 0 && collage.boxes.length > 1 ? <span className="collage-chip dark collage-badge">
                       <Scissors size={13} />Кадр {number} из склейки</span> : null;
                   })()}
+                  {(() => {
+                    const piece = removedSet.has(row.id) ? undefined : cutoutOf(row.id);
+                    return piece ? <span className="collage-chip dark collage-badge">
+                      <Crop size={13} />Вырезка {piece.number} со стр. {piece.view.page}</span> : null;
+                  })()}
+                  {editing && !saving && !removedSet.has(row.id) && !(row.id in draft.frames) && collageOf(row.id)?.state !== "suspected" &&
+                    <button className="btn compact secondary cutout-cut-button" onClick={() => startCutout(row.id)}>
+                      <Crop size={15} />Вырезать часть…</button>}
                   {editing && !removedSet.has(row.id) && (
                     <span className="drag-handle" title="Перетащите карточку">
                       <GripVertical size={16} />
@@ -1229,6 +1336,10 @@ export function Viewer({
         labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
         onApply={(boxes, targets, trim) => applyCut(cutting, boxes, targets, trim)}
         onClose={() => setCutting(null)} />}
+      {cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
+        pictureInfo={pictureInfo} isLive={liveCard} variants={variants}
+        labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
+        onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}
       {previewRow && (
         <Dialog
           wide
@@ -1265,6 +1376,8 @@ export function Viewer({
                   ? change({ type: "return-to-misc", ids: [previewRow.id] }) : move(target, [previewRow.id])} />
               <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
                 onClick={() => cutImage(previewRow.id)}><Scissors size={15} />Разрезать…</button>
+              <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
+                onClick={() => { const id = previewRow.id; setPreview(null); startCutout(id); }}><Crop size={15} />Вырезать часть…</button>
               <button className="btn compact secondary" disabled={saving}
                 aria-label={removedSet.has(previewRow.id) ? "Вернуть изображение" : "Убрать изображение"}
                 onClick={() => change({ type: removedSet.has(previewRow.id) ? "restore" : "remove", ids: [previewRow.id] })}>
@@ -1311,9 +1424,10 @@ export function Viewer({
                     {source?.error ? <><ImageOff size={32} /><strong>Исходный PDF недоступен</strong><p>{source.error}</p></>
                       : <><Scan size={32} /><span>Открываю исходную страницу…</span></>}
                   </div>
-                  : previewRow.id in draft.frames && collageOf(previewRow.id)?.preview ? <span className="preview-frame"
+                  : previewRow.id in draft.frames && (collageOf(previewRow.id)?.preview || cutoutOf(previewRow.id)?.view.preview) ? <span className="preview-frame"
                     style={{ width: previewWidth, height: previewHeight }}>
-                    <CroppedImage src={collageOf(previewRow.id)!.preview!} size={collageOf(previewRow.id)!.size}
+                    <CroppedImage src={(collageOf(previewRow.id)?.preview || cutoutOf(previewRow.id)?.view.preview)!}
+                      size={collageOf(previewRow.id)?.size ?? cutoutOf(previewRow.id)!.view.size}
                       box={draft.frames[previewRow.id].box} alt={previewRow.title} /></span>
                   : !previewFailed ? <img key={previewKey} draggable={false}
                   src={new URL(`api/results/${encodeURIComponent(result.id)}/preview/${sourceId(draft, previewRow.id)}?revision=${report.revision}`, document.baseURI).href}
