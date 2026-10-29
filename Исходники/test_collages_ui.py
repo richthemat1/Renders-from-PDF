@@ -41,7 +41,12 @@ class CollagesUI(unittest.TestCase):
     def save(self):
         with self.page.expect_response(lambda r: r.url.endswith('/apply') and r.status == 200):
             self.page.get_by_role('button', name='Сохранить', exact=True).click()
-        expect(self.page.locator('.editor-save')).to_be_disabled()
+        expect(self.page.locator('.status-note')).to_have_text('Изменения сохранены')
+
+    def choose(self, field, option):
+        """Pick an option of an app dropdown: its list opens under the field."""
+        field.click()
+        self.page.get_by_role('option', name=option, exact=True).click()
 
     def collages(self):
         self.page.locator('nav').get_by_role('button', name='Склейки', exact=False).click()
@@ -74,7 +79,9 @@ class CollagesUI(unittest.TestCase):
         self.page.keyboard.press('Enter')
         expect(editor).to_have_count(0)
         expect(card).to_contain_text('Возможно, склейка')
-        expect(self.page.locator('.editor-save')).to_be_disabled()
+        # Nothing to save: the section shows no save line, nor the gallery's card tools and review.
+        expect(self.page.locator('.section-save-bar')).to_have_count(0)
+        expect(self.page.locator('.edit-panel, .review-summary')).to_have_count(0)
         card.get_by_role('button', name='Разрезать…').click()
         expect(editor.locator('.cut-list li')).to_have_count(4)
         editor.get_by_role('button', name='Убрать линии').click()
@@ -115,13 +122,13 @@ class CollagesUI(unittest.TestCase):
         editor = self.page.locator('dialog.cut-editor')
         expect(editor.locator('.cut-line.horizontal')).to_have_count(1)
         expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
-        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('1')
-        editor.get_by_label('Куда поместить кадр 2').select_option('2')
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_attribute('data-value', '1')
+        self.choose(editor.get_by_label('Куда поместить кадр 2'), 'Вариант 2')
         editor.get_by_role('button', name='Разрезать на 2 кадра').click()
         # Before saving too, the editor shows the frames where they went and the trimming chosen.
         cards.first.get_by_role('button', name='Изменить разрезку').click()
         expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
-        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('2')
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_attribute('data-value', '2')
         editor.get_by_role('button', name='Отмена', exact=True).click()
         self.save()
         saved = load_report(self.output)
@@ -137,10 +144,10 @@ class CollagesUI(unittest.TestCase):
         # A re-cut keeps every frame where it is now, with the same trimming.
         cards.first.get_by_role('button', name='Изменить разрезку').click()
         expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()
-        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_value('1')
-        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_value('2')
-        editor.get_by_label('Куда поместить кадр 1').select_option('__misc')
-        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_value('__misc')
+        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_attribute('data-value', '1')
+        expect(editor.get_by_label('Куда поместить кадр 2')).to_have_attribute('data-value', '2')
+        self.choose(editor.get_by_label('Куда поместить кадр 1'), 'Без варианта')
+        expect(editor.get_by_label('Куда поместить кадр 1')).to_have_attribute('data-value', '__misc')
         editor.get_by_role('button', name='Разрезать на 2 кадра').click()
         self.save()
         saved = load_report(self.output)

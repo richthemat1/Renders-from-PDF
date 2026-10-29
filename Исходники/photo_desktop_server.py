@@ -1,4 +1,5 @@
 """Token-scoped desktop frontend and API sharing the existing transactional PDF editor."""
+from collections import OrderedDict
 from http.server import ThreadingHTTPServer
 from io import BytesIO
 import json
@@ -15,6 +16,8 @@ from photo_jobs import normalized_report, read_result
 from photo_server import MAX_BODY, PreviewServer, handler as preview_handler
 
 LOGGER = logging.getLogger('pdf-photos')
+# Rendered pages for repeat views; the oldest are dropped beyond this size.
+RENDER_CACHE_BYTES = 96 << 20
 
 
 class DesktopServer(PreviewServer):
@@ -25,6 +28,7 @@ class DesktopServer(PreviewServer):
         self.lock, self._lifecycle_lock = RLock(), Lock()
         self.token = secrets.token_urlsafe(24)
         self._origin, self._stopped = None, False
+        self._renders, self._renders_lock, self._rendered_bytes = OrderedDict(), Lock(), 0
 
     @property
     def origin(self):
@@ -94,43 +98,69 @@ class DesktopServer(PreviewServer):
         path, page_index = entry_pdf_source(folder, report, index)
         return self._render_page(path, page_index)
 
-    def source_preview(self, id, index):
-        """Read the original slide belonging to a registered report entry."""
+    def source_slide(self, id, index):
+        """The original slide of a registered report entry, as (source PDF, zero-based page, size)."""
         report = read_result(self.folders[id])
         if type(index) is not int or not 0 <= index < len(report['images']):
             raise ValueError('Изображение не найдено.')
         page = report['images'][index].get('page')
         if type(page) is not int or not 1 <= page <= report['pages']:
             raise ValueError('Номер исходной страницы не указан в отчёте.')
-        return self._render_page(source_pdf(report), page - 1)
+        return source_pdf(report), page - 1, 1600
 
-    def page_image(self, id, number, thumb=False):
-        """Render a page of the registered result's source presentation for the cutout editor."""
+    def source_preview(self, id, index):
+        """Read the original slide belonging to a registered report entry."""
+        return self._render_page(*self.source_slide(id, index))
+
+    def source_page(self, id, number, thumb=False):
+        """A page of the registered result's source presentation for the cutout editor."""
         report = read_result(self.folders[id])
         if not 1 <= number <= report['pages']:
             raise ValueError('В исходном PDF нет этой страницы.')
-        return self._render_page(source_pdf(report), number - 1, 240 if thumb else 2000)
+        return source_pdf(report), number - 1, 240 if thumb else 2000
 
-    @staticmethod
-    def _render_page(path, page_index, limit=1600):
-        import pypdfium2
-        with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
-            if not 0 <= page_index < len(document):
-                raise ValueError('В исходном PDF больше нет этой страницы.')
-            page = document[page_index]
+    def page_image(self, id, number, thumb=False):
+        return self._render_page(*self.source_page(id, number, thumb))
+
+    def _render_page(self, path, page_index, limit=1600):
+        """A PNG of the page, kept for repeat views: reopening the cutout editor or flipping back in the preview.
+
+        The key holds the file's identity, size and time, so a rewritten PDF is rendered anew."""
+        stat = Path(path).stat()
+        key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, page_index, limit)
+        with self._renders_lock:
+            if key in self._renders:
+                self._renders.move_to_end(key)
+                return self._renders[key]
+        image = render_page(path, page_index, limit)
+        with self._renders_lock:
+            if key not in self._renders:
+                self._renders[key] = image
+                self._rendered_bytes += len(image)
+            while self._rendered_bytes > RENDER_CACHE_BYTES and len(self._renders) > 1:
+                self._rendered_bytes -= len(self._renders.popitem(last=False)[1])
+        return image
+
+
+def render_page(path, page_index, limit):
+    import pypdfium2
+    with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
+        if not 0 <= page_index < len(document):
+            raise ValueError('В исходном PDF больше нет этой страницы.')
+        page = document[page_index]
+        try:
+            scale = limit / max(page.get_width(), page.get_height())
+            bitmap = page.render(scale=scale)
             try:
-                scale = limit / max(page.get_width(), page.get_height())
-                bitmap = page.render(scale=scale)
-                try:
-                    with bitmap.to_pil() as image:
-                        image.thumbnail((limit, limit))
-                        buffer = BytesIO()
-                        image.save(buffer, 'PNG')
-                        return buffer.getvalue()
-                finally:
-                    bitmap.close()
+                with bitmap.to_pil() as image:
+                    image.thumbnail((limit, limit))
+                    buffer = BytesIO()
+                    image.save(buffer, 'PNG')
+                    return buffer.getvalue()
             finally:
-                page.close()
+                bitmap.close()
+        finally:
+            page.close()
 
 
 def desktop_handler(server):
@@ -172,34 +202,47 @@ def desktop_handler(server):
                 if origin is not None and origin != server.origin:
                     return self.error(403, 'Запрос отклонён: он пришёл не из окна приложения.')
             try:
+                if kind == 'app' and not relative.startswith('api/'):
+                    # The interface files never change while the application runs: no transaction to wait for.
+                    return self.file(server.frontend_path, relative or 'index.html')
+                if kind == 'app' and relative == 'api/state':
+                    # The job service guards its own state; a long save must not freeze the progress display.
+                    return self.reply(200, server.jobs.snapshot())
+                slide = None
                 with server.lock:
                     if kind == 'app':
-                        if relative == 'api/state':
-                            return self.reply(200, server.jobs.snapshot())
                         parts = relative.split('/')
                         if (len(parts) == 5 and parts[:2] == ['api', 'results']
                                 and parts[3] in ('preview', 'source', 'page')):
                             if parts[2] not in server.folders or not parts[4].isascii() or not parts[4].isdigit():
                                 return self.error(404, 'Изображение не найдено.')
+                            if parts[3] == 'preview':
+                                return self.reply(200, server.preview(parts[2], int(parts[4])), 'image/png')
+                            # A save never rewrites the source presentation: only finding its page needs the
+                            # lock, and the render that follows does not hold up thumbnails of the result.
                             if parts[3] == 'page':
                                 thumb = parse_qs(urlsplit(self.path).query).get('size') == ['thumb']
-                                return self.reply(200, server.page_image(parts[2], int(parts[4]), thumb), 'image/png')
-                            render = server.source_preview if parts[3] == 'source' else server.preview
-                            return self.reply(200, render(parts[2], int(parts[4])), 'image/png')
-                        if len(parts) == 4 and parts[:2] == ['api', 'results'] and parts[3] == 'pages':
+                                slide = server.source_page(parts[2], int(parts[4]), thumb)
+                            else:
+                                slide = server.source_slide(parts[2], int(parts[4]))
+                        elif len(parts) == 4 and parts[:2] == ['api', 'results'] and parts[3] == 'pages':
                             if parts[2] not in server.folders:
                                 return self.error(404, 'Результат не найден.')
                             return self.reply(200, pages_info(server.folders[parts[2]]))
-                        if len(parts) == 3 and parts[:2] == ['api', 'results']:
+                        elif len(parts) == 3 and parts[:2] == ['api', 'results']:
                             if parts[2] not in server.folders:
                                 return self.error(404, 'Результат не найден.')
                             return self.reply(200, server.result(parts[2]))
-                        if relative.startswith('api/'):
+                        else:
                             return self.error(404, 'Не найдено.')
-                        return self.file(server.frontend_path, relative or 'index.html')
-                    if relative == 'api/state':
+                    elif relative == 'api/state':
                         return self.reply(200, {'revision': read_result(server.folders[kind])['revision']})
-                    return self.file(server.folders[kind], relative)
+                    else:
+                        return self.file(server.folders[kind], relative)
+                return self.reply(200, server._render_page(*slide), 'image/png')
+            except ConnectionError:
+                # The window dropped the request, as for a thumbnail scrolled out of view: nobody is left to answer.
+                self.close_connection = True
             except (OSError, ValueError, TypeError, KeyError, RuntimeError, IndexError) as error:
                 return self.error(400, f'Не удалось открыть результат: {error}')
             except Exception as error:

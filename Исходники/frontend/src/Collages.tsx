@@ -3,7 +3,8 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { Check, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, Rows3, Scissors, SeparatorHorizontal,
   SeparatorVertical, Sparkles, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import { errorText, plural, request } from "./api";
-import { Dialog } from "./components";
+import { Dialog, NewVariantDialog, Select } from "./components";
+import type { SelectOption } from "./components";
 import type { Box } from "./editor";
 import { compareVariants, nextSubvariant } from "./editor";
 import type { Collage } from "./types";
@@ -224,11 +225,13 @@ export function turnedLines(lines: Lines, axis: Axis, size: [number, number], se
   return axis === "x" ? { xs: values, ys: [] } : { xs: [], ys: values };
 }
 
-export function CutEditor({ view, resultId, variants, labelOf, onApply, onClose }: {
+export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, onClose }: {
   view: CollageView;
   resultId: string;
   variants: string[];
   labelOf(key: string): string;
+  /** The colour class of a variant's dot, as in the sidebar. */
+  dotOf(key: string): string;
   onApply(boxes: Box[], targets: Target[], trim: boolean): void;
   onClose(): void;
 }) {
@@ -271,6 +274,16 @@ export function CutEditor({ view, resultId, variants, labelOf, onApply, onClose 
   const extra = cells.map((_, index) => targetOf(index))
     .filter((value): value is string => typeof value === "string" && value !== "keep" && !variants.includes(value));
   const options = [...new Set([...variants, ...extra])].sort(compareVariants);
+  const choices: SelectOption[] = [{ value: "__keep", label: "На место склейки" },
+    ...options.map((key) => ({ value: key, label: labelOf(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
+    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
+  // Frames waiting for the number of a new variant.
+  const [naming, setNaming] = useState<number[] | null>(null);
+  function choose(indices: number[], value: string) {
+    if (value === "__new") { setNaming(indices); return; }
+    const target: Target = value === "__keep" ? "keep" : value === "__misc" ? null : value;
+    setTargets((current) => ({ ...current, ...Object.fromEntries(indices.map((index) => [index, target])) }));
+  }
   const base = view.variant ?? variants[0] ?? "1";
 
   useEffect(() => {
@@ -543,17 +556,9 @@ export function CutEditor({ view, resultId, variants, labelOf, onApply, onClose 
             <div className="cut-panel-head">
               <h3>Кадры <b>{cells.length}</b></h3>
               {!whole && <>
-                <label className="cut-bulk">Куда все:
-                  <select value="" onChange={(event) => {
-                    const value = event.target.value === "__keep" ? "keep" : event.target.value === "__misc" ? null : event.target.value;
-                    setTargets(Object.fromEntries(kept.map((index) => [index, value])));
-                  }}>
-                    <option value="" disabled>Выберите…</option>
-                    <option value="__keep">На место склейки</option>
-                    {options.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
-                    <option value="__misc">Без варианта</option>
-                  </select>
-                </label>
+                <div className="cut-bulk"><span>Куда все:</span>
+                  <Select label="Куда поместить все кадры" value="" options={choices} onChange={(value) => choose(kept, value)} />
+                </div>
                 <button className="cut-subvariants" onClick={eachToSubvariant}>
                   Или: каждый кадр — в свой подвариант {nextSubvariant(options, base)}…
                 </button>
@@ -568,16 +573,9 @@ export function CutEditor({ view, resultId, variants, labelOf, onApply, onClose 
                     {view.preview && <CroppedImage src={view.preview} size={view.size} box={cell} alt="" className="cut-thumb" />}
                     <div>
                       <strong>Кадр {index + 1}</strong><span>{cell[2] - cell[0]} × {cell[3] - cell[1]} px</span>
-                      {!whole && <select aria-label={`Куда поместить кадр ${index + 1}`} disabled={off}
+                      {!whole && <Select label={`Куда поместить кадр ${index + 1}`} disabled={off} options={choices}
                         value={target === "keep" ? "__keep" : target === null ? "__misc" : target}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setTargets({ ...targets, [index]: value === "__keep" ? "keep" : value === "__misc" ? null : value });
-                        }}>
-                        <option value="__keep">На место склейки</option>
-                        {options.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
-                        <option value="__misc">Без варианта</option>
-                      </select>}
+                        onChange={(value) => choose([index], value)} />}
                       {!whole && <button className="text-action" onClick={() => {
                         const next = new Set(skipped);
                         if (off) next.delete(index); else next.add(index);
@@ -598,6 +596,9 @@ export function CutEditor({ view, resultId, variants, labelOf, onApply, onClose 
           </button>
         </div>
       </div>
+      {naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+        subject={naming.length === 1 ? `Кадр ${naming[0] + 1} встанет в новый вариант.` : "Все кадры встанут в новый вариант."}
+        onCreate={(key) => { choose(naming, key); setNaming(null); }} />}
     </Dialog>
   );
 }

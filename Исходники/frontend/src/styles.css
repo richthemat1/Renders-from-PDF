@@ -1548,6 +1548,78 @@ fieldset {
   color: var(--accent-dark);
   outline: none;
 }
+/* Select: the field shows the choice, its list is an app menu. */
+.select-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dfe3ea;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .12s, background-color .12s;
+}
+.select-field:hover:not(:disabled) {
+  border-color: #a4aabd;
+}
+.select-field[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: #f5f6fe;
+}
+.select-field:focus-visible {
+  outline: 2px solid #8190f0;
+  outline-offset: 2px;
+}
+.select-field:disabled {
+  cursor: default;
+  opacity: .55;
+}
+.select-field .select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-field .select-value.is-placeholder {
+  color: var(--muted);
+}
+.select-field > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform .12s;
+}
+.select-field[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.select-field .variant-dot,
+.select-menu > button > .variant-dot {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.select-menu > button {
+  min-height: 34px;
+  font-size: var(--text-small) !important;
+  font-weight: 550;
+}
+.select-menu > button[aria-selected="true"] {
+  color: var(--accent-dark);
+  font-weight: 650;
+}
+.select-menu > button > svg {
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-field, .select-field > svg { transition: none; }
+}
 .selection-tools .icon-btn {
   width: 32px;
   height: 32px;
@@ -1627,14 +1699,15 @@ details[open] > summary::after {
   margin: 10px 0 22px;
   max-width: 58ch;
 }
+/* A dialog is a card (Figma 75:703): title, a short explanation, one main action and the alternatives under it. */
 .dialog {
-  border: 1px solid #e1e5ec;
-  border-radius: var(--radius-panel);
-  padding: var(--space-6);
-  width: min(500px, calc(100vw - 40px));
+  border: 1px solid #e7e7ef;
+  border-radius: 16px;
+  padding: 28px;
+  width: min(544px, calc(100vw - 40px));
   color: var(--ink);
   background: #fff;
-  box-shadow: 0 24px 80px #10182733;
+  box-shadow: 0 16px 48px #28243f1a, 0 2px 6px #28243f08;
 }
 .dialog::backdrop {
   background: #10182787;
@@ -1666,6 +1739,101 @@ details[open] > summary::after {
   gap: var(--space-2);
   justify-content: flex-end;
   margin-top: 25px;
+}
+.dialog:not(.preview-dialog) .dialog-heading {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.dialog:not(.preview-dialog) .dialog-heading h2 {
+  padding-top: 0;
+  color: #232432;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+}
+.dialog:not(.preview-dialog) .dialog-heading .icon-btn {
+  width: 30px;
+  height: 30px;
+  margin: 0 -7px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #647184;
+}
+.dialog:not(.preview-dialog) .dialog-heading .icon-btn:hover:not(:disabled) {
+  background: #f0f2f6;
+  color: var(--ink);
+}
+.dialog:not(.preview-dialog) .dialog-heading .icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.dialog:not(.preview-dialog) p {
+  margin: 12px 0 0;
+  color: #737584;
+  font-size: 14px;
+  line-height: 22px;
+}
+.dialog:not(.preview-dialog) .dialog-heading + p,
+.dialog:not(.preview-dialog) form > p:first-child {
+  margin-top: 0;
+}
+.dialog:not(.preview-dialog) p.muted {
+  font-size: var(--text-small);
+  line-height: 18px;
+}
+.dialog:not(.preview-dialog) .form-label {
+  margin-top: 16px;
+}
+.dialog:not(.preview-dialog) form > .form-label:first-child {
+  margin-top: 0;
+}
+/* The main action across the whole card; the alternatives share the row under it. */
+.dialog-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+.dialog-choices > .btn {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.dialog-alternatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dialog-alternatives > .btn {
+  flex: 1 1 180px;
+  min-height: 40px;
+  border-radius: 8px;
+}
+.dialog-alternatives > .btn.secondary {
+  border-color: #e7e7ef;
+  color: var(--ink);
+}
+.btn.danger-text {
+  background: transparent;
+  color: #b54757;
+}
+.btn.danger-text:hover:not(:disabled) {
+  background: #fdf1f3;
+}
+.btn.quiet-text {
+  background: transparent;
+  color: #4c5668;
+}
+.btn.quiet-text:hover:not(:disabled) {
+  background: #f0f2f6;
+}
+.btn.danger-text:disabled,
+.btn.quiet-text:disabled {
+  color: #9aa3b2;
+  background: transparent;
 }
 .form-label {
   display: block;
@@ -1699,7 +1867,7 @@ details[open] > summary::after {
   padding: var(--space-4);
   max-height: calc(100vh - 48px);
 }
-.preview-dialog .dialog-heading {
+.preview-dialog > .dialog-heading {
   margin-bottom: 12px;
 }
 .preview-stage {

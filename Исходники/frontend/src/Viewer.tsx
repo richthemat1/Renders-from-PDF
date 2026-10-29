@@ -19,9 +19,11 @@ import {
   Layers2,
   Layers3,
   Minus,
+  LoaderCircle,
   Pencil,
   Plus,
   RotateCcw,
+  Save,
   Scan,
   Scissors,
   Shapes,
@@ -30,9 +32,10 @@ import {
   Tags,
   Trash2,
   TriangleAlert,
+  Undo2,
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
-import { ActionMenu, Dialog, Empty, Shell, StatusNote } from "./components";
+import { ActionMenu, Dialog, Empty, Select, Shell, StatusNote, VariantSuggestions } from "./components";
 import {
   boxRect,
   createDraft,
@@ -49,7 +52,6 @@ import {
   selectRange,
   sourceId,
   compareVariants,
-  nextSubvariant,
   nextVariant,
   variantKey,
   variantLabel,
@@ -888,6 +890,9 @@ export function Viewer({
   const variantCount = variants.filter((key) => draft.variants[key].length && !key.includes(".")).length;
   const subvariantCount = variants.filter((key) => draft.variants[key].length && key.includes(".")).length;
   const parents = [...new Set(variants.map(variantParent))];
+  // A subvariant shares its variant's colour, so 3 and 3.1 read as one family.
+  const dotOf = (key: string) => `color-${Math.max(0, parents.indexOf(variantParent(key))) % 4}`;
+  const sectionPage = filter === "collages" || filter === "cutouts";
   return (
     <Shell
       footer={footer}
@@ -919,7 +924,7 @@ export function Viewer({
               variantLabel(report, key),
               draft.variants[key].length,
               // A subvariant shares its variant's colour, so 3 and 3.1 read as one family.
-              <span className={`variant-dot color-${Math.max(0, parents.indexOf(variantParent(key))) % 4}`}
+              <span className={`variant-dot ${dotOf(key)}`}
                 aria-hidden="true"><i>{key}</i></span>,
               key,
             ),
@@ -1027,15 +1032,29 @@ export function Viewer({
             <span>Папка результата</span>
           </button>
         </div>
-        <ReviewSummary key={result.id} review={counts.review} unsigned={counts.unsigned}
+        {/* The review of the gallery and its card tools have nothing to work on in the collage and cutout sections. */}
+        {!sectionPage && <ReviewSummary key={result.id} review={counts.review} unsigned={counts.unsigned}
           warnings={report.warnings || []} errors={report.errors || []}
           serviceCount={report.suppressed?.length || 0} canRestoreService={service.length > 0}
           collages={{ total: collageViews.length, check: collageCheck }}
           onCollages={() => { setFilter("collages"); setStatus("all"); setQuery(""); }}
           onReview={() => { setFilter("needs-review"); setStatus("all"); setQuery(""); }}
           onService={() => { setFilter("service"); setStatus("all"); setQuery(""); }}
-          onReveal={revealIssue} />
-        {editing && (
+          onReveal={revealIssue} />}
+        {sectionPage && editing && (dirty || conflict) && (
+          <section className="section-save-bar" aria-label="Несохранённые правки">
+            <Pencil size={16} aria-hidden="true" />
+            <p role="status">{conflict ? "Результат изменён в другом окне. Загрузите актуальную версию и повторите правки."
+              : saving ? "Сохраняю правки…" : "Есть несохранённые правки. В готовые PDF они запишутся по «Сохранить»."}</p>
+            <button className="btn compact secondary" disabled={saving || !draft.past.length} title="Отменить шаг · Ctrl+Z"
+              onClick={() => change({ type: "undo" })}><Undo2 size={16} />Отменить шаг</button>
+            <button className="btn compact secondary" disabled={saving} onClick={() => setReset(true)}>
+              <RotateCcw size={16} />{conflict ? "Обновить" : "Сбросить"}</button>
+            <button className="btn compact primary editor-save" disabled={saving || !dirty} title="Сохранить · Ctrl+S" onClick={() => void save()}>
+              {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить"}</button>
+          </section>
+        )}
+        {editing && !sectionPage && (
           <EditorToolbar
             selected={selected.length}
             visibleSelected={visibleSelected}
@@ -1332,12 +1351,12 @@ export function Viewer({
         )}
         </>}
       </div>
-      {cutting && <CutEditor view={cutting} resultId={result.id} variants={variants}
+      {cutting && <CutEditor view={cutting} resultId={result.id} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
         onApply={(boxes, targets, trim) => applyCut(cutting, boxes, targets, trim)}
         onClose={() => setCutting(null)} />}
       {cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
-        pictureInfo={pictureInfo} isLive={liveCard} variants={variants}
+        pictureInfo={pictureInfo} isLive={liveCard} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
         onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}
       {previewRow && (
@@ -1484,13 +1503,13 @@ export function Viewer({
         onClose={() => setCopying(null)}>
         <form onSubmit={createCopies}>
           <p>{copying.whole ? "Страниц в PDF" : "Выбрано карточек"}: {copying.ids.length}. Оригиналы останутся на месте.</p>
-          <label className="form-label">Куда поместить копии</label>
-          <ActionMenu className="copy-destination" label={copyTarget === "same" ? "Рядом с оригиналами" : copyTarget === "new" ? "В новый вариант" : variantLabel(report, copyTarget)}
-            items={[
+          <span className="form-label">Куда поместить копии</span>
+          <Select className="copy-destination" label="Куда поместить копии" value={copyTarget} onChange={setCopyTarget}
+            options={[
               ...(!copying.whole ? [{ value: "same", label: "Рядом с оригиналами" }] : []),
               { value: "new", label: "В новый вариант" },
-              ...variants.map((key) => ({ value: key, label: variantLabel(report, key) })),
-            ]} onAction={setCopyTarget} />
+              ...variants.map((key) => ({ value: key, label: variantLabel(report, key), dot: dotOf(key) })),
+            ]} />
           {copyTarget === "new" && <div className="copy-variant-number">
             <label htmlFor="copy-variant-number" className="form-label">Номер нового варианта</label>
             <input id="copy-variant-number" autoFocus className="form-input" type="text" inputMode="decimal"
@@ -1499,9 +1518,11 @@ export function Viewer({
               preferred={copying.ids.map((id) => draftVariant(draft, id)).find((key) => key !== null) ?? null} />
           </div>}
           <p>Копии появятся в результате после сохранения. До этого создание можно отменить через Ctrl+Z.</p>
-          <div className="dialog-actions">
-            <button type="button" className="btn secondary" onClick={() => setCopying(null)}>Отмена</button>
+          <div className="dialog-choices">
             <button className="btn primary"><Copy size={16} />Создать копии</button>
+            <div className="dialog-alternatives">
+              <button type="button" className="btn secondary" onClick={() => setCopying(null)}>Отмена</button>
+            </div>
           </div>
         </form>
       </Dialog>}
@@ -1537,22 +1558,16 @@ export function Viewer({
             <p className="muted">
               Имя папки и связанного PDF обновится в результате.
             </p>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="btn secondary"
-                disabled={saving}
-                onClick={() => setRename(null)}
-              >
-                Отмена
-              </button>
-              <button
-                className="btn primary"
-                disabled={saving || !rename.name.trim()}
-              >
+            <div className="dialog-choices">
+              <button className="btn primary" disabled={saving || !rename.name.trim()}>
                 <Pencil size={16} />
                 Переименовать
               </button>
+              <div className="dialog-alternatives">
+                <button type="button" className="btn secondary" disabled={saving} onClick={() => setRename(null)}>
+                  Отмена
+                </button>
+              </div>
             </div>
           </form>
         </Dialog>
@@ -1608,18 +1623,16 @@ export function Viewer({
               Выбранных изображений: {selected.length}. PDF будет создан после
               сохранения.
             </p>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => setNewVariant(false)}
-              >
-                Отмена
-              </button>
+            <div className="dialog-choices">
               <button className="btn primary">
                 <Plus size={16} />
                 Создать и перенести
               </button>
+              <div className="dialog-alternatives">
+                <button type="button" className="btn secondary" onClick={() => setNewVariant(false)}>
+                  Отмена
+                </button>
+              </div>
             </div>
           </form>
         </Dialog>
@@ -1642,20 +1655,10 @@ export function Viewer({
               ? "Сохраните изменения в PDF или завершите редактирование без сохранения."
               : "Несохранённые перемещения, удаления и порядок будут отменены. Сохранённые файлы останутся на месте."}
           </p>
-          <div className="dialog-actions">
-            <button
-              className="btn secondary"
-              disabled={saving}
-              onClick={() => {
-                finishEditing.current = false;
-                setReset(false);
-              }}
-            >
-              Вернуться
-            </button>
-            <button
-              className="btn danger"
-              disabled={saving}
+          {(() => {
+            const back = <button className="btn secondary" disabled={saving}
+              onClick={() => { finishEditing.current = false; setReset(false); }}>Вернуться к правкам</button>;
+            const discard = (className: string) => <button className={className} disabled={saving}
               onClick={() => {
                 setReset(false);
                 if (conflict) {
@@ -1673,39 +1676,29 @@ export function Viewer({
                     finishEditing.current = false;
                   }
                 }
-              }}
-            >
+              }}>
               {conflict ? "Загрузить" : finishEditing.current ? "Выйти без сохранения" : "Сбросить правки"}
-            </button>
-            {finishEditing.current && !conflict && <button className="btn primary" disabled={saving}
-              onClick={() => void save().then((saved) => {
-                if (!saved) return;
-                finishEditing.current = false;
-                setReset(false);
-                setEditing(false);
-                setSelected([]);
-              })}>
-              {saving ? "Сохраняю…" : "Сохранить и выйти"}
-            </button>}
-          </div>
+            </button>;
+            // Finishing with unsaved edits offers saving first, as the dialog on leaving the result does.
+            return finishEditing.current && !conflict ? <div className="dialog-choices">
+              <button className="btn primary" disabled={saving}
+                onClick={() => void save().then((saved) => {
+                  if (!saved) return;
+                  finishEditing.current = false;
+                  setReset(false);
+                  setEditing(false);
+                  setSelected([]);
+                })}>
+                {saving && <LoaderCircle size={16} className="spin" />}{saving ? "Сохраняю…" : "Сохранить и выйти"}
+              </button>
+              <div className="dialog-alternatives">{back}{discard("btn danger-text")}</div>
+            </div> : <div className="dialog-choices">
+              {discard(conflict ? "btn primary" : "btn danger")}
+              <div className="dialog-alternatives">{back}</div>
+            </div>;
+          })()}
         </Dialog>
       )}
     </Shell>
   );
-}
-
-/** Free numbers one click away: the next whole variant and the next subvariant of nearby variants. */
-function VariantSuggestions({ variants, current, preferred, onPick }: {
-  variants: string[]; current: string; preferred: string | null; onPick(value: string): void;
-}) {
-  const parents = [...new Set([...(preferred ? [variantParent(preferred)] : []), ...variants.map(variantParent)])];
-  const options = [nextVariant(variants), ...parents.slice(0, 3).map((key) => nextSubvariant(variants, key))]
-    .filter((key, index, all) => all.indexOf(key) === index && !variants.includes(key));
-  const chosen = variantKey(current);
-  return <div className="variant-suggestions" role="group" aria-label="Свободные номера">
-    {options.map((key) => <button key={key} type="button" className={`variant-suggestion${chosen === key ? " is-chosen" : ""}`}
-      aria-pressed={chosen === key} onClick={() => onPick(key)}>
-      {key.includes(".") ? "Подвариант" : "Вариант"} {key}
-    </button>)}
-  </div>;
 }

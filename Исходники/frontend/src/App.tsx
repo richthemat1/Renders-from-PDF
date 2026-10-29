@@ -371,25 +371,27 @@ export function App() {
             Сохраните правки и продолжите выбранное действие либо вернитесь к редактору.
           </p>
           {leaveError && <p className="dialog-error" role="alert">Не удалось сохранить правки. Вернитесь к редактору: ваши изменения остаются там.</p>}
-          <div className="dialog-actions">
-            <button className="btn secondary" disabled={leaving} onClick={() => setPending(null)}>
-              Вернуться к правкам
-            </button>
-            <button
-              className="btn danger"
-              disabled={leaving}
-              onClick={() => {
-                const action = pending;
-                setPending(null);
-                trackDirty(false);
-                action();
-              }}
-            >
-              Перейти без сохранения
-            </button>
+          <div className="dialog-choices">
             <button className="btn primary" disabled={leaving || !saveCurrent.current} onClick={() => void saveAndContinue()}>
               {leaving && <LoaderCircle size={16} className="spin" />}Сохранить и продолжить
             </button>
+            <div className="dialog-alternatives">
+              <button className="btn secondary" disabled={leaving} onClick={() => setPending(null)}>
+                Вернуться к правкам
+              </button>
+              <button
+                className="btn danger-text"
+                disabled={leaving}
+                onClick={() => {
+                  const action = pending;
+                  setPending(null);
+                  trackDirty(false);
+                  action();
+                }}
+              >
+                Перейти без сохранения
+              </button>
+            </div>
           </div>
         </Dialog>
       )}
@@ -400,24 +402,26 @@ export function App() {
         }}>
         <p>Можно открыть прежний результат или создать новую выгрузку. Уже готовые папки сохранятся.</p>
         <ul className="repeat-list">{state.pending_repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>{dateLabel(file.finished_at)}</span></li>)}</ul>
-        <div className="dialog-actions">
-          <button className="btn secondary" disabled={waiting} onClick={() => {
-            const token = state.pending_repeat!.token;
-            void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
-          }}>Отмена</button>
-          {state.pending_repeat.files.some(file => file.available) && <button className="btn secondary" disabled={waiting} onClick={() => {
-            const previous = state.pending_repeat!.files.find(file => file.available)!;
-            const token = state.pending_repeat!.token;
-            void run(async () => {
-              setState(await request<Snapshot>("jobs/confirm", {token, proceed:false}));
-              const next = await request<Result>("open", {id:previous.previous_id});
-              setResult(next); setPage("viewer");
-            });
-          }}>Открыть прошлый результат</button>}
+        <div className="dialog-choices">
           <button className="btn primary" disabled={waiting} onClick={() => {
             const token = state.pending_repeat!.token;
             void run(async () => { setState(await request<Snapshot>("jobs/confirm", {token, proceed:true})); setPage("work"); });
           }}>Обработать заново</button>
+          <div className="dialog-alternatives">
+            {state.pending_repeat.files.some(file => file.available) && <button className="btn secondary" disabled={waiting} onClick={() => {
+              const previous = state.pending_repeat!.files.find(file => file.available)!;
+              const token = state.pending_repeat!.token;
+              void run(async () => {
+                setState(await request<Snapshot>("jobs/confirm", {token, proceed:false}));
+                const next = await request<Result>("open", {id:previous.previous_id});
+                setResult(next); setPage("viewer");
+              });
+            }}>Открыть прошлый результат</button>}
+            <button className={`btn ${state.pending_repeat.files.some(file => file.available) ? "quiet-text" : "secondary"}`} disabled={waiting} onClick={() => {
+              const token = state.pending_repeat!.token;
+              void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
+            }}>Отмена</button>
+          </div>
         </div>
       </Dialog>}
       {help && (
@@ -444,11 +448,16 @@ export function App() {
             сохраняются в резервных копиях. Переносимый «Просмотр.html»
             находится в папке результата.
           </p>
-          <div className="dialog-actions"><button className="btn secondary" onClick={() => void run(async () => { await native("open_help"); })}><FileText size={16} />Открыть полную инструкцию</button></div>
           <p className="muted">
             Ctrl+O — выбрать PDF · Ctrl+K — поиск · Ctrl+A — выделить видимые ·
             Ctrl+Z — отменить правку · Delete — убрать выбранное.
           </p>
+          <div className="dialog-choices">
+            <button className="btn primary" onClick={() => setHelp(false)}>Понятно</button>
+            <div className="dialog-alternatives">
+              <button className="btn secondary" onClick={() => void run(async () => { await native("open_help"); })}><FileText size={16} />Открыть полную инструкцию</button>
+            </div>
+          </div>
         </Dialog>
       )}
     </>

@@ -1,8 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, PropsWithChildren, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil } from "lucide-react";
+import { Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil, Plus } from "lucide-react";
 import { APP_ICON_AVAILABLE } from "./app-icon.generated";
+import { nextSubvariant, nextVariant, variantKey, variantParent, VARIANT_KEY_ERROR } from "./editor";
 import { clampSidebarWidth, setSidebarPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_RAIL_WIDTH,
   useSidebarPreferences } from "./sidebar";
 import "./sidebar-visual.css";
@@ -455,6 +456,180 @@ export function ActionMenu({
                 close(true); onAction(item.value);
               }}>
               {item.icon}<span>{item.label}</span>{item.children?.length ? <ChevronRight size={14} /> : null}
+            </button>
+          ))}
+        </div>, trigger.current?.closest("dialog") ?? document.body,
+      )}
+    </>
+  );
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  /** A variant colour class (`color-1`…) shows a dot before the label, as in the sidebar. */
+  dot?: string;
+  icon?: ReactNode;
+  /** A command rather than a value, such as «Новый вариант…»: set apart from the values above it. */
+  separator?: boolean;
+}
+
+/** Free numbers one click away: the next whole variant, a subvariant of it and the next subvariants of nearby variants. */
+export function VariantSuggestions({ variants, current, preferred, onPick }: {
+  variants: string[]; current: string; preferred: string | null; onPick(value: string): void;
+}) {
+  const parents = [...new Set([...(preferred ? [variantParent(preferred)] : []), ...variants.map(variantParent)])];
+  const next = nextVariant(variants);
+  const options = [next, ...parents.slice(0, 3).map((key) => nextSubvariant(variants, key)), `${next}.1`]
+    .filter((key, index, all) => all.indexOf(key) === index && !variants.includes(key));
+  const chosen = variantKey(current);
+  return <div className="variant-suggestions" role="group" aria-label="Свободные номера">
+    {options.map((key) => <button key={key} type="button" className={`variant-suggestion${chosen === key ? " is-chosen" : ""}`}
+      aria-pressed={chosen === key} onClick={() => onPick(key)}>
+      {key.includes(".") ? "Подвариант" : "Вариант"} {key}
+    </button>)}
+  </div>;
+}
+
+/** A number for a variant not made yet, whole (4) or a subvariant (4.1), for cutouts or frames to go to. */
+export function NewVariantDialog({ variants, preferred, subject, onCreate, onClose }: {
+  variants: string[];
+  preferred: string | null;
+  /** What goes there: «Вырезка 2 встанет в новый вариант.» */
+  subject: string;
+  onCreate(key: string): void;
+  onClose(): void;
+}) {
+  const [number, setNumber] = useState(() => nextVariant(variants));
+  const [error, setError] = useState("");
+  const input = useId();
+  return (
+    <Dialog title="Новый вариант" onClose={onClose}>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        // The form sits in the editor dialog; its keys and submit stay here.
+        event.stopPropagation();
+        const key = variantKey(number);
+        if (key === null) { setError(VARIANT_KEY_ERROR); return; }
+        onCreate(key);
+      }}>
+        <p>{subject} Целый номер создаёт вариант, номер с точкой — подвариант. Папка и PDF появятся после сохранения.</p>
+        <label htmlFor={input} className="form-label new-variant-label">Номер варианта или подварианта</label>
+        <input id={input} autoFocus className="form-input" type="text" inputMode="decimal" autoComplete="off" required
+          aria-invalid={!!error} value={number} onChange={(event) => { setNumber(event.target.value); setError(""); }} />
+        {error && <p className="dialog-error" role="alert">{error}</p>}
+        <VariantSuggestions variants={variants} current={number} preferred={preferred}
+          onPick={(value) => { setNumber(value); setError(""); }} />
+        <div className="dialog-choices">
+          <button className="btn primary"><Plus size={16} />{variants.includes(variantKey(number) ?? "") ? "Выбрать этот вариант" : "Создать вариант"}</button>
+          <div className="dialog-alternatives">
+            <button type="button" className="btn secondary" onClick={onClose}>Отмена</button>
+          </div>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/** A dropdown in the style of the app menus: a field showing the choice and a list of options under it. */
+export function Select({ value, options, onChange, label, placeholder = "Выберите…", disabled = false, className = "" }: {
+  value: string;
+  options: SelectOption[];
+  onChange(value: string): void;
+  label: string;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<CSSProperties>({});
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const current = options.find((option) => option.value === value);
+  const expanded = open && !disabled;
+  function close(restoreFocus = false) {
+    setOpen(false);
+    if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+  }
+  useLayoutEffect(() => {
+    if (!expanded) return;
+    function place() {
+      const rect = trigger.current!.getBoundingClientRect();
+      const below = innerHeight - rect.bottom - 16;
+      const above = rect.top - 16;
+      const upwards = below < 180 && above > below;
+      const width = Math.min(Math.max(rect.width, 200), innerWidth - 32);
+      setPosition({
+        width,
+        left: Math.max(16, Math.min(rect.left, innerWidth - width - 16)),
+        top: upwards ? undefined : rect.bottom + 6,
+        bottom: upwards ? innerHeight - rect.top + 6 : undefined,
+        maxHeight: Math.max(120, Math.min(320, upwards ? above : below)),
+      });
+    }
+    place();
+    const options = list.current!.querySelectorAll<HTMLButtonElement>("[role=option]");
+    const chosen = list.current!.querySelector<HTMLButtonElement>("[aria-selected=true]") ?? options[0];
+    chosen?.focus({ preventScroll: true });
+    chosen?.scrollIntoView({ block: "nearest" });
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [expanded]);
+  useEffect(() => {
+    if (!expanded) return;
+    const outside = (event: PointerEvent) => {
+      if (!list.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) close();
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [expanded]);
+  return (
+    <>
+      <button ref={trigger} type="button" className={`select-field ${className}`} role="combobox" aria-label={label}
+        aria-haspopup="listbox" aria-expanded={expanded} aria-controls={expanded ? id : undefined} data-value={value}
+        disabled={disabled} title={current?.label}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); setOpen(true); }
+        }}>
+        {current?.dot && <span className={`variant-dot ${current.dot}`} aria-hidden="true" />}
+        <span className={current ? "select-value" : "select-value is-placeholder"}>{current?.label ?? placeholder}</span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {expanded && createPortal(
+        <div ref={list} id={id} role="listbox" aria-label={label} className="action-menu select-menu" style={position}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) close();
+          }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Escape") { event.preventDefault(); close(true); return; }
+            if (event.key === "Tab") { close(true); return; }
+            const items = [...list.current!.querySelectorAll<HTMLButtonElement>("[role=option]")];
+            const index = items.indexOf(document.activeElement as HTMLButtonElement);
+            let next = index;
+            if (event.key === "ArrowDown") next = Math.min(items.length - 1, index + 1);
+            else if (event.key === "ArrowUp") next = Math.max(0, index - 1);
+            else if (event.key === "Home") next = 0;
+            else if (event.key === "End") next = items.length - 1;
+            else return;
+            event.preventDefault();
+            items[next]?.focus({ preventScroll: true });
+            items[next]?.scrollIntoView({ block: "nearest" });
+          }}>
+          {options.map((option) => (
+            <button key={option.value} type="button" role="option" tabIndex={-1} aria-selected={option.value === value}
+              className={option.separator ? "menu-separated" : undefined}
+              onClick={() => { close(true); if (option.value !== value) onChange(option.value); }}>
+              {option.dot && <span className={`variant-dot ${option.dot}`} aria-hidden="true" />}
+              {option.icon}
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} aria-hidden="true" />}
             </button>
           ))}
         </div>, trigger.current?.closest("dialog") ?? document.body,

@@ -19,25 +19,29 @@ from pdfminer.utils import mult_matrix
 from PIL import Image
 import pypdf.filters
 from pypdf import PdfReader, PdfWriter
-from pypdf.generic import ContentStream
+from pypdf.generic import ContentStream, IndirectObject
+from reportlab import rl_config
 
 from photo_layout import (bounds, caption_for, caption_with_variant_context, clean_text,
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
                           text_lines, tile_groups, found_variant, variant_numbers, variant_sort_key)
 from photo_scan import (analyse_scans, blank_layer_ink, column_caption, is_large_raster, LARGE_RASTER_PIXELS,
-                        open_large_raster,
+                        native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
                         prepare_scan_continuations, seam_caption, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
 # make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
 # decompressed output stay at pypdf's defaults.
 pypdf.filters.MAX_DECLARED_STREAM_LENGTH = max(pypdf.filters.MAX_DECLARED_STREAM_LENGTH, 2_000_000_000)
+# Image streams stay binary. ASCII85 text adds a quarter to every PDF and, without ReportLab's optional
+# C accelerator, encodes each image byte in pure Python: it was the slowest step of an export.
+rl_config.useA85 = 0
 # Whole poster-size rasters are kept at a reduced JPEG scale within this budget.
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.35'
+VERSION = '3.36'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -393,6 +397,30 @@ def opaque_paints(pdf_page, reader):
     return paints
 
 
+def _plain(value):
+    """A PDF value as text-ready data without memory addresses: an indirect reference becomes «12 0 R»."""
+    if isinstance(value, IndirectObject):
+        return f'{value.idnum} {value.generation} R'
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _plain(item) for key, item in value.items()}
+    return value
+
+
+def resource_identity(obj):
+    """SHA-256 of an image resource: pixels, size, colours and masks, the same in every run."""
+    identity = hashlib.sha256(obj.get_data())
+    identity.update(str(_plain((obj.get('/Width'), obj.get('/Height'), obj.get('/ColorSpace'),
+                                obj.get('/BitsPerComponent')))).encode())
+    for name in ('/SMask', '/Mask'):
+        mask = obj.get(name)
+        if mask is not None:
+            mask = mask.get_object() if hasattr(mask, 'get_object') else mask
+            identity.update(mask.get_data() if hasattr(mask, 'get_data') else str(_plain(mask)).encode())
+    return identity.hexdigest()
+
+
 def prepare_image_quality(source, pages):
     placements, identities = defaultdict(list), {}
     with PdfReader(source) as reader:
@@ -411,16 +439,7 @@ def prepare_image_quality(source, pages):
                 object_id = image['object_id']
                 if object_id not in identities:
                     try:
-                        obj = reader.get_object(object_id)
-                        identity = hashlib.sha256(obj.get_data())
-                        identity.update(str((obj.get('/Width'), obj.get('/Height'), obj.get('/ColorSpace'),
-                                             obj.get('/BitsPerComponent'))).encode())
-                        for name in ('/SMask', '/Mask'):
-                            mask = obj.get(name)
-                            if mask is not None:
-                                mask = mask.get_object() if hasattr(mask, 'get_object') else mask
-                                identity.update(mask.get_data() if hasattr(mask, 'get_data') else str(mask).encode())
-                        identities[object_id] = identity.hexdigest()
+                        identities[object_id] = resource_identity(reader.get_object(object_id))
                     except Exception:
                         # An unavailable identity is never evidence that two resources are equal.
                         identities[object_id] = None
@@ -545,6 +564,9 @@ def _decode(page, paths, image):
     key = paths.get(image['object_id'])
     if key is None:
         raise ValueError('Встроенное или inline-изображение не имеет отдельного ресурса.')
+    data = native_jpeg(page.pdf.get_object(image['object_id']))
+    if data is not None:
+        return 'native.jpg', data
     original = page.images[key]
     data, name = original.data, original.name
     original.image.close()
@@ -576,7 +598,7 @@ def save_group(page, paths, group, base):
             target = base.with_suffix('.png')
             with image.crop([round(value/factor) for value in crop]) as part:
                 size = list(part.size)
-                part.save(target, 'PNG')
+                part.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
             return target, size, 'reduced_scan_crop'
         target = base.with_suffix('.jpg')
         image.convert('RGB').save(target, 'JPEG', quality=92)
@@ -588,7 +610,7 @@ def save_group(page, paths, group, base):
                 target = base.with_suffix('.png')
                 with image.crop(group[0]['scan_crop_px']) as crop:
                     size = list(crop.size)
-                    crop.save(target, 'PNG')
+                    crop.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                 return target, size, 'native_scan_crop'
             size = list(image.size)
             suffix = Path(name).suffix.lower()
@@ -597,7 +619,7 @@ def save_group(page, paths, group, base):
                 target.write_bytes(data)
             else:
                 target = base.with_suffix('.png')
-                image.save(target, 'PNG')
+                image.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
         return target, size, 'original'
     if any((matrix := image.get('matrix')) and
            (matrix[1] or matrix[2] or matrix[0] < 0 or matrix[3] < 0) for image in group):
@@ -636,7 +658,7 @@ def save_group(page, paths, group, base):
                     raise ValueError('Размеры фрагментов не позволяют соединить их без масштабирования.')
                 merged.paste(piece, (x, y))
         target = base.with_suffix('.png')
-        merged.save(target, 'PNG')
+        merged.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
     return target, size, 'stitched_originals'
 
 
@@ -657,7 +679,7 @@ def _save_crop(pdfium_document, page, box, base):
         try:
             image = bitmap.to_pil()
             target = base.with_suffix('.png')
-            image.save(target, 'PNG')
+            image.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
             size = list(image.size)
             image.close()
         finally:

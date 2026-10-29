@@ -52,12 +52,15 @@
 .btn.text-action, .text-action { border: 0; background: transparent; color: var(--accent-dark); }
 .btn.text-action:hover:not(:disabled) { background: #f2f4ff; }
 button.text-action { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+button.text-action:hover:not(:disabled) { background: #f2f4ff; }
+button.text-action:disabled { color: var(--muted); cursor: default; }
 
 /* Cut editor */
 .dialog.cut-editor { width: min(1376px, calc(100vw - 32px)); height: min(940px, calc(100vh - 32px)); max-height: none; padding: 0; overflow: hidden; }
 .dialog.cut-editor[open] { display: flex; flex-direction: column; }
-.cut-editor .dialog-heading { margin: 0; padding: 18px 24px; border-bottom: 1px solid var(--line); }
-.cut-editor .dialog-heading h2 { font-size: 20px; }
+/* Only the editor's own heading: a dialog opened over the editor keeps the card style. */
+.cut-editor > .dialog-heading { margin: 0; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+.cut-editor > .dialog-heading h2 { font-size: 20px; }
 .cut-editor-subtitle { margin: 4px 0 0 !important; }
 .cut-editor-body { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .cut-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 10px 24px; border-bottom: 1px solid var(--line); }
@@ -121,9 +124,12 @@ button.text-action { display: inline-flex; align-items: center; gap: 6px; paddin
 .cut-panel-head { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .cut-panel-head h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
 .cut-panel-head h3 b { padding: 1px 8px; border-radius: 6px; background: #f0f2f6; color: #4c5668; font-size: 12px; }
-.cut-bulk { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 550; }
-.cut-bulk select, .cut-list select { flex: 1; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; }
-.cut-subvariants { align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--accent-dark); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; text-align: left; }
+.cut-bulk { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 550; white-space: nowrap; }
+.cut-bulk .select-field { flex: 1; }
+.cut-list .select-field { width: 100%; }
+.cut-subvariants { align-self: flex-start; margin: -3px -6px; padding: 3px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--accent-dark);
+  font: inherit; font-size: 12px; font-weight: 650; line-height: 18px; cursor: pointer; text-align: left; }
+.cut-subvariants:hover { background: #f2f4ff; }
 .cut-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 14px 16px; overflow: auto; list-style: none; }
 .cut-list li { display: flex; gap: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .cut-list li.is-skipped { opacity: .55; }
@@ -148,6 +154,11 @@ button.text-action { display: inline-flex; align-items: center; gap: 6px; paddin
 }
 @media (max-width: 1100px) {
   .cut-panel { flex-basis: 280px; }
+}
+/* In a smaller window the tools keep to one row: the groups speak for themselves without their captions. */
+@media (max-width: 1280px) {
+  .cut-tools-label { display: none; }
+  .cut-tools { gap: 8px; }
 }
 
 .nav-icon-attention { position: relative; display: inline-flex; }

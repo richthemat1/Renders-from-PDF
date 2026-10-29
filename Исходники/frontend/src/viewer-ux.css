@@ -465,3 +465,30 @@
     max-width: 24ch;
   }
 }
+
+/* Collage and cutout sections: instead of the card tools, one line to save what was changed there. */
+.section-save-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 16px 0 0;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid #cdd4ee;
+  border-radius: var(--radius-panel);
+  background: #fbfcff;
+}
+.section-save-bar > svg {
+  flex-shrink: 0;
+  color: var(--accent-dark);
+}
+.section-save-bar p {
+  flex: 1 1 260px;
+  margin: 0;
+  color: #4c5668;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.section-save-bar .btn {
+  min-height: 34px;
+}

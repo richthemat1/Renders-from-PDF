@@ -20,6 +20,7 @@ from photo_export import (COLLAGES_DIR, CUTOUTS_DIR, OTHER_DIR, PDFIUM_LOCK, SER
                           entry_group, group_file, group_title, has_service_dir, image_to_pdf, safe_name,
                           write_gallery)
 from photo_layout import variant_key, variant_sort_key
+from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL
 
 BACKUPS = '_Резервные копии'
 
@@ -556,6 +557,17 @@ def parse_collage_edits(report, payload):
     return parsed, list(dict.fromkeys(checked)), list(dict.fromkeys(dismissed))
 
 
+def _page_picture(pdf_page):
+    """The image XObject drawn directly on a single-picture page of the result, or None."""
+    resources = pdf_page.get('/Resources', {})
+    resources = resources.get_object() if hasattr(resources, 'get_object') else resources
+    objects = resources.get('/XObject', {})
+    objects = objects.get_object() if hasattr(objects, 'get_object') else objects
+    images = [reference.get_object() for reference in objects.values()
+              if reference.get_object().get('/Subtype') == '/Image']
+    return images[0] if len(images) == 1 else None
+
+
 def _collage_source(output, report, record):
     """The whole collage picture as a PIL image, its PDF page size in points and that page's bytes."""
     if record.get('file'):
@@ -573,7 +585,14 @@ def _collage_source(output, report, record):
             pictures = pdf_page.images
             if len(pictures) != 1:
                 raise EditError('В PDF склейки должна быть ровно одна картинка.')
-            image = pictures[0].image.copy()
+            # Frames are cut from the JPEG the PDF holds, not from the copy pypdf re-encodes on extraction.
+            picture = _page_picture(pdf_page)
+            data = native_jpeg(picture) if picture is not None else None
+            if data is not None:
+                image = Image.open(BytesIO(data))
+                image.load()
+            else:
+                image = pictures[0].image.copy()
             size = float(pdf_page.mediabox.width), float(pdf_page.mediabox.height)
             writer = PdfWriter()
             writer.add_page(pdf_page)
@@ -617,7 +636,7 @@ def _cut_frames(output, report, record, boxes, trim=False):
                 pixels = [round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)]
                 raster, target = Path(folder)/f'{number}.png', Path(folder)/f'{number}.pdf'
                 with image.crop(pixels) as crop:
-                    crop.save(raster, 'PNG')
+                    crop.save(raster, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                     size = list(crop.size)
                     with crop.copy() as thumbnail:
                         thumbnail.thumbnail((640, 480), Image.Resampling.LANCZOS)
@@ -889,7 +908,7 @@ def _snapshot_frames(report, record, boxes):
                     bitmap = page.render(scale=scale, crop=crop)
                     try:
                         with bitmap.to_pil() as image:
-                            image.convert('RGB').save(raster, 'PNG')
+                            image.convert('RGB').save(raster, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                             size = list(image.size)
                             with image.copy() as thumbnail:
                                 thumbnail.thumbnail((640, 480), Image.Resampling.LANCZOS)

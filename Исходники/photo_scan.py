@@ -19,6 +19,9 @@ from photo_layout import clean_text, variant_numbers
 # Poster layers reach 200 Mpx (about 600 MB per decode) and trip Pillow's bomb guard.
 # Such JPEGs are opened at a reduced JPEG scale that stays within this pixel budget.
 LARGE_RASTER_PIXELS = 50_000_000
+# A scratch PNG lives only until its PDF is written or OCR has read it: the fastest zlib level keeps
+# the same pixels and halves the encoding time.
+SCRATCH_PNG_LEVEL = 1
 
 
 def is_large_raster(image):
@@ -56,6 +59,30 @@ def open_large_raster(obj, budget=None):
     return image, width/image.width
 
 
+def native_jpeg(obj):
+    """The embedded JPEG file itself, or None when the PDF changes how it is drawn.
+
+    pypdf 6 decodes and re-encodes every JPEG it extracts, so a plain one (no mask, inversion or
+    CMYK) is exported byte for byte: the PDF keeps the original compression, and the slow second
+    encoding is skipped."""
+    filters = obj.get('/Filter')
+    filters = [str(item) for item in filters] if isinstance(filters, list) else [str(filters)]
+    if filters[-1] != '/DCTDecode' or obj.get('/ImageMask') or any(key in obj for key in ('/SMask', '/Mask', '/Decode')):
+        return None
+    space = obj.get('/ColorSpace')
+    space = space.get_object() if hasattr(space, 'get_object') else space
+    if isinstance(space, list) and len(space) == 2 and str(space[0]) == '/ICCBased':
+        space = {1: '/DeviceGray', 3: '/DeviceRGB'}.get(space[1].get_object().get('/N'))
+    mode = {'/DeviceRGB': 'RGB', '/DeviceGray': 'L'}.get(str(space))
+    data = obj.get_data()
+    try:
+        with Image.open(BytesIO(data)) as image:
+            plain = image.format == 'JPEG' and image.mode == mode and image.size == (obj['/Width'], obj['/Height'])
+    except Exception:
+        return None
+    return data if plain else None
+
+
 def blank_layer_ink(obj):
     """Share of visibly drawn pixels in a stacked JPEG layer, measured on a small decode."""
     image, _ = open_large_raster(obj, budget=4_000_000)
@@ -70,6 +97,8 @@ def scan_image(reader, pdf_page, path, original):
     if is_large_raster(original):
         image, factor = open_large_raster(reader.get_object(original['object_id']))
     else:
+        # Not native_jpeg: OCR and the panel rules were tuned on these decoded pixels. Crops taken
+        # with the boxes found here are cut from the original JPEG, which has the same size.
         image, factor = pdf_page.images[path].image, 1
     try:
         yield image, factor
@@ -168,7 +197,7 @@ class WindowsOcr:
             # Never overwrite an image while the OCR host still references it.
             self.counter += 1
             path = Path(self.workspace.name)/f'page-{self.counter}.png'
-            reduced.save(path)
+            reduced.save(path, compress_level=SCRATCH_PNG_LEVEL)
             sx = (box['x1']-box['x0'])/reduced.width
             sy = (box['bottom']-box['top'])/reduced.height
         self.process.stdin.write(json.dumps({'path': str(path)}, ensure_ascii=False)+'\n')
@@ -214,6 +243,47 @@ class WindowsOcr:
         self.workspace.cleanup()
 
 
+INK_RUN = re.compile(rb'[^\x00]+')
+
+
+def components(data, width):
+    """4-connected regions of non-zero bytes as (left, top, right, bottom, pixels), inclusive bounds,
+    in raster order of their first pixel.
+
+    Whole runs of a row are joined to the touching runs of the row above, so a slide of a million
+    pixels takes thousands of Python steps instead of millions."""
+    parent, regions, above = [], [], []
+
+    def root(index):
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for y in range(len(data)//width):
+        offset, row, start_above = y*width, [], 0
+        for run in INK_RUN.finditer(data, offset, offset+width):
+            start, end = run.start()-offset, run.end()-offset
+            index = len(parent)
+            parent.append(index)
+            regions.append([start, y, end-1, y, end-start])
+            while start_above < len(above) and above[start_above][1] <= start:
+                start_above += 1
+            near = start_above
+            while near < len(above) and above[near][0] < end:
+                first, second = sorted((root(index), root(above[near][2])))
+                if first != second:
+                    # The earlier run stays the root, so every region keeps its first pixel's place in the order.
+                    parent[second] = first
+                    kept, joined = regions[first], regions[second]
+                    kept[:] = (min(kept[0], joined[0]), min(kept[1], joined[1]),
+                               max(kept[2], joined[2]), max(kept[3], joined[3]), kept[4]+joined[4])
+                near += 1
+            row.append((start, end, index))
+        above = row
+    return [tuple(regions[index]) for index in range(len(parent)) if parent[index] == index]
+
+
 def photo_panels(image):
     """Dense rectangular components separated by light gutters; no fixed grid."""
     with image.convert('L') as gray:
@@ -227,27 +297,9 @@ def photo_panels(image):
         eroded = mask.filter(ImageFilter.MinFilter(7))
     with eroded:
         mask = eroded.filter(ImageFilter.MaxFilter(7))
-    data = bytearray(mask.tobytes())
     boxes, doubtful = [], []
     uncertain = False
-    for position in range(len(data)):
-        if not data[position]:
-            continue
-        data[position] = 0
-        todo = [position]
-        left = right = position % width
-        top = bottom = position // width
-        count = 0
-        while todo:
-            current = todo.pop()
-            x, y = current % width, current // width
-            count += 1
-            left, right, top, bottom = min(left, x), max(right, x), min(top, y), max(bottom, y)
-            for near in ((current-1 if x else -1), (current+1 if x < width-1 else -1),
-                         current-width, current+width):
-                if 0 <= near < len(data) and data[near]:
-                    data[near] = 0
-                    todo.append(near)
+    for left, top, right, bottom, count in components(mask.tobytes(), width):
         w, h = right-left+1, bottom-top+1
         if w < width*.07 or h < height*.08 or count < width*height*.012:
             continue

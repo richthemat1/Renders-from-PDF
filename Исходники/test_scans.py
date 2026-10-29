@@ -309,6 +309,57 @@ class CollageCuts(unittest.TestCase):
         self.assertEqual(gutter_panels(bridged), [])
 
 
+def flood_components(data, width):
+    """The pixel-by-pixel flood fill photo_panels used before 3.36: the reference for the run version."""
+    data, found = bytearray(data), []
+    for position in range(len(data)):
+        if not data[position]:
+            continue
+        data[position] = 0
+        todo, count = [position], 0
+        left = right = position % width
+        top = bottom = position // width
+        while todo:
+            current = todo.pop()
+            x, y = current % width, current // width
+            count += 1
+            left, right, top, bottom = min(left, x), max(right, x), min(top, y), max(bottom, y)
+            for near in ((current-1 if x else -1), (current+1 if x < width-1 else -1),
+                         current-width, current+width):
+                if 0 <= near < len(data) and data[near]:
+                    data[near] = 0
+                    todo.append(near)
+        found.append((left, top, right, bottom, count))
+    return found
+
+
+class PanelComponents(unittest.TestCase):
+    def test_runs_find_the_same_regions_in_the_same_order_as_the_flood_fill(self):
+        import random
+        from photo_scan import components
+        generator = random.Random(336)
+        shapes = {'empty': (bytes(12*7), 12), 'full': (b'\xff'*12*7, 12), 'column': (b'\xff\x00\xff'*5, 1),
+                  'diagonal': (bytes(255 if x == y else 0 for y in range(9) for x in range(9)), 9),
+                  # A U shape and a comb join separate runs only on a lower row.
+                  'u': (bytes(255 if x in (0, 6) or y == 5 else 0 for y in range(6) for x in range(7)), 7),
+                  'comb': (bytes(255 if x % 2 == 0 or y == 8 else 0 for y in range(9) for x in range(11)), 11)}
+        for index in range(200):
+            width, height = generator.randint(1, 40), generator.randint(1, 30)
+            density = generator.choice((.2, .45, .6, .9))
+            shapes[f'random {index}'] = (bytes(255 if generator.random() < density else 0
+                                               for _ in range(width*height)), width)
+        for name, (data, width) in shapes.items():
+            with self.subTest(name):
+                self.assertEqual(components(data, width), flood_components(data, width))
+
+    def test_scan_panels_are_unchanged_on_a_drawn_slide(self):
+        from photo_scan import photo_panels
+        with tempfile.TemporaryDirectory() as root:
+            with Image.open(Path(scan_pdf(root)).with_name('scan.png')) as image:
+                self.assertEqual(photo_panels(image), [[80, 269, 931, 762], [1069, 269, 1922, 762],
+                                                       [80, 849, 931, 1382], [1069, 849, 1922, 1382]])
+
+
 class ScanExport(unittest.TestCase):
     def test_fractional_scan_crop_dimensions_keep_previews_within_limit(self):
         with tempfile.TemporaryDirectory() as root:

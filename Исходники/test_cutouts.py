@@ -1,10 +1,11 @@
 """Cutouts: parts of source pages cut by hand, in the pixels of their picture or as a page snapshot."""
+from io import BytesIO
 from pathlib import Path
 import shutil
 import tempfile
 import unittest
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 from reportlab.pdfgen import canvas
 
 from photo_export import extract
@@ -190,6 +191,79 @@ class Cutouts(unittest.TestCase):
         shutil.move(moved, self.report['source'])
         with self.assertRaisesRegex(EditError, 'изменился после обработки'):
             pages_info(self.output)
+
+
+class JpegCutout(unittest.TestCase):
+    def test_a_cutout_of_a_jpeg_picture_keeps_the_pixels_of_the_jpeg_in_the_presentation(self):
+        # pypdf re-encodes JPEGs it extracts; a noisy photo shows any difference from the original stream.
+        from photo_edit import apply_edits
+        with tempfile.TemporaryDirectory(prefix='pdf-photos-jpeg-cut-') as root:
+            photo = Path(root)/'photo.jpg'
+            with Image.effect_noise((800, 600), 70) as noise, noise.convert('RGB') as image:
+                image.save(photo, 'JPEG', quality=85)
+            source = Path(root)/'photo.pdf'
+            pdf = canvas.Canvas(str(source), pagesize=(1000, 750))
+            pdf.setFont('FixtureArial', 16)
+            pdf.drawString(60, 750-110, 'Перспективное изображение №1. Вариант 2')
+            pdf.drawImage(str(photo), 60, 750-130-450, 600, 450)
+            pdf.showPage()
+            pdf.save()
+            report = extract(source)
+            output = Path(report['output'])
+            picture = next(index for index, entry in enumerate(report['images']) if not entry.get('removed'))
+            members = variants(report)
+            members['2'] = [len(report['images'])]
+            saved, _ = apply_edits(output, {'revision': 0, 'variants': members, 'removed': [picture],
+                                            'cutouts': [{'source': picture, 'rects': [[.06, 130/750, .36, 580/750]]}]})
+            piece = next(entry for entry in saved['images'] if entry.get('cutout') and not entry.get('removed'))
+            self.assertEqual((piece['variant'], piece['size']), (2, [400, 600]))
+            with Image.open(photo) as original, original.crop(piece['crop_px']) as expected:
+                cut = exported_image(saved, piece)
+                self.assertEqual(cut.size, expected.size)
+                self.assertIsNone(ImageChops.difference(cut.convert('RGB'), expected.convert('RGB')).getbbox())
+
+
+class SourcePagesServer(unittest.TestCase):
+    def setUp(self):
+        from photo_desktop_server import DesktopServer
+        from photo_jobs import JobService
+        self.temp = tempfile.TemporaryDirectory(prefix='pdf-photos-pages-')
+        self.addCleanup(self.temp.cleanup)
+        report = extract(cutout_pdf(self.temp.name))
+        self.jobs = JobService(Path(self.temp.name)/'state.json')
+        self.addCleanup(self.jobs.close)
+        self.server = DesktopServer(self.jobs, Path(__file__).parent/'frontend'/'dist').start()
+        self.addCleanup(self.server.stop)
+        self.id = self.server.register_result(report['output'])['id']
+
+    def test_a_page_is_rendered_once_for_repeat_views(self):
+        from unittest.mock import patch
+        import photo_desktop_server
+        with patch.object(photo_desktop_server, 'render_page', wraps=photo_desktop_server.render_page) as render:
+            first = self.server.page_image(self.id, 1, thumb=True)
+            self.assertEqual(self.server.page_image(self.id, 1, thumb=True), first)
+            self.server.page_image(self.id, 1)
+        self.assertEqual(render.call_count, 2)
+        with Image.open(BytesIO(first)) as image:
+            self.assertEqual(max(image.size), 240)
+
+    def test_app_files_and_state_do_not_wait_for_a_save(self):
+        from threading import Event, Thread
+        from urllib.request import urlopen
+        held, release = Event(), Event()
+
+        def save():
+            with self.server.lock:
+                held.set()
+                release.wait(10)
+        saving = Thread(target=save)
+        saving.start()
+        self.addCleanup(saving.join)
+        self.addCleanup(release.set)
+        held.wait(5)
+        for path in ('', 'api/state'):
+            with self.subTest(path=path), urlopen(self.server.url+path, timeout=3) as response:
+                self.assertEqual(response.status, 200)
 
 
 if __name__ == '__main__':

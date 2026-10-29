@@ -294,6 +294,28 @@ class PhotoExport(unittest.TestCase):
             with PdfReader(target) as reader:
                 self.assertEqual(reader.pages[0].images[0].data, source.read_bytes())
 
+    def test_jpeg_of_the_presentation_reaches_the_variant_pdf_byte_for_byte(self):
+        # pypdf 6 re-encodes JPEGs on extraction; a noisy progressive photo would not survive that unchanged.
+        with tempfile.TemporaryDirectory() as root:
+            photo = Path(root)/'photo.jpg'
+            with Image.effect_noise((900, 600), 70) as noise, noise.convert('RGB') as image:
+                image.save(photo, 'JPEG', quality=83, progressive=True)
+            source = Path(root)/'presentation.pdf'
+            pdf = canvas.Canvas(str(source), pagesize=(1000, 800))
+            pdf.drawImage(str(photo), 50, 800-160-450, 675, 450)
+            pdf.setFont('FixtureArial', 18)
+            pdf.drawString(50, 800-120-18, 'Вариант 1')
+            pdf.showPage()
+            pdf.save()
+            report = self.run_export(source)
+            entry = report['images'][0]
+            self.assertEqual((entry['variant'], entry['method'], entry['size']), (1, 'original', [900, 600]))
+            with PdfReader(Path(report['output'], entry['file'])) as reader:
+                stream = next(iter(reader.pages[0]['/Resources']['/XObject'].values())).get_object()
+                self.assertEqual(stream.get_data(), photo.read_bytes())
+                # Binary, without the ASCII85 layer that made ReportLab encode every byte in Python.
+                self.assertEqual(stream['/Filter'], ['/DCTDecode'])
+
     def test_caption_in_the_bottom_five_percent_is_kept_but_page_number_is_not_a_title(self):
         with tempfile.TemporaryDirectory() as root:
             source = make_pdf(root, [{'images': [{'box': (50, 10, 900, 730)}],

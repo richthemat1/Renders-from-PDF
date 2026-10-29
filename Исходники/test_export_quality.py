@@ -149,6 +149,66 @@ class ExportQuality(unittest.TestCase):
                  word('изображение', 176, 282), word('№6', 288, 313), word('(Вариант', 319, 386), word('1)', 390, 405)]
         self.assertEqual(text_lines(words)[0]['text'], 'Перспективное изображение №6 (Вариант 1)')
 
+    def test_resource_identity_is_the_same_in_every_run_with_an_indirect_colour_space(self):
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import NameObject
+        with tempfile.TemporaryDirectory() as root:
+            source = make_pdf(root, [{'images': [{'box': (50, 160, 400, 270)}]}])
+            writer = PdfWriter(clone_from=source)
+            image = next(iter(writer.pages[0]['/Resources']['/XObject'].values())).get_object()
+            image[NameObject('/ColorSpace')] = writer._add_object(NameObject('/DeviceRGB'))
+            target = Path(root)/'indirect.pdf'
+            writer.write(target)
+            # Two readers alive at once: the old identity printed each reader's memory address.
+            with PdfReader(target) as first, PdfReader(target) as second:
+                images = [next(iter(reader.pages[0]['/Resources']['/XObject'].values())).get_object()
+                          for reader in (first, second)]
+                self.assertNotEqual(*[str((image.get('/Width'), image.get('/ColorSpace'))) for image in images])
+                self.assertEqual(photo_export.resource_identity(images[0]), photo_export.resource_identity(images[1]))
+
+    def test_height_bands_keep_every_overprint_decision_of_the_pairwise_comparison(self):
+        import random
+        from photo_layout import deduplicate_words
+
+        def pairwise(words):
+            """Deduplication as before 3.36: every word against every kept word."""
+            kept = []
+            for word in words:
+                text = re.sub(r'\s+', '', word['text']).casefold()
+                replacement = None
+                for index, old in enumerate(kept):
+                    old_text = re.sub(r'\s+', '', old['text']).casefold()
+                    number = bool(re.fullmatch(r'№?\d+[.)]?', text) and re.fullmatch(r'№?\d+[.)]?', old_text))
+                    if not (text == old_text or number):
+                        continue
+                    height = min(word['bottom']-word['top'], old['bottom']-old['top'])
+                    width = min(word['x1']-word['x0'], old['x1']-old['x0'])
+                    if height <= 0 or width <= 0 or abs(word['top']-old['top']) > max(1.5, height*.15):
+                        continue
+                    overlap = max(0, min(word['x1'], old['x1'])-max(word['x0'], old['x0']))
+                    if overlap/width >= (.72 if number else .85) and abs(word['x0']-old['x0']) <= max(2, width*.30):
+                        replacement = index
+                        break
+                if replacement is not None:
+                    kept[replacement] = word
+                else:
+                    kept.append(word)
+            return kept
+
+        generator = random.Random(336)
+        for case in range(150):
+            words = []
+            for _ in range(generator.randint(1, 120)):
+                top = generator.choice((20, 20.4, 21.5, 23, 60, -3.25)) + generator.choice((0, 0, .3, 1.49, 1.51, 4))
+                height = generator.choice((0, 6, 14, 14, 40, 120))
+                x0 = generator.choice((50, 51, 52.5, 80, 300)) + generator.random()*3
+                # No standalone «№»: joining it with the next number happens before the comparison.
+                words.append({'text': generator.choice(('3', '№3', '4.', '12)', 'очень', 'Очень ', 'план')),
+                              'x0': x0, 'x1': x0+generator.choice((0, 8, 25, 25, 90)), 'top': top,
+                              'bottom': top+height, 'size': 14})
+            with self.subTest(case=case):
+                self.assertEqual(deduplicate_words(words), pairwise(words))
+
     def test_selected_marker_names_a_centered_render_and_uses_only_unambiguous_table_relation(self):
         with tempfile.TemporaryDirectory() as root:
             source = make_pdf(root, [{'images': [{'box': (300, 200, 500, 400)}],

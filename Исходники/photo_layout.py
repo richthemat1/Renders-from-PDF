@@ -17,6 +17,8 @@ SELECTION_REFERENCE = re.compile(
     r'^(ВПМ|Выбранный\s+вариант)\s*[:—–-]?\s*'
     rf'(?:(?:вариант\s*№?\s*({VARIANT_NUMBER}))|(?:№?\s*({VARIANT_NUMBER})\s*(?:вариант)?))$', re.I)
 PLAN_CAPTION = re.compile(r'\b(?:схем\w*|ситуационн\w*|генплан\w*|карт[аыуе]\w*|ПОЗУ|планировочн\w*)\b', re.I)
+OVERPRINT_NUMBER = re.compile(r'№?\d+[.)]?')
+OVERPRINT_BAND = 2
 
 
 def variant_key(value):
@@ -73,14 +75,23 @@ def deduplicate_words(words):
                 index += 1
         joined.append(word)
         index += 1
-    kept = []
+    # Only words at nearly the same height can be overprints, so kept words are indexed by height
+    # bands of OVERPRINT_BAND points: a page of drawings or tables no longer compares every pair.
+    kept, keys, bands = [], [], {}
     for word in joined:
         text = re.sub(r'\s+', '', word['text']).casefold()
+        is_number = bool(OVERPRINT_NUMBER.fullmatch(text))
+        reach = max(1.5, (word['bottom']-word['top'])*.15)
+        # One more band on each side absorbs rounding at the edge of the reach.
+        nearby = sorted(index for band in range(math.floor((word['top']-reach)/OVERPRINT_BAND)-1,
+                                                math.floor((word['top']+reach)/OVERPRINT_BAND)+2)
+                        for index in bands.get(band, ()))
         replacement = None
-        for index, old in enumerate(kept):
-            old_text = re.sub(r'\s+', '', old['text']).casefold()
+        for index in nearby:
+            old = kept[index]
+            old_text, old_number = keys[index]
             same = text == old_text
-            number = bool(re.fullmatch(r'№?\d+[.)]?', text) and re.fullmatch(r'№?\d+[.)]?', old_text))
+            number = is_number and old_number
             if not (same or number):
                 continue
             height = min(word['bottom']-word['top'], old['bottom']-old['top'])
@@ -92,9 +103,13 @@ def deduplicate_words(words):
                 replacement = index
                 break
         if replacement is not None:
-            kept[replacement] = word
+            bands[math.floor(kept[replacement]['top']/OVERPRINT_BAND)].remove(replacement)
+            kept[replacement], keys[replacement] = word, (text, is_number)
         else:
+            replacement = len(kept)
             kept.append(word)
+            keys.append((text, is_number))
+        bands.setdefault(math.floor(word['top']/OVERPRINT_BAND), []).append(replacement)
     return kept
 
 

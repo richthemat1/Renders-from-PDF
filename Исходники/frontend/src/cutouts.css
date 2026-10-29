@@ -56,9 +56,9 @@
 .cutout-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
 .cutout-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
 .cutout-handle.w { left: 0; top: 50%; cursor: ew-resize; }
-.cutout-callout { z-index: 4; margin: 0 0 0 12px; }
-.cutout-callout.on-left { margin: 0 12px 0 0; }
-.cutout-callout.inside { margin: 10px 10px 0 0; }
+.cutout-callout { z-index: 4; margin: 0; }
+.cutout-callout.above { margin-bottom: 10px; }
+.cutout-callout.below { margin-top: 10px; }
 /* The note and the summary keep their room, so the page does not jump when their text changes. */
 .cutout-center .cut-note { min-height: 18px; padding: 0 28px; font-size: 12px; line-height: 18px; text-align: center; }
 .cutout-editor .cut-footer p { min-height: 3em; align-items: center; }
@@ -73,8 +73,7 @@
 .cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
 .cutout-row strong { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-size: 13px; }
 .cutout-row strong span, .cutout-row > div > span { color: var(--muted); font-size: 12px; font-weight: 400; }
-.cutout-row select { height: 32px; padding: 0 8px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; color: var(--ink); font: inherit;
-  font-size: 12px; font-weight: 600; }
+.cutout-row .select-field { width: 100%; }
 .cutout-row .cut-thumb { max-height: 100px; }
 .cutout-row-actions { display: flex; gap: 2px; }
 .cutout-row-actions .text-action { padding: 6px 8px; font-size: 13px; }

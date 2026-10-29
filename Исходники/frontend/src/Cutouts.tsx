@@ -4,7 +4,8 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as 
 import { ChevronLeft, ChevronRight, Crop, Image as ImageIcon, LocateFixed, Maximize, Minus, Pencil, Plus, Scan, Trash2,
   TriangleAlert, Undo2 } from "lucide-react";
 import { errorText, plural, request } from "./api";
-import { Dialog } from "./components";
+import { Dialog, NewVariantDialog, Select } from "./components";
+import type { SelectOption } from "./components";
 import { CroppedImage } from "./Collages";
 import { compareVariants, nextSubvariant, rectBox } from "./editor";
 import type { PagesInfo, Rect } from "./types";
@@ -128,7 +129,8 @@ export function CutoutsPage({ views, saving, onOpen, onReturn }: {
       <div className="collages-heading">
         <p>Части страниц PDF, вырезанные вручную. Вырезка встаёт в вариант вместо исходной картинки, а сама картинка
           хранится здесь: вырезки можно изменить или вернуть картинку целиком.</p>
-        <button className="btn primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>
+        {/* An empty section offers the same button in its middle. */}
+        {!!views.length && <button className="btn primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>}
       </div>
       {views.length ? (
         <div className="collages-grid">
@@ -191,7 +193,7 @@ type Drag =
   | { mode: "resize"; pointer: number; uid: number; handle: Handle; rect: Rect; before: Frame[] | null };
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
-export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, onApply, onClose }: {
+export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, dotOf, onApply, onClose }: {
   resultId: string;
   title: string;
   views: CutoutSource[];
@@ -200,6 +202,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   start: { page: number; picture?: number };
   variants: string[];
   labelOf(key: string): string;
+  /** The colour class of a variant's dot, as in the sidebar. */
+  dotOf(key: string): string;
   onApply(results: CutoutResult[]): void;
   onClose(): void;
 }) {
@@ -219,6 +223,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const [snapped, setSnapped] = useState(false);
   const [note, setNote] = useState("");
   const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  // Frames waiting for the number of a new variant.
+  const [naming, setNaming] = useState<number[] | null>(null);
   const nextUid = useRef(frames.length);
   const scroller = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -549,11 +555,13 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const chosen = frames.find((frame) => frame.uid === selected && frame.page === page);
   const chosenSize = chosen ? pixels(chosen) : null;
   const pages = info?.pages ?? [];
-  const optionList = (source: CutoutSource) => <>
-    {source.kind === "image" && <option value="__keep">На место картинки</option>}
-    {options.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
-    <option value="__misc">Без варианта</option>
-  </>;
+  // A page snapshot replaces no picture, so it has no place of its own to keep.
+  const choices = (keep: boolean): SelectOption[] => [...(keep ? [{ value: "__keep", label: "На место картинки" }] : []),
+    ...options.map((key) => ({ value: key, label: labelOf(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
+    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
+  function choose(uids: number[], value: string) {
+    if (value === "__new") setNaming(uids); else setTarget(uids, parse(value));
+  }
   const valueOf = (target: Target) => target === "keep" ? "__keep" : target === null ? "__misc" : target;
   const parse = (value: string): Target => value === "__keep" ? "keep" : value === "__misc" ? null : value;
 
@@ -586,7 +594,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
           <span className="cut-divider" />
           <label className="cut-toggle">
             <input type="checkbox" checked={showPictures} onChange={(event) => setShowPictures(event.target.checked)} />
-            <span aria-hidden="true" />Показывать найденные картинки
+            <span aria-hidden="true" />Найденные картинки
           </label>
           <label className="cut-toggle">
             <input type="checkbox" checked={snapping} onChange={(event) => setSnapping(event.target.checked)} />
@@ -594,7 +602,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
           </label>
           <span className="cut-spacer" />
           <button className="btn text-action" disabled={!onPage.length} onClick={() => remove(onPage.map((frame) => frame.uid))}>
-            <Trash2 size={16} />Убрать рамки на странице</button>
+            <Trash2 size={16} />Убрать рамки</button>
         </div>
         <div className="cut-workspace">
           <nav className="cutout-pages" aria-label="Страницы">
@@ -647,11 +655,10 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                 })}
                 {drawing && <span className="cutout-frame is-drawing" style={relative(drawing, [0, 0, 1, 1])} aria-hidden="true" />}
                 {chosen && chosenSize && (
-                  // Beside the frame where the page has room for it, else inside its upper right corner.
-                  <div className={`cut-callout cutout-callout ${chosen.rect[2] <= 0.6 ? "on-right" : chosen.rect[0] >= 0.4 ? "on-left" : "inside"}`}
-                    style={chosen.rect[2] <= 0.6 ? { left: `${chosen.rect[2] * 100}%`, top: `${chosen.rect[1] * 100}%` }
-                      : chosen.rect[0] >= 0.4 ? { right: `${(1 - chosen.rect[0]) * 100}%`, top: `${chosen.rect[1] * 100}%` }
-                      : { right: `${(1 - chosen.rect[2]) * 100}%`, top: `${chosen.rect[1] * 100}%` }}>
+                  // Over the frame, or under it at the top of the page, so it covers no other frame beside it.
+                  <div className={`cut-callout cutout-callout ${chosen.rect[1] > 0.1 ? "above" : "below"}`}
+                    style={{ ...(chosen.rect[1] > 0.1 ? { bottom: `${(1 - chosen.rect[1]) * 100}%` } : { top: `${chosen.rect[3] * 100}%` }),
+                      ...(chosen.rect[0] > 0.55 ? { right: `${(1 - chosen.rect[2]) * 100}%` } : { left: `${chosen.rect[0] * 100}%` }) }}>
                     <b>{chosenSize[0]} × {chosenSize[1]} px</b>
                     <span>{sourceOf(chosen).kind === "page" ? "снимок страницы" : snapped ? "край прилип" : "из картинки"}</span>
                     <button aria-label="Удалить вырезку" onPointerDown={(event) => event.stopPropagation()}
@@ -674,14 +681,10 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
             <div className="cut-panel-head">
               <h3>Вырезки <b>{count}</b></h3>
               {!!count && <>
-                <label className="cut-bulk">Куда все:
-                  <select value="" onChange={(event) => setTarget(frames.map((frame) => frame.uid), parse(event.target.value))}>
-                    <option value="" disabled>Выберите…</option>
-                    <option value="__keep">На место картинки</option>
-                    {options.map((key) => <option key={key} value={key}>{labelOf(key)}</option>)}
-                    <option value="__misc">Без варианта</option>
-                  </select>
-                </label>
+                <div className="cut-bulk"><span>Куда все:</span>
+                  <Select label="Куда поместить все вырезки" value="" options={choices(true)}
+                    onChange={(value) => choose(frames.map((frame) => frame.uid), value)} />
+                </div>
                 <button className="cut-subvariants" onClick={eachToSubvariant}>
                   Или: каждую — в свой подвариант {nextSubvariant(options, base)}…
                 </button>
@@ -703,10 +706,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                           <strong>Вырезка {number} <span>стр. {frame.page}</span></strong>
                           <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "image" ? "из картинки" : "снимок страницы"}</span>
                           {small && <span className="cutout-warning"><TriangleAlert size={13} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
-                          <select aria-label={`Куда поместить вырезку ${number}`} value={valueOf(targetOf(frame, source))}
-                            onChange={(event) => setTarget([frame.uid], parse(event.target.value))}>
-                            {optionList(source)}
-                          </select>
+                          <Select label={`Куда поместить вырезку ${number}`} value={valueOf(targetOf(frame, source))}
+                            options={choices(source.kind === "image")} onChange={(value) => choose([frame.uid], value)} />
                           <div className="cutout-row-actions">
                             <button className="text-action" onClick={() => show(frame)}><LocateFixed size={15} />Показать</button>
                             <button className="text-action" onClick={() => remove([frame.uid])}><Trash2 size={15} />Удалить</button>
@@ -729,6 +730,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
         </div>
       </div>
       )}
+      {naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+        subject={naming.length === 1 ? `Вырезка ${numberOf.get(naming[0])} встанет в новый вариант.` : "Все вырезки встанут в новый вариант."}
+        onCreate={(key) => { setTarget(naming, key); setNaming(null); }} />}
     </Dialog>
   );
 }

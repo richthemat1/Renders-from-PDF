@@ -41,7 +41,12 @@ class CutoutsUI(unittest.TestCase):
     def save(self):
         with self.page.expect_response(lambda r: r.url.endswith('/apply') and r.status == 200):
             self.page.get_by_role('button', name='Сохранить', exact=True).click()
-        expect(self.page.locator('.editor-save')).to_be_disabled()
+        expect(self.page.locator('.status-note')).to_have_text('Изменения сохранены')
+
+    def choose(self, field, option):
+        """Pick an option of an app dropdown: its list opens under the field."""
+        field.click()
+        self.page.get_by_role('option', name=option, exact=True).click()
 
     def section(self):
         self.page.locator('nav').get_by_role('button', name='Вырезки', exact=False).click()
@@ -80,7 +85,7 @@ class CutoutsUI(unittest.TestCase):
         handle = editor.locator('.cutout-frame.is-selected .cutout-handle.e').bounding_box()
         self.drag((handle['x']+5, handle['y']+5), self.at(.48, .5))
         expect(rows.first).to_contain_text('560 × 600 px')
-        expect(editor.get_by_label('Куда поместить вырезку 1')).to_have_value('__keep')
+        expect(editor.get_by_label('Куда поместить вырезку 1')).to_have_attribute('data-value', '__keep')
         editor.get_by_role('button', name='Добавить 1 вырезку').click()
         expect(editor).to_have_count(0)
         card = section.locator('.cutout-card')
@@ -98,9 +103,11 @@ class CutoutsUI(unittest.TestCase):
         expect(editor.locator('.cutout-found')).to_contain_text('Исходная картинка')
         self.drag(self.at(.72, .24), self.at(.92, .5))
         expect(rows.nth(1)).to_contain_text('снимок страницы')
-        expect(editor.get_by_label('Куда поместить вырезку 2')).to_have_value('__misc')
-        editor.get_by_label('Куда поместить вырезку 2').select_option('2')
-        # Delete and a step back.
+        expect(editor.get_by_label('Куда поместить вырезку 2')).to_have_attribute('data-value', '__misc')
+        self.choose(editor.get_by_label('Куда поместить вырезку 2'), 'Вариант 2')
+        expect(editor.get_by_label('Куда поместить вырезку 2')).to_have_attribute('data-value', '2')
+        # Delete and a step back, on the page with the frame chosen.
+        editor.locator('.cutout-stage').focus()
         self.page.keyboard.press('Delete')
         expect(rows).to_have_count(1)
         self.page.keyboard.press('Control+z')
@@ -129,8 +136,38 @@ class CutoutsUI(unittest.TestCase):
         editor = self.page.locator('dialog.cutout-editor')
         expect(editor.locator('.cutout-row')).to_have_count(1)
         expect(editor.locator('.cut-note')).to_contain_text('Рамка поставлена по краям картинки')
-        editor.get_by_role('button', name='Отмена', exact=True).click()
-        expect(self.page.locator('.editor-save')).to_be_disabled()
+        # The dropdown works from the keyboard: the list opens on the chosen option, Escape keeps it.
+        field = editor.get_by_label('Куда поместить вырезку 1')
+        field.focus()
+        self.page.keyboard.press('ArrowDown')
+        expect(self.page.get_by_role('option', name='На место картинки')).to_be_focused()
+        self.page.keyboard.press('End')
+        self.page.keyboard.press('Escape')
+        expect(self.page.get_by_role('listbox')).to_have_count(0)
+        expect(field).to_have_attribute('data-value', '__keep')
+        expect(field).to_be_focused()
+        self.page.keyboard.press('ArrowDown')
+        # The last option starts a new variant; «Без варианта» is just above it.
+        self.page.keyboard.press('End')
+        expect(self.page.get_by_role('option', name='Новый вариант…')).to_be_focused()
+        self.page.keyboard.press('ArrowUp')
+        self.page.keyboard.press('Enter')
+        expect(field).to_have_attribute('data-value', '__misc')
+        expect(field).to_contain_text('Без варианта')
+        # A new variant, even a subvariant of a variant not made yet.
+        self.choose(field, 'Новый вариант…')
+        naming = self.page.get_by_role('dialog', name='Новый вариант')
+        expect(naming.get_by_label('Номер варианта или подварианта')).to_have_value('3')
+        naming.get_by_role('button', name='Подвариант 3.1', exact=True).click()
+        naming.get_by_role('button', name='Создать вариант').click()
+        expect(naming).to_have_count(0)
+        expect(field).to_have_attribute('data-value', '3.1')
+        expect(field).to_contain_text('Вариант 3.1 (новый)')
+        editor.get_by_role('button', name='Добавить 1 вырезку').click()
+        self.save()
+        piece = next(entry for entry in load_report(self.output)['images'] if entry.get('cutout'))
+        self.assertEqual(piece['variant'], '3.1')
+        expect(self.page.locator('nav').get_by_role('button', name='Вариант 3.1', exact=False)).to_be_visible()
         # Pages already asked for may still be rendering from the presentation.
         self.page.wait_for_load_state('networkidle')
         for attempt in range(20):
