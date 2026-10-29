@@ -22,11 +22,13 @@ import {
   Plus,
   RotateCcw,
   Scan,
+  Scissors,
   Shapes,
   Search,
   Tag,
   Tags,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
 import { ActionMenu, Dialog, Empty, Shell, StatusNote } from "./components";
@@ -38,15 +40,25 @@ import {
   folderLabel,
   editDraft,
   isDirty,
+  isRemoved,
   orderedIds,
   payload,
   removedIds,
   selectRange,
   sourceId,
+  compareVariants,
+  nextSubvariant,
+  nextVariant,
+  variantKey,
   variantLabel,
+  variantParent,
+  VARIANT_KEY_ERROR,
 } from "./editor";
 import type { Draft } from "./editor";
 import { EditorToolbar } from "./EditorToolbar";
+import { CollagesPage, CroppedImage, CutEditor, needsCheck } from "./Collages";
+import type { CollageView } from "./Collages";
+import type { Box } from "./editor";
 import { ReviewSummary } from "./ReviewSummary";
 import type { NoticeAction, Result } from "./types";
 import "./viewer-ux.css";
@@ -102,6 +114,7 @@ export function Viewer({
   const [conflict, setConflict] = useState(false);
   const [rename, setRename] = useState<Rename | null>(null);
   const [newVariant, setNewVariant] = useState(false);
+  const [cutting, setCutting] = useState<CollageView | null>(null);
   const [copying, setCopying] = useState<{ ids: number[]; whole: boolean } | null>(null);
   const [copyTarget, setCopyTarget] = useState("same");
   const [number, setNumber] = useState("1");
@@ -223,14 +236,92 @@ export function Viewer({
   const removedSet = new Set(removedAll);
   // Service elements were set aside by the automatic filter, not by the user.
   const isService = (id: number) => !!report.images[id]?.suppressed;
-  const removed = removedAll.filter((id) => !isService(id));
+  // Frames replaced by a newer cut, and a picture cut into frames, live on in the collage, not among removed cards.
+  const replacedIds = new Set([...Object.values(draft.cuts).flatMap((cut) => cut.replaced),
+    ...removedAll.filter((id) => report.images[id]?.collage_replaced)]);
+  const removed = removedAll.filter((id) => !isService(id) && !replacedIds.has(id));
   const service = removedAll.filter(isService);
   const rows = orderedIds(draft).map((id) => allRows[id]);
   const removedRows = removed.map((id) => allRows[id]);
   const serviceRows = service.map((id) => allRows[id]);
   const showStatusTabs = filter === "all" || filter.startsWith("variant:");
+  const collageViews = useMemo((): CollageView[] => {
+    const live = (id: number) => draft.order.includes(id) && !isRemoved(draft, id);
+    const url = (path?: string | null) => path ? fileUrl(result.base_url, path) : null;
+    const view = (key: string, collage: string | null, source: number | null, record: {
+      page: number; size: [number, number]; title?: string | null; preview?: string | null; image?: number;
+      state: CollageView["state"]; checked: boolean; boxes?: Box[]; suggestion?: Box[]; reason?: string;
+    }, saved: number[]): CollageView => {
+      const cut = draft.cuts[key];
+      const members = cut ? cut.pieces.filter(live) : saved;
+      const boxes = cut ? members.map((id) => draft.frames[id].box)
+        : record.state === "suspected" || record.state === "whole" ? [] : record.boxes ?? [];
+      const whole = boxes.length === 1 && boxes[0][0] === 0 && boxes[0][1] === 0 &&
+        boxes[0][2] === record.size[0] && boxes[0][3] === record.size[1];
+      const first = members[0];
+      const location = first === undefined ? null : draftLocation(draft, report, first);
+      return {
+        key, collage, source, page: record.page, size: record.size,
+        title: record.title || (first === undefined ? "" : draftImage(draft, report, first).title) || `Страница ${record.page}`,
+        preview: url(record.preview) ?? (record.image === undefined ? null : url(report.images[record.image]?.preview)),
+        state: cut ? whole ? "whole" : "manual" : record.state,
+        checked: record.checked || (collage !== null && draft.collageChecked.includes(collage)) || !!cut,
+        pending: !!cut, boxes: whole ? [] : boxes, suggestion: record.suggestion ?? [], members,
+        variant: location?.variant ?? null,
+        variantLabel: location === null ? null : location.variant !== null ? variantLabel(report, location.variant)
+          : folderLabel(report, location.folder),
+        reason: cut ? undefined : record.reason,
+      };
+    };
+    const views: CollageView[] = [];
+    for (const record of report.collages ?? []) {
+      if (record.state === "dismissed" || draft.collageDismissed.includes(record.id)) continue;
+      const saved = draft.order.filter((id) => !(id in draft.frames) && live(id) && report.images[id]?.collage === record.id);
+      views.push(view(record.id, record.id, null, { ...record, boxes: record.boxes, suggestion: record.suggestion }, saved));
+    }
+    for (const [key, cut] of Object.entries(draft.cuts)) {
+      if (cut.collage !== null || cut.source === null) continue;
+      const image = report.images[cut.source];
+      views.push(view(key, null, cut.source, { page: image.page, size: image.size, title: image.title,
+        preview: image.preview, state: "manual", checked: true }, []));
+    }
+    return views.sort((a, b) => a.page - b.page || a.key.localeCompare(b.key, "ru", { numeric: true }));
+  }, [draft, report, result.base_url]);
+  const collageByKey = new Map(collageViews.map((item) => [item.key, item]));
+  const collageCheck = collageViews.filter(needsCheck).length;
+  function collageOf(id: number): CollageView | undefined {
+    const frame = draft.frames[id];
+    if (frame) return collageByKey.get(frame.cut);
+    const key = report.images[id]?.collage;
+    return key === undefined ? undefined : collageByKey.get(key);
+  }
+  function startCut(view: CollageView) {
+    if (saving) return;
+    if (!editing) setEditing(true);
+    setCutting(view);
+  }
+  function cutImage(id: number) {
+    const known = collageOf(id);
+    if (known) return startCut(known);
+    if (id in draft.frames || id in draft.copies || id >= draft.sourceCount) {
+      notify("Сначала сохраните изменения: разрезать можно сохранённое изображение.", true);
+      return;
+    }
+    const image = report.images[id];
+    const location = draftLocation(draft, report, id);
+    startCut({ key: `m${id}`, collage: null, source: id, page: image.page, size: image.size,
+      title: image.title || allRows[id]?.title || `Страница ${image.page}`,
+      preview: image.preview ? fileUrl(result.base_url, image.preview) : null, state: "manual", checked: true,
+      pending: false, boxes: [], suggestion: [], members: [id], variant: location.variant,
+      variantLabel: location.variant !== null ? variantLabel(report, location.variant) : folderLabel(report, location.folder) });
+  }
+  function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean) {
+    const replace = view.members.filter((id) => !(id in draft.frames));
+    change({ type: "cut", key: view.key, collage: view.collage, source: view.source, replace, boxes, targets, trim });
+    setCutting(null);
+  }
   const variants = useMemo(
-    () => Object.keys(draft.variants).sort((a, b) => Number(a) - Number(b)),
+    () => Object.keys(draft.variants).sort(compareVariants),
     [draft],
   );
   const folders = useMemo(
@@ -288,6 +379,8 @@ export function Viewer({
           ? "Убранные"
         : filter === "service"
           ? "Служебные элементы"
+        : filter === "collages"
+          ? "Склейки"
         : filter === "all"
           ? "Изображения"
           : STATUS[filter as keyof typeof STATUS];
@@ -511,7 +604,7 @@ export function Viewer({
   });
   const previewRow = preview === null ? undefined : allRows[preview];
   const pendingCopy = preview !== null && preview in draft.copies;
-  const pendingLocation = previewRow && previewRow.variant !== previewRow.image.variant;
+  const pendingLocation = previewRow && String(previewRow.variant ?? "") !== String(previewRow.image.variant ?? "");
   const previewDetailHeading = pendingCopy ? "Копия в черновике"
     : previewRow && removedSet.has(previewRow.id) && isService(previewRow.id) ? "Служебный элемент"
     : previewRow && removedSet.has(previewRow.id) ? "Убрано из результата"
@@ -642,24 +735,29 @@ export function Viewer({
   }
   function startCopy(ids: number[], whole = false) {
     if (!ids.length || saving) return;
-    setNumber(String(Array.from({ length: 999 }, (_, i) => i + 1).find((n) => !variants.includes(String(n))) ?? ""));
+    setNumber(nextVariant(variants));
     setCopyTarget(whole ? "new" : "same");
     setCopying({ ids: [...ids], whole });
   }
   function createCopies(event: React.FormEvent) {
     event.preventDefault();
     if (!copying) return;
-    if (copyTarget === "new" && variants.includes(String(Number(number)))) {
+    const key = copyTarget === "new" ? variantKey(number) : copyTarget;
+    if (key === null) {
+      notify(VARIANT_KEY_ERROR, true);
+      return;
+    }
+    if (copyTarget === "new" && variants.includes(key)) {
       notify("Такой вариант уже существует. Укажите свободный номер или выберите готовый вариант.", true);
       return;
     }
     try {
-      const target = copyTarget === "new" ? number : copyTarget;
+      const target = key;
       const next = editDraft(draft, { type: "copy", ids: copying.ids, target });
       setDraft(next);
       setSelected(next.order.filter((id) => !draft.order.includes(id)));
       setCopying(null);
-      if (target !== "same") { setFilter(`variant:${Number(target)}`); setStatus("all"); setQuery(""); }
+      if (target !== "same") { setFilter(`variant:${target}`); setStatus("all"); setQuery(""); }
     } catch (error) { notify(errorText(error), true); }
   }
   function sidebar(
@@ -672,7 +770,7 @@ export function Viewer({
     return (
       <button
         key={key}
-        className={`project-link ${filter === key ? "active" : ""}${dropTarget?.kind === "variant" && dropTarget.key === variant ? " is-drop-target" : ""}`}
+        className={`project-link ${filter === key ? "active" : ""}${variant?.includes(".") ? " is-subvariant" : ""}${dropTarget?.kind === "variant" && dropTarget.key === variant ? " is-drop-target" : ""}`}
         title={title}
         onClick={() => {
           setFilter(key);
@@ -697,7 +795,9 @@ export function Viewer({
   const selectedActive = selected.filter((id) => !removedSet.has(id));
   const selectionVariants = new Set(selectedActive.map((id) => draftVariant(draft, id)));
   const canMoveEdge = selectedActive.length > 0 && selectionVariants.size === 1 && !selectionVariants.has(null);
-  const variantCount = variants.filter((key) => draft.variants[key].length).length;
+  const variantCount = variants.filter((key) => draft.variants[key].length && !key.includes(".")).length;
+  const subvariantCount = variants.filter((key) => draft.variants[key].length && key.includes(".")).length;
+  const parents = [...new Set(variants.map(variantParent))];
   return (
     <Shell
       footer={footer}
@@ -713,18 +813,23 @@ export function Viewer({
           {sidebar("removed", "Убранные", removed.length, <Trash2 size={17} />)}
           {!!report.images.some((image) => image.suppressed || image.suppression_code) &&
             sidebar("service", "Служебные", service.length, <Shapes size={17} />)}
+          {!!collageViews.length && sidebar("collages", "Склейки", collageViews.length,
+            <span className={`nav-icon-attention${collageCheck ? " has-attention" : ""}`}
+              title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={17} /></span>)}
           <button className="nav-group-toggle" aria-label={`Варианты: ${variants.length}`} title={`Варианты: ${variants.length}`}
             aria-expanded={variantsOpen} aria-controls="variant-navigation"
             onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
             <Layers3 size={16} /><span>Варианты</span><b>{variants.length}</b><ChevronDown size={14} />
           </button>
           <div id="variant-navigation" hidden={!variantsOpen}>
-          {variants.map((key, i) =>
+          {variants.map((key) =>
             sidebar(
               `variant:${key}`,
               variantLabel(report, key),
               draft.variants[key].length,
-              <span className={`variant-dot color-${i % 4}`} aria-hidden="true"><i>{i + 1}</i></span>,
+              // A subvariant shares its variant's colour, so 3 and 3.1 read as one family.
+              <span className={`variant-dot color-${Math.max(0, parents.indexOf(variantParent(key))) % 4}`}
+                aria-hidden="true"><i>{key}</i></span>,
               key,
             ),
           )}
@@ -822,6 +927,7 @@ export function Viewer({
             <p className="viewer-facts">
               <span>{rows.length} {plural(rows.length, ["изображение", "изображения", "изображений"])}</span>
               <span>{variantCount} {plural(variantCount, ["вариант", "варианта", "вариантов"])}</span>
+              {!!subvariantCount && <span>{subvariantCount} {plural(subvariantCount, ["подвариант", "подварианта", "подвариантов"])}</span>}
               <span>{report.documents.length} {plural(report.documents.length, ["готовый", "готовых", "готовых"])} PDF из {report.pages} {plural(report.pages, ["страницы", "страниц", "страниц"])}</span>
             </p>
           </div>
@@ -833,6 +939,8 @@ export function Viewer({
         <ReviewSummary key={result.id} review={counts.review} unsigned={counts.unsigned}
           warnings={report.warnings || []} errors={report.errors || []}
           serviceCount={report.suppressed?.length || 0} canRestoreService={service.length > 0}
+          collages={{ total: collageViews.length, check: collageCheck }}
+          onCollages={() => { setFilter("collages"); setStatus("all"); setQuery(""); }}
           onReview={() => { setFilter("needs-review"); setStatus("all"); setQuery(""); }}
           onService={() => { setFilter("service"); setStatus("all"); setQuery(""); }}
           onReveal={revealIssue} />
@@ -866,7 +974,7 @@ export function Viewer({
             onClearSelection={() => { setSelected([]); anchor.current = null; }}
             onMove={(target) => move(target)}
             onNewVariant={() => {
-              setNumber(String(Math.max(0, ...variants.map(Number)) + 1));
+              setNumber(nextVariant(variants));
               setNewVariant(true);
             }}
             onReorder={reorder}
@@ -877,11 +985,20 @@ export function Viewer({
             onUndoSave={() => void undoSaved(result)}
             onRemove={() => change({ type: "remove", ids: selectedActive })}
             onCopy={() => startCopy(selectedActive)}
+            canCut={selectedActive.length === 1}
+            onCut={() => cutImage(selectedActive[0])}
             onUndo={() => change({ type: "undo" })}
             onReset={() => setReset(true)}
             onSave={() => void save()}
           />
         )}
+        {filter === "collages" ? <>
+          <div className="library-header"><div><h2>Склейки</h2><span>{collageViews.length}</span></div></div>
+          <CollagesPage views={collageViews} saving={saving} onCut={startCut}
+            onCheck={(view) => { if (!editing) setEditing(true); change({ type: "collage-check", id: view.collage! }); }}
+            onDismiss={(view) => { if (!editing) setEditing(true); change({ type: "collage-dismiss", id: view.collage! }); }}
+            onWhole={(view) => { if (!editing) setEditing(true); applyCut(view, [[0, 0, view.size[0], view.size[1]]], ["keep"], false); }} />
+        </> : <>
         <div className="library-header">
           <div>
             <h2>{activeTitle}</h2>
@@ -970,7 +1087,10 @@ export function Viewer({
                       if (editing) showPreview(row.id);
                     }}
                   >
-                    {row.image.preview ? (
+                    {row.id in draft.frames && collageOf(row.id)?.preview ? (
+                      <CroppedImage src={collageOf(row.id)!.preview!} size={collageOf(row.id)!.size}
+                        box={draft.frames[row.id].box} alt={row.title} />
+                    ) : row.image.preview ? (
                       <img
                         draggable={false}
                         src={fileUrl(result.base_url, row.image.preview)}
@@ -1011,6 +1131,18 @@ export function Viewer({
                     )}
                     {removedSet.has(row.id) ? isService(row.id) ? "Служебный" : "Убрано" : STATUS[row.status as keyof typeof STATUS]}
                   </span>
+                  {(() => {
+                    const collage = removedSet.has(row.id) ? undefined : collageOf(row.id);
+                    if (!collage) return null;
+                    if (collage.state === "suspected") return <>
+                      <span className="collage-chip amber collage-badge"><TriangleAlert size={13} />Возможно, склейка</span>
+                      {editing && <button className="btn compact secondary collage-cut-button" disabled={saving}
+                        onClick={() => startCut(collage)}><Scissors size={15} />Разрезать…</button>}
+                    </>;
+                    const number = collage.members.indexOf(row.id) + 1;
+                    return number > 0 && collage.boxes.length > 1 ? <span className="collage-chip dark collage-badge">
+                      <Scissors size={13} />Кадр {number} из склейки</span> : null;
+                  })()}
                   {editing && !removedSet.has(row.id) && (
                     <span className="drag-handle" title="Перетащите карточку">
                       <GripVertical size={16} />
@@ -1091,7 +1223,12 @@ export function Viewer({
               : "Измените поиск или фильтр. Убранные карточки находятся в разделе «Убранные»."}
           </Empty>
         )}
+        </>}
       </div>
+      {cutting && <CutEditor view={cutting} resultId={result.id} variants={variants}
+        labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
+        onApply={(boxes, targets, trim) => applyCut(cutting, boxes, targets, trim)}
+        onClose={() => setCutting(null)} />}
       {previewRow && (
         <Dialog
           wide
@@ -1126,6 +1263,8 @@ export function Viewer({
                     disabled: previewRow.variant === null || removedSet.has(previewRow.id) }]}
                 onAction={(target) => target === "return"
                   ? change({ type: "return-to-misc", ids: [previewRow.id] }) : move(target, [previewRow.id])} />
+              <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
+                onClick={() => cutImage(previewRow.id)}><Scissors size={15} />Разрезать…</button>
               <button className="btn compact secondary" disabled={saving}
                 aria-label={removedSet.has(previewRow.id) ? "Вернуть изображение" : "Убрать изображение"}
                 onClick={() => change({ type: removedSet.has(previewRow.id) ? "restore" : "remove", ids: [previewRow.id] })}>
@@ -1172,6 +1311,10 @@ export function Viewer({
                     {source?.error ? <><ImageOff size={32} /><strong>Исходный PDF недоступен</strong><p>{source.error}</p></>
                       : <><Scan size={32} /><span>Открываю исходную страницу…</span></>}
                   </div>
+                  : previewRow.id in draft.frames && collageOf(previewRow.id)?.preview ? <span className="preview-frame"
+                    style={{ width: previewWidth, height: previewHeight }}>
+                    <CroppedImage src={collageOf(previewRow.id)!.preview!} size={collageOf(previewRow.id)!.size}
+                      box={draft.frames[previewRow.id].box} alt={previewRow.title} /></span>
                   : !previewFailed ? <img key={previewKey} draggable={false}
                   src={new URL(`api/results/${encodeURIComponent(result.id)}/preview/${sourceId(draft, previewRow.id)}?revision=${report.revision}`, document.baseURI).href}
                   alt={previewRow.title} style={{ width: previewWidth, height: previewHeight }}
@@ -1236,8 +1379,10 @@ export function Viewer({
             ]} onAction={setCopyTarget} />
           {copyTarget === "new" && <div className="copy-variant-number">
             <label htmlFor="copy-variant-number" className="form-label">Номер нового варианта</label>
-            <input id="copy-variant-number" autoFocus className="form-input" type="number" min="1" max="999" required
-              value={number} onChange={(event) => setNumber(event.target.value)} />
+            <input id="copy-variant-number" autoFocus className="form-input" type="text" inputMode="decimal"
+              autoComplete="off" required value={number} onChange={(event) => setNumber(event.target.value)} />
+            <VariantSuggestions variants={variants} current={number} onPick={setNumber}
+              preferred={copying.ids.map((id) => draftVariant(draft, id)).find((key) => key !== null) ?? null} />
           </div>}
           <p>Копии появятся в результате после сохранения. До этого создание можно отменить через Ctrl+Z.</p>
           <div className="dialog-actions">
@@ -1306,37 +1451,45 @@ export function Viewer({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!/^\d+$/.test(number) || +number < 1 || +number > 999) {
-                notify("Номер варианта должен быть от 1 до 999.", true);
+              const key = variantKey(number);
+              if (key === null) {
+                notify(VARIANT_KEY_ERROR, true);
                 return;
               }
-              if (variants.includes(String(Number(number)))) {
+              if (variants.includes(key)) {
                 notify(
                   "Такой вариант уже существует. Выберите его в списке переноса.",
                   true,
                 );
                 return;
               }
-              move(number);
-              setFilter(`variant:${Number(number)}`);
+              move(key);
+              setFilter(`variant:${key}`);
               setStatus("all");
               setNewVariant(false);
             }}
           >
             <label htmlFor="variant-number" className="form-label">
-              Номер варианта
+              Номер варианта или подварианта
             </label>
             <input
               autoFocus
               id="variant-number"
               className="form-input"
-              type="number"
-              min="1"
-              max="999"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               required
+              aria-describedby="variant-number-hint"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
             />
+            <p id="variant-number-hint" className="muted">
+              Целый номер создаёт вариант, номер с точкой — подвариант: 3.1, 3.2.
+            </p>
+            <VariantSuggestions variants={variants} current={number} onPick={setNumber}
+              preferred={selectedActive.map((id) => draftVariant(draft, id)).find((key) => key !== null)
+                ?? (filter.startsWith("variant:") ? filter.slice(8) : null)} />
             <p className="muted">
               Выбранных изображений: {selected.length}. PDF будет создан после
               сохранения.
@@ -1425,4 +1578,20 @@ export function Viewer({
       )}
     </Shell>
   );
+}
+
+/** Free numbers one click away: the next whole variant and the next subvariant of nearby variants. */
+function VariantSuggestions({ variants, current, preferred, onPick }: {
+  variants: string[]; current: string; preferred: string | null; onPick(value: string): void;
+}) {
+  const parents = [...new Set([...(preferred ? [variantParent(preferred)] : []), ...variants.map(variantParent)])];
+  const options = [nextVariant(variants), ...parents.slice(0, 3).map((key) => nextSubvariant(variants, key))]
+    .filter((key, index, all) => all.indexOf(key) === index && !variants.includes(key));
+  const chosen = variantKey(current);
+  return <div className="variant-suggestions" role="group" aria-label="Свободные номера">
+    {options.map((key) => <button key={key} type="button" className={`variant-suggestion${chosen === key ? " is-chosen" : ""}`}
+      aria-pressed={chosen === key} onClick={() => onPick(key)}>
+      {key.includes(".") ? "Подвариант" : "Вариант"} {key}
+    </button>)}
+  </div>;
 }

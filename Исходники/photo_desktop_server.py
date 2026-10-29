@@ -10,7 +10,7 @@ import secrets
 from threading import Lock, RLock, Thread
 from urllib.parse import unquote, urlsplit
 
-from photo_edit import EditConflict, EditError, apply_edits, rename_item
+from photo_edit import EditConflict, EditError, apply_edits, find_seams, rename_item
 from photo_export import PDFIUM_LOCK
 from photo_jobs import normalized_report, read_result
 from photo_server import MAX_BODY, PreviewServer, handler as preview_handler
@@ -253,7 +253,7 @@ def desktop_handler(server):
                         and parts[3] in ('forget', 'retry')):
                     operation, record_id = 'failure-' + parts[3], parts[2]
                 if (len(parts) == 4 and parts[:2] == ['api', 'results']
-                        and parts[3] in ('apply', 'rename', 'undo-save')):
+                        and parts[3] in ('apply', 'rename', 'undo-save', 'seams')):
                     operation, result_id = parts[3], parts[2]
             else:
                 operation = relative[4:] if relative in ('api/apply', 'api/rename') else None
@@ -305,6 +305,8 @@ def desktop_handler(server):
                     if result_id not in server.folders:
                         return self.error(404, 'Результат не найден.')
                     folder = server.folders[result_id]
+                    if operation == 'seams':
+                        return self.reply(200, find_seams(folder, payload))
                     if operation == 'rename':
                         report, change = rename_item(folder, payload)
                         message = ('Имя не изменилось.' if change is None else

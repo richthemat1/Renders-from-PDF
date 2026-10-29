@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from threading import Thread
 
-from PIL import Image, ImageDraw, ImageFilter, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 from pypdf import PdfReader
 
 from photo_layout import clean_text, variant_numbers
@@ -283,12 +283,230 @@ def photo_panels(image):
         return []
     sx, sy = image.width/width, image.height/height
     boxes = [[round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)] for box in boxes+doubtful]
+    return _reading_order(boxes, image.height)
+
+
+def _reading_order(boxes, height):
     rows = []
     for box in sorted(boxes, key=lambda b: (b[1], b[0])):
-        if not rows or box[1]-rows[-1][0][1] > image.height*.015:
+        if not rows or box[1]-rows[-1][0][1] > height*.015:
             rows.append([])
         rows[-1].append(box)
     return [box for row in rows for box in sorted(row, key=lambda b: b[0])]
+
+
+# A gutter is a band in which almost every pixel is light; a small caption painted inside it is allowed.
+GUTTER_LIGHT = .9
+# A thin grey separator between renders is not white, yet nearly every pixel of it is pale.
+PALE = 215
+GUTTER_PALE = .97
+# Rows of a caption such as «ВИД №1» painted in a gutter or a margin are still mostly light.
+CAPTION_LIGHT = .7
+# Each piece must look like a photograph, so drawings and tables on white stay whole.
+PIECE_LIGHT = .5
+PIECE_SIDE = .15
+# A wide white gutter proves a cut by itself. A thin or grey one is accepted only between pieces of
+# nearly equal size, as in a row of four renders: a white band on a facade rarely divides it evenly.
+WIDE_GUTTER = .012
+THIN_GUTTER = .0025
+EQUAL_PIECES = 1.1
+
+
+def _profile(masks, box, rows):
+    """Share of light pixels in every line across the box, and whether the line may be part of a gutter."""
+    shares = []
+    for mask in masks:
+        with mask.crop(box) as part, part.resize((1, part.height) if rows else (part.width, 1), Image.BOX) as line:
+            shares.append([value/255 for value in line.tobytes()])
+    light, pale = shares
+    return light, [a > GUTTER_LIGHT or b > GUTTER_PALE for a, b in zip(light, pale)]
+
+
+def _margin(values):
+    """Lines to drop from the start: a light margin, and a caption in it when a light gap still follows.
+
+    Only white counts here: a pale sky at the top of a render is part of the photo."""
+    count = 0
+    while count < len(values) and values[count] > GUTTER_LIGHT:
+        count += 1
+    end = count
+    while end < len(values) and end-count < len(values)*.06 and values[end] > CAPTION_LIGHT:
+        end += 1
+    gap = 0
+    while gap < end-count and values[end-1-gap] > GUTTER_LIGHT:
+        gap += 1
+    # Stop only where the photo starts; a long light run is a sky, not a caption.
+    if end < len(values) and values[end] <= CAPTION_LIGHT and gap >= 3 and end-gap > count:
+        return end
+    return count
+
+
+def _trim_light(masks, box):
+    """Drop light margins, together with any caption painted in them."""
+    left, top, right, bottom = box
+    rows = _profile(masks, box, True)[0]
+    top, bottom = top+_margin(rows), bottom-_margin(rows[::-1])
+    if top >= bottom:
+        return None
+    columns = _profile(masks, (left, top, right, bottom), False)[0]
+    left, right = left+_margin(columns), right-_margin(columns[::-1])
+    return (left, top, right, bottom) if left < right else None
+
+
+def _gutters(values, gutter):
+    """Bands across the whole box as (start, end, wide); a caption line inside a band does not break it."""
+    runs, run = [], None
+    for index, flag in enumerate(gutter+[False]):
+        if flag and run is None:
+            run = index
+        elif not flag and run is not None:
+            runs.append([run, index])
+            run = None
+    merged = []
+    for run in runs:
+        if merged:
+            gap = values[merged[-1][1]:run[0]]
+            if len(gap) < len(values)*.04 and sum(gap)/len(gap) > CAPTION_LIGHT:
+                merged[-1][1] = run[1]
+                continue
+        merged.append(run)
+    size = len(values)
+    return [(a, b, b-a >= max(3, size*WIDE_GUTTER) and sum(values[a:b])/(b-a) > CAPTION_LIGHT)
+            for a, b in merged if b-a >= max(2, size*THIN_GUTTER)]
+
+
+def _pieces(values, cuts):
+    edges = [0]+[edge for cut in cuts for edge in cut[:2]]+[len(values)]
+    pieces = [(edges[i], edges[i+1]) for i in range(0, len(edges), 2)]
+    if all(end-begin >= len(values)*PIECE_SIDE and sum(values[begin:end])/(end-begin) < PIECE_LIGHT
+           for begin, end in pieces):
+        return pieces
+    return None
+
+
+class GutterCut(list):
+    """Piece boxes; `thin` when a narrow or grey separator was needed, which a person should confirm."""
+    thin = False
+
+
+def _gutter_split(masks, box, depth, cut):
+    box = _trim_light(masks, box)
+    if box is None:
+        return []
+    for rows in (True, False):
+        values, gutter = _profile(masks, box, rows)
+        start = box[1] if rows else box[0]
+        cuts = _gutters(values, gutter)
+        wide = [cut for cut in cuts if cut[2]]
+        pieces = wide and _pieces(values, wide)
+        if not pieces and cuts:
+            pieces = _pieces(values, cuts)
+            sizes = [end-begin for begin, end in pieces or []]
+            if sizes and max(sizes) > min(sizes)*EQUAL_PIECES:
+                pieces = None
+            cut.thin = cut.thin or bool(pieces)
+        if pieces:
+            if depth >= 2:
+                return [box]
+            found = []
+            for begin, end in pieces:
+                piece = ((box[0], start+begin, box[2], start+end) if rows
+                         else (start+begin, box[1], start+end, box[3]))
+                found += _gutter_split(masks, piece, depth+1, cut)
+            return found
+    return [box]
+
+
+def gutter_panels(image):
+    """Photos joined into one raster by bands that cross the whole picture.
+
+    Light corners of a render (sky, snow on roofs) defeat photo_panels, but a band through the
+    entire raster is independent proof of the cut: renders stacked as «view 1 / view 2», or a row
+    of renders divided by thin white or grey lines."""
+    with image.convert('L') as gray:
+        # Enough resolution for a separator of a few pixels in a 4000-pixel row of renders.
+        gray.thumbnail((1800, 1800))
+        width, height = gray.size
+        background = median(gray.getpixel(corner) for corner in
+                            ((0, 0), (width-1, 0), (0, height-1), (width-1, height-1)))
+        threshold = min(238, background-12) if background >= 210 else 238
+        masks = (gray.point(lambda value: 255 if value >= threshold else 0),
+                 gray.point(lambda value: 255 if value >= PALE else 0))
+    cut = GutterCut()
+    try:
+        boxes = _gutter_split(masks, (0, 0, width, height), 0, cut)
+    finally:
+        for mask in masks:
+            mask.close()
+    if len(boxes) < 2 or any((b[2]-b[0])*(b[3]-b[1]) < width*height*.04 for b in boxes):
+        return GutterCut()
+    sx, sy = image.width/width, image.height/height
+    cut.extend(_reading_order([[round(b[0]*sx), round(b[1]*sy), round(b[2]*sx), round(b[3]*sy)] for b in boxes],
+                              image.height))
+    return cut
+
+
+def trim_margins(image, box):
+    """The box without the light margins (and captions painted in them) of a gutter left around a frame."""
+    with image.crop(box) as part, part.convert('L') as gray:
+        gray.thumbnail((1800, 1800))
+        masks = (gray.point(lambda value: 255 if value >= 238 else 0),
+                 gray.point(lambda value: 255 if value >= PALE else 0))
+        try:
+            trimmed = _trim_light(masks, (0, 0, gray.width, gray.height))
+        finally:
+            for mask in masks:
+                mask.close()
+        sx, sy = (box[2]-box[0])/gray.width, (box[3]-box[1])/gray.height
+    if trimmed is None:
+        return box
+    left, top, right, bottom = trimmed
+    return [box[0]+round(left*sx), box[1]+round(top*sy), box[0]+round(right*sx), box[1]+round(bottom*sy)]
+
+
+def equal_split_hint(image):
+    """Boxes of renders placed edge to edge with no separator, or [] when there is no such evidence.
+
+    Only a hint for a person: a hard jump between neighbouring pixel columns (or rows) at every
+    position of an even split. A tower edge rarely lines up with all of them, but it can, so the
+    result is offered as «Возможно, склейка» and never cut automatically."""
+    with image.convert('L') as gray:
+        gray.thumbnail((1600, 1600))
+        width, height = gray.size
+        best = None
+        for rows in (False, True):
+            size, other = (height, width) if rows else (width, height)
+            if size < 300:
+                continue
+            first, second = ((gray.crop((0, 1, width, height)), gray.crop((0, 0, width, height-1))) if rows
+                             else (gray.crop((1, 0, width, height)), gray.crop((0, 0, width-1, height))))
+            with first, second, ImageChops.difference(first, second) as jump:
+                with jump.resize((1, height-1) if rows else (width-1, 1), Image.BOX) as line:
+                    profile = list(line.tobytes())
+            for count in range(6, 1, -1):
+                if not .25 <= size/count/other <= 1.6:
+                    continue
+                ratios, peaks = [], []
+                for index in range(1, count):
+                    position = round(index*size/count)
+                    near = range(max(0, position-round(size*.004)), min(len(profile), position+round(size*.004)+1))
+                    peak = max(near, key=lambda x: profile[x])
+                    ring = [profile[x] for x in range(max(0, position-round(size*.06)), min(len(profile), position+round(size*.06)))
+                            if abs(x-position) > size*.012]
+                    ratios.append(profile[peak]/max(1, median(ring)))
+                    peaks.append(peak+1)
+                strong = (all(r >= 3 for r in ratios) and min(profile[p-1] for p in peaks) >= 18 if count > 2
+                          else ratios[0] >= 4.5 and profile[peaks[0]-1] >= 25)
+                if strong and (best is None or count > len(best[1])+1):
+                    best = rows, peaks
+        if best is None:
+            return []
+        rows, peaks = best
+        edges = [0, *peaks, height if rows else width]
+        sx, sy = image.width/width, image.height/height
+        boxes = [[0, round(edges[i]*sy), image.width, round(edges[i+1]*sy)] if rows
+                 else [round(edges[i]*sx), 0, round(edges[i+1]*sx), image.height] for i in range(len(edges)-1)]
+        return boxes
 
 
 def _area(box):
@@ -357,15 +575,31 @@ def _compound_text(engine, image, original, panels, page_lines=()):
     return lines
 
 
+def _cut_problem(page, original, image, full_page):
+    """Why a raster must not be cut automatically, or None."""
+    a, b, c, d = original.get('matrix', (1, 0, 0, 1))
+    if b or c or a < 0 or d < 0:
+        return 'Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.'
+    ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
+    if abs(image.width/image.height/ratio-1) > .025:
+        return 'Поворот или деформация скана: разрезание отключено.'
+    if not full_page and (original['x0'] < -1 or original['top'] < -1
+            or original['x1'] > page['width']+1 or original['bottom'] > page['height']+1):
+        return 'Часть составного растра находится за краем страницы; требуется проверка.'
+    return None
+
+
 def analyse_scans(source, pages, resource_paths, progress=None):
     candidates = []
     for page in pages:
         full_page = (not page['lines'] and len(page['images']) == 1
                      and _area(page['images'][0]) > page['width']*page['height']*.80)
+        # OCR needs a raster of at least 15 % of the page; a smaller one is still searched for gutters
+        # between renders, like a pair of views in one picture of a comparison slide.
         images = [im for im in page['images'] if full_page or (
                   not im.get('repeated_static') and not im.get('fully_occluded') and not im.get('blank_layer')
                   and not im.get('text_fill')
-                  and _area(im) >= page['width']*page['height']*.15
+                  and _area(im) >= page['width']*page['height']*.04
                   and min(im['srcsize']) >= 300)]
         if images:
             candidates.append((page, images, full_page))
@@ -391,57 +625,73 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                         raise ValueError('Для скана не найден отдельный ресурс.')
                     with scan_image(reader, pdf_page, path, original) as (image, factor):
                         # A normal photograph must not start OCR or produce scan warnings.
-                        panels = None if full_page else photo_panels(image)
-                        if not full_page and len(panels) < 2:
-                            continue
+                        ocr = full_page or _area(original) >= page['width']*page['height']*.15
+                        panels = None if full_page else photo_panels(image) if ocr else []
+                        seam = False
+                        # Renders that fill the raster edge to edge have no plain background around them;
+                        # the bands between them prove the cut instead, without OCR.
+                        if not full_page and (len(panels) < 2 or not _compound_background(image, panels)):
+                            seams = gutter_panels(image)
+                            if len(seams) >= 2 and not _cut_problem(page, original, image, full_page):
+                                panels, seam = seams, True
+                                page.setdefault('seam_sources', []).append({'image': original, 'thin': seams.thin})
+                            elif len(panels) < 2:
+                                # Anything doubtful keeps the raster whole without a warning, as before;
+                                # renders that only meet edge to edge are offered to a person to cut.
+                                hint = [] if _cut_problem(page, original, image, full_page) else equal_split_hint(image)
+                                if hint:
+                                    original['collage_hint'] = [[round(value*factor) for value in box] for box in hint]
+                                continue
                         scan = page.setdefault('scan', {'page': page['number'], 'panels': 0,
-                                               'text_source': 'windows_ocr', 'full_page': full_page,
-                                               'sources': []})
+                                               'text_source': 'pdf_text' if seam else 'windows_ocr',
+                                               'full_page': full_page, 'sources': []})
+                        if not seam:
+                            scan['text_source'] = 'windows_ocr'
                         record = {'bbox': [original[k] for k in ('x0', 'top', 'x1', 'bottom')],
                                   'object_id': original['object_id'], 'panels': 0}
                         scan['sources'].append(record)
-                        a, b, c, d = original.get('matrix', (1, 0, 0, 1))
-                        if b or c or a < 0 or d < 0:
-                            raise ValueError('Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.')
-                        ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
-                        if abs(image.width/image.height/ratio-1) > .025:
-                            raise ValueError('Поворот или деформация скана: разрезание отключено.')
-                        if not full_page and (original['x0'] < -1 or original['top'] < -1
-                                or original['x1'] > page['width']+1 or original['bottom'] > page['height']+1):
-                            raise ValueError('Часть составного растра находится за краем страницы; требуется проверка.')
-                        if not full_page and not _compound_background(image, panels):
+                        problem = _cut_problem(page, original, image, full_page)
+                        if problem:
+                            raise ValueError(problem)
+                        if seam:
+                            # Renders carry slanted lines that OCR takes for rotated text, and labels such as
+                            # «ВИД №1» are too small to read reliably: captions come from the page text.
+                            record.update(method='seam', text_source='pdf_text')
+                        elif not full_page and not _compound_background(image, panels):
                             raise ValueError('Между прямоугольниками нет простого однотонного фона; требуется проверка.')
-                        if startup_error:
-                            raise RuntimeError(startup_error)
-                        if engine is None:
+                        if not seam:
+                            if startup_error:
+                                raise RuntimeError(startup_error)
+                            if engine is None:
+                                try:
+                                    engine = stack.enter_context(WindowsOcr())
+                                except Exception as error:
+                                    startup_error = str(error)
+                                    raise
                             try:
-                                engine = stack.enter_context(WindowsOcr())
-                            except Exception as error:
-                                startup_error = str(error)
+                                lines = (engine.recognise(image, original) if full_page
+                                         else _compound_text(engine, image, original, panels, page['lines']))
+                            except RuntimeError as error:
+                                # A late response after a timeout must never name another page.
+                                startup_error = 'Распознавание остановлено после ошибки OCR: '+str(error)
                                 raise
-                        try:
-                            lines = (engine.recognise(image, original) if full_page
-                                     else _compound_text(engine, image, original, panels, page['lines']))
-                        except RuntimeError as error:
-                            # A late response after a timeout must never name another page.
-                            startup_error = 'Распознавание остановлено после ошибки OCR: '+str(error)
-                            raise
-                        page['lines'] = _merge_ocr_lines(page['lines'], lines)
-                        scan['lines'] = scan.get('lines', 0)+len(lines)
-                        # A compound raster may carry no text of its own: its captions passed as live PDF text.
-                        if not lines and full_page:
-                            continue
-                        panels = photo_panels(image) if full_page else panels
-                        if not panels:
-                            scan['kept_whole'] = True
-                            continue
+                            page['lines'] = _merge_ocr_lines(page['lines'], lines)
+                            scan['lines'] = scan.get('lines', 0)+len(lines)
+                            # A compound raster may carry no text of its own: its captions passed as live PDF text.
+                            if not lines and full_page:
+                                continue
+                            panels = photo_panels(image) if full_page else panels
+                            if not panels:
+                                scan['kept_whole'] = True
+                                continue
                         sx = (original['x1']-original['x0'])/image.width
                         sy = (original['bottom']-original['top'])/image.height
                         replacements = [dict(original, x0=original['x0']+box[0]*sx,
                                              top=original['top']+box[1]*sy, x1=original['x0']+box[2]*sx,
                                              bottom=original['top']+box[3]*sy,
                                              scan_crop_px=[round(value*factor) for value in box],
-                                             source_bbox=record['bbox']) for box in panels]
+                                             source_bbox=record['bbox'], **({'seam_cut': True} if seam else {}))
+                                        for box in panels]
                         position = next(i for i, im in enumerate(page['images']) if im is original)
                         page['images'][position:position+1] = replacements
                         record['panels'] = len(panels)
@@ -497,6 +747,35 @@ def column_caption(page, region, match):
                 caption_bbox=[header[k] for k in ('x0', 'top', 'x1', 'bottom')],
                 variant_source='ocr_column_heading', variant_source_page=page['number'],
                 reason='Вариант определён по OCR-заголовку своей колонки на скане.')
+
+
+def seam_caption(region, match, whole, kept):
+    """Caption of a piece cut along a gutter.
+
+    Pieces share the caption the whole raster had before the cut, so header text above the last
+    piece of a row cannot rename it. A piece keeps its own caption only when it names another
+    variant than the raster, as a column heading «Вариант 2» does, and pieces below it or to its
+    right follow it: «Вариант 2» printed above a column names every view of that column."""
+    def numbers(caption):
+        return variant_numbers(caption.get('title') or ' '.join(caption.get('candidates') or []))
+    own = numbers(match)
+    if own and own != numbers(whole):
+        kept.append((region, match))
+        return match
+    def overlap(a0, a1, b0, b1):
+        return max(0, min(a1, b1)-max(a0, b0))/max(1, a1-a0)
+    width, height = region['x1']-region['x0'], region['bottom']-region['top']
+    above = [(box, caption) for box, caption in kept if box['bottom'] <= region['top']+height*.05
+             and overlap(region['x0'], region['x1'], box['x0'], box['x1']) > .85]
+    left = [(box, caption) for box, caption in kept if box['x1'] <= region['x0']+width*.05
+            and overlap(region['top'], region['bottom'], box['top'], box['bottom']) > .85]
+    if above or left:
+        parent = (max(above, key=lambda item: item[0]['bottom']) if above
+                  else max(left, key=lambda item: item[0]['x1']))[1]
+        return dict(parent, reason=parent['reason']+' Подпись взята у соседнего кадра той же склейки.')
+    if whole['status'] == 'unsigned':
+        return match
+    return dict(whole, reason=whole['reason']+' Подпись общая для всех кадров этой склейки.')
 
 
 def whole_scan_caption(page, match):

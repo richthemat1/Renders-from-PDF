@@ -33,7 +33,10 @@
 .review-summary-services { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .review-summary-services strong { color: var(--ink); font-weight: 650; }
 .review-summary-services > svg { flex-shrink: 0; }
-.review-summary-services .text-btn { font-size: 12px; }
+.review-summary-services .text-btn, .review-summary-collages .text-btn { font-size: 12px; }
+.review-summary-collages { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.review-summary-collages > svg { flex-shrink: 0; }
+.review-summary-collages.needs-check > svg, .review-summary-collages.needs-check > span { color: #8a5a12; font-weight: 600; }
 @container review-summary (max-width: 800px) {
   .review-issue-row { grid-template-columns: 66px minmax(0, 1fr); }
   .review-issue-actions { grid-column: 2; flex-wrap: wrap; }

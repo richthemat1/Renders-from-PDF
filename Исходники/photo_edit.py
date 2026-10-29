@@ -14,8 +14,11 @@ import tempfile
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PyPdfError
 
-from photo_export import (OTHER_DIR, SERVICE_DIR, VARIANTS_DIR, VERSION, entry_group, group_file, group_title,
-                          has_service_dir, safe_name, write_gallery)
+from PIL import Image
+
+from photo_export import (COLLAGES_DIR, OTHER_DIR, SERVICE_DIR, VARIANTS_DIR, VERSION, entry_group, group_file,
+                          group_title, has_service_dir, image_to_pdf, safe_name, write_gallery)
+from photo_layout import variant_key, variant_sort_key
 
 BACKUPS = '_Резервные копии'
 
@@ -66,13 +69,15 @@ def variant_members(report):
 
 
 def parse_key(report, key):
-    number = int(key)
-    if not 1 <= number <= 999:
-        raise EditError('Номер варианта должен быть от 1 до 999.')
-    return number
+    if not re.fullmatch(r'\s*\d+(?:[.,]\d+)*\s*', str(key), re.A):
+        raise ValueError(key)
+    try:
+        return variant_key(key)
+    except ValueError:
+        raise EditError('Номер варианта должен быть от 1 до 999, подварианта — например 3.1.') from None
 
 
-def parse_payload(report, payload):
+def parse_payload(report, payload, pieces=0):
     if any(entry.get('group') == 'perspective' for entry in report['images']):
         raise EditError('Этот результат создан тестовой версией 3.12 с общей папкой «Перспективные изображения». '
                         'Обработайте исходный PDF заново, чтобы править варианты.')
@@ -103,11 +108,12 @@ def parse_payload(report, payload):
     for index in copies:
         if not 0 <= index < len(images):
             raise EditError(f'Изображение {index} недоступно для копирования.')
-    copied_ids = set(range(len(images), len(images)+len(copies)))
+    # Copies come first, then the frames of cut collages; every new entry needs a place.
+    copied_ids = set(range(len(images), len(images)+len(copies)+pieces))
     if copied_ids & set(removed+restored):
         raise EditError('Новую копию нужно поместить в вариант или в папку подписи.')
     for index in seen:
-        if (not 0 <= index < len(images)+len(copies) or
+        if (not 0 <= index < len(images)+len(copies)+pieces or
                 (index < len(images) and images[index].get('removed') and index not in restored)):
             raise EditError(f'Изображение {index} не найдено в результате.')
     if not copied_ids <= set(seen):
@@ -175,7 +181,8 @@ def entry_pdf_source(output, report, index):
     return path, page
 
 
-def variant_pdf(output, report, ids, key):
+def variant_pdf(output, report, ids, key, frames=None):
+    """Join entry pages into one PDF; `frames` holds the in-memory pages of new collage frames."""
     writer = PdfWriter()
     readers = {}
     try:
@@ -184,7 +191,12 @@ def variant_pdf(output, report, ids, key):
         writer.add_metadata({'/Title': title, '/Creator': f'PDF Photos {VERSION}'})
         for position, index in enumerate(ids):
             entry = report['images'][index]
-            path, page = _entry_reference(output, report, index)
+            if frames and index in frames:
+                path, page = ('frame', index), 0
+                if path not in readers:
+                    readers[path] = PdfReader(BytesIO(frames[index]))
+            else:
+                path, page = _entry_reference(output, report, index)
             if path not in readers:
                 readers[path] = PdfReader(path)
             if page >= len(readers[path].pages):
@@ -306,7 +318,7 @@ def _misc_target(output, report, index, reserved, folder_labels=None):
 
 
 def updated_report(report, variants, removed, current, built, changed, backup_name,
-                   *, misc=None, restored=None, singles=None, copies=None):
+                   *, misc=None, restored=None, singles=None, copies=None, copy_start=None):
     new = copy.deepcopy(report)
     images = new['images']
     moved, reordered = [], []
@@ -358,7 +370,8 @@ def updated_report(report, variants, removed, current, built, changed, backup_na
         else:
             entry.pop('reason', None)
     copied = []
-    for position, source in enumerate(copies or [], len(images)-len(copies or [])):
+    start = len(images)-len(copies or []) if copy_start is None else copy_start
+    for position, source in enumerate(copies or [], start):
         images[position].update(manual=True, reason='Создана копия изображения вручную.')
         copied.append({'image': position, 'source': source})
     summarize(new)
@@ -475,40 +488,255 @@ def _commit_transaction(output, report, new, built, retired, backup, backup_only
     return new, backup_name
 
 
+FRAME_MIN = 16
+FRAME_LIMIT = 64
+
+
+def parse_collage_edits(report, payload):
+    """Cuts as (record, boxes, old members, created); plus the ids confirmed or dismissed as one photo."""
+    images = report['images']
+    records = {record['id']: record for record in report.get('collages') or [] if isinstance(record, dict)}
+    try:
+        cuts = payload.get('cuts', [])
+        checked = payload.get('collage_checked', [])
+        dismissed = payload.get('collage_dismissed', [])
+        if not all(isinstance(value, list) for value in (cuts, checked, dismissed)):
+            raise TypeError()
+        parsed, used = [], set()
+        for cut in cuts:
+            if not isinstance(cut, dict) or not isinstance(cut.get('boxes'), list):
+                raise TypeError()
+            if 'collage' in cut:
+                record, created = records.get(cut['collage']), False
+                if record is None or record.get('state') == 'dismissed':
+                    raise EditError('Склейка не найдена в результате. Обновите страницу и повторите правку.')
+            else:
+                index = cut.get('source')
+                if type(index) is not int or not 0 <= index < len(images) or images[index].get('removed'):
+                    raise EditError('Изображение для разрезания не найдено. Обновите страницу и повторите правку.')
+                if images[index].get('collage') in records:
+                    record, created = records[images[index]['collage']], False
+                else:
+                    entry = images[index]
+                    record = {'id': f'{entry["page"]}-m{index}', 'page': entry['page'], 'image': index,
+                              'size': list(entry['size']), 'title': entry.get('title')}
+                    created = True
+            if record['id'] in used:
+                raise EditError('Одна склейка указана в правке несколько раз.')
+            used.add(record['id'])
+            width, height = record['size']
+            boxes = []
+            for box in cut['boxes']:
+                if (not isinstance(box, list) or len(box) != 4 or any(type(value) is not int for value in box)
+                        or not 0 <= box[0] < box[2] <= width or not 0 <= box[1] < box[3] <= height
+                        or box[2]-box[0] < FRAME_MIN or box[3]-box[1] < FRAME_MIN):
+                    raise EditError('Кадр выходит за край склейки или слишком мал. Проверьте линии разреза.')
+                boxes.append(box)
+            if not 1 <= len(boxes) <= FRAME_LIMIT:
+                raise EditError(f'В склейке должен остаться от 1 до {FRAME_LIMIT} кадров.')
+            if not isinstance(cut.get('trim', False), bool):
+                raise TypeError()
+            members = ([record['image']] if created else
+                       [index for index, entry in enumerate(images)
+                        if entry.get('collage') == record['id'] and not entry.get('removed')])
+            parsed.append((record, boxes, members, created, cut.get('trim', False)))
+        for value in checked+dismissed:
+            if value not in records:
+                raise EditError('Склейка не найдена в результате. Обновите страницу и повторите правку.')
+        for value in dismissed:
+            if records[value].get('state') != 'suspected' or value in used:
+                raise EditError('Отметить «Это одно фото» можно только неразрезанную картинку.')
+    except EditError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise EditError('Некорректный формат правки склеек.') from None
+    return parsed, list(dict.fromkeys(checked)), list(dict.fromkeys(dismissed))
+
+
+def _collage_source(output, report, record):
+    """The whole collage picture as a PIL image, its PDF page size in points and that page's bytes."""
+    if record.get('file'):
+        path, page = _backup_io_path(_safe_path(output, record['file'], must_exist=True)), 0
+    else:
+        path, page = entry_pdf_source(output, report, record['image'])
+    entry = report['images'][record['image']] if 'image' in record else None
+    for component in (entry or {}).get('components') or []:
+        a, b, c, d = (component.get('matrix') or (1, 0, 0, 1))[:4]
+        if b or c or a < 0 or d < 0:
+            raise EditError('Повёрнутую или отражённую картинку разрезать нельзя.')
+    try:
+        with PdfReader(path) as reader:
+            pdf_page = reader.pages[page]
+            pictures = pdf_page.images
+            if len(pictures) != 1:
+                raise EditError('В PDF склейки должна быть ровно одна картинка.')
+            image = pictures[0].image.copy()
+            size = float(pdf_page.mediabox.width), float(pdf_page.mediabox.height)
+            writer = PdfWriter()
+            writer.add_page(pdf_page)
+            buffer = BytesIO()
+            writer.write(buffer)
+            writer.close()
+    except (OSError, ValueError, PyPdfError) as error:
+        if isinstance(error, EditError):
+            raise
+        raise EditError(f'Не удалось прочитать картинку склейки: {error}') from None
+    return image, size, buffer.getvalue()
+
+
+def _cut_frames(output, report, record, boxes, trim=False):
+    """Single-page PDFs and previews of the frames, cut from the native pixels of the collage.
+
+    With `trim`, light gutter margins left at a frame edge are cut off, so a line may run through
+    the middle of a white band between renders."""
+    from photo_scan import trim_margins
+    image, (page_width, page_height), page_bytes = _collage_source(output, report, record)
+    width, height = record['size']
+    sx, sy = image.width/width, image.height/height
+    if trim:
+        trimmed = []
+        for box in boxes:
+            pixels = [round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)]
+            left, top, right, bottom = trim_margins(image, pixels)
+            box = [round(left/sx), round(top/sy), round(right/sx), round(bottom/sy)]
+            if box[2]-box[0] < FRAME_MIN or box[3]-box[1] < FRAME_MIN:
+                raise EditError('После обрезки светлых полей кадр стал пустым. Передвиньте линии разреза.')
+            trimmed.append(box)
+        boxes[:] = trimmed
+    if image.mode in ('CMYK', 'I;16'):
+        converted = image.convert('RGB')
+        image.close()
+        image = converted
+    frames = []
+    try:
+        with tempfile.TemporaryDirectory(prefix='pdf-photos-cut-') as folder:
+            for number, box in enumerate(boxes, 1):
+                pixels = [round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)]
+                raster, target = Path(folder)/f'{number}.png', Path(folder)/f'{number}.pdf'
+                with image.crop(pixels) as crop:
+                    crop.save(raster, 'PNG')
+                    size = list(crop.size)
+                    with crop.copy() as thumbnail:
+                        thumbnail.thumbnail((640, 480), Image.Resampling.LANCZOS)
+                        preview = BytesIO()
+                        thumbnail.save(preview, 'PNG')
+                image_to_pdf(raster, target, [0, 0, page_width*(box[2]-box[0])/width,
+                                              page_height*(box[3]-box[1])/height], record.get('title'))
+                frames.append({'pdf': target.read_bytes(), 'size': size, 'preview': preview.getvalue()})
+    finally:
+        image.close()
+    return frames, page_bytes
+
+
+def _report_with_frames(report, cuts, start, output, aux):
+    """Append frame entries after the copies; return their in-memory pages and the cut summary."""
+    images = report['images']
+    frames, summary = {}, []
+    revision = report.get('revision', 0)+1
+    service = Path(SERVICE_DIR)
+    for record, boxes, members, created, trim in cuts:
+        cut, page_bytes = _cut_frames(output, report, record, boxes, trim)
+        template = images[members[0]] if members else images[record['image']]
+        identifier = record['id']
+        source = record.get('file')
+        if not source:
+            source = str(service/COLLAGES_DIR/f'Склейка {identifier} r{revision}.pdf')
+            aux[source] = page_bytes
+        pieces = []
+        whole = len(boxes) == 1 and boxes[0] == [0, 0, *record['size']]
+        for number, (box, frame) in enumerate(zip(boxes, cut), 1):
+            index = start+len(frames)
+            preview = str(service/'Миниатюры'/f'кадр {identifier} r{revision} {number}.png')
+            aux[preview] = frame['preview']
+            entry = copy.deepcopy(template)
+            for key in ('removed', 'suppressed', 'copy_of', 'collage_replaced', 'sha256'):
+                entry.pop(key, None)
+            entry.setdefault('original_location', original_location(template))
+            entry.update(collage=identifier, crop_px=box, size=frame['size'], method='manual_crop', manual=True,
+                         cut='manual', preview=preview, pdf_page=1,
+                         reason=('Склейка возвращена целиком вручную.' if whole else
+                                 f'Кадр {number} из склейки на странице {record["page"]}, вырезан вручную.'))
+            entry['components'] = [dict(component, crop_px=box) for component in (template.get('components') or [])[:1]]
+            images.append(entry)
+            frames[index] = frame['pdf']
+            pieces.append(index)
+        summary.append({'collage': identifier, 'pieces': pieces, 'replaced': members, 'source': source,
+                        'boxes': boxes, 'created': created})
+    return frames, summary
+
+
+def find_seams(output, payload):
+    """Suggested frame boxes for the cut editor: gutters between renders, else an even split."""
+    from photo_scan import equal_split_hint, gutter_panels
+    output = Path(output).resolve()
+    report = load_report(output)
+    records = {record['id']: record for record in report.get('collages') or []}
+    if 'collage' in payload and payload['collage'] in records:
+        record = records[payload['collage']]
+    elif type(payload.get('source')) is int and 0 <= payload['source'] < len(report['images']):
+        entry = report['images'][payload['source']]
+        record = {'id': 'seams', 'image': payload['source'], 'size': list(entry['size'])}
+    else:
+        raise EditError('Картинка для поиска швов не найдена.')
+    image, _, _ = _collage_source(output, report, record)
+    try:
+        width, height = record['size']
+        sx, sy = width/image.width, height/image.height
+        found = gutter_panels(image)
+        kind = 'gutters' if found else 'even'
+        boxes = list(found) or equal_split_hint(image)
+    finally:
+        image.close()
+    return {'kind': kind if boxes else 'none',
+            'boxes': [[round(b[0]*sx), round(b[1]*sy), round(b[2]*sx), round(b[3]*sy)] for b in boxes]}
+
+
 def apply_edits(output, payload):
     """Rebuild variant and individual PDFs transactionally, preserving every replaced source."""
     output = Path(output).resolve()
     report = load_report(output)
-    variants, removed, current = parse_payload(report, payload)
+    cuts, checked, dismissed = parse_collage_edits(report, payload)
+    variants, removed, current = parse_payload(report, payload, pieces=sum(len(cut[1]) for cut in cuts))
+    for record, boxes, members, created, trim in cuts:
+        if any(index not in removed for index in members):
+            raise EditError('Прежние кадры склейки не убраны из правки. Обновите страницу и повторите разрезание.')
     copies = payload.get('copies', [])
     copy_start = len(report['images'])
     working = _report_with_copies(report, copies) if copies else report
+    aux = {}
+    if cuts:
+        working = copy.deepcopy(working)
+        frames, cut_summary = _report_with_frames(working, cuts, copy_start+len(copies), output, aux)
+    else:
+        frames, cut_summary = {}, []
     images = working['images']
     restored = [int(index) for index in payload.get('restored', [])]
     misc = [int(index) for index in payload.get('misc', [])
             if int(index) >= copy_start or images[int(index)].get('removed') or entry_group(images[int(index)]) is not None]
-    changed = sorted(key for key, ids in variants.items() if ids != current.get(key, []))
+    changed = sorted((key for key, ids in variants.items() if ids != current.get(key, [])), key=variant_sort_key)
     to_variant = [index for ids in variants.values() for index in ids]
     # Copies only borrow source references; they must never retire a live or recovery PDF.
     source_singles = [index for index in removed+to_variant
                       if index < copy_start and entry_group(images[index]) is None and not images[index].get('removed')]
-    if not changed and not source_singles and not misc:
+    if not changed and not source_singles and not misc and not cuts and not checked and not dismissed:
         return report, None
     # Read every source before creating backups or replacing any live PDF.
-    built = {key: variant_pdf(output, working, variants[key], key) for key in changed if variants[key]}
+    built = {key: variant_pdf(output, working, variants[key], key, frames) for key in changed if variants[key]}
     reserved = {str(group_file(report, key)).casefold() for key in variants}
     singles = {}
     folder_labels = dict(report.get('folder_labels') or {})
     for index in misc:
         target, location = _misc_target(output, working, index, reserved, folder_labels)
-        singles[index] = target, location, variant_pdf(output, working, [index], None)
+        singles[index] = target, location, variant_pdf(output, working, [index], None, frames)
     # A removal is recoverable only if its source and page really exist.
     for index in removed:
         entry_pdf_source(output, report, index)
     backup = unused_backup(output, report)
     backup_name = str(backup.relative_to(output))
     new = updated_report(working, variants, removed, current, built, changed, backup_name,
-                         misc=misc, restored=restored, singles=singles, copies=copies)
+                         misc=misc, restored=restored, singles=singles, copies=copies, copy_start=copy_start)
+    if cuts or checked or dismissed:
+        _update_collages(new, cut_summary, checked, dismissed)
     pdfs = {str(group_file(report, key)): data for key, data in built.items()}
     pdfs.update({value[0]: value[2] for value in singles.values()})
     live_files = {os.path.normcase(str(Path(entry['file']))) for entry in report['images'] if not entry.get('removed')}
@@ -523,7 +751,58 @@ def apply_edits(output, payload):
     sources.update(str(Path(images[index]['file'])) for key in changed for index in current.get(key, []))
     retired = {relative for relative in sources if os.path.normcase(relative) not in new_files}
     backup_only = {str(Path(images[index]['file'])) for index in removed}
-    return _commit_transaction(output, report, new, pdfs, retired, backup, backup_only)
+    # The collage source and frame previews carry names of this revision only; nothing refers to them
+    # unless the save succeeds, so «Отменить сохранение» may simply leave them unused.
+    written = []
+    try:
+        for relative, data in aux.items():
+            path = _safe_path(output, relative, mutation=True)
+            _backup_io_path(path.parent).mkdir(parents=True, exist_ok=True)
+            _write_bytes(path, data)
+            written.append(path)
+        return _commit_transaction(output, report, new, pdfs, retired, backup, backup_only)
+    except BaseException:
+        for path in written:
+            _backup_io_path(path).unlink(missing_ok=True)
+        raise
+
+
+def _update_collages(new, cut_summary, checked, dismissed):
+    images = new['images']
+    records = new.setdefault('collages', [])
+    by_id = {record['id']: record for record in records}
+    for cut in cut_summary:
+        record = by_id.get(cut['collage'])
+        if record is None:
+            source = images[cut['replaced'][0]]
+            record = {'id': cut['collage'], 'page': source['page'], 'size': list(source['size']),
+                      'title': source.get('title')}
+            records.append(record)
+            by_id[record['id']] = record
+        whole = len(cut['boxes']) == 1 and cut['boxes'][0] == [0, 0, *record['size']]
+        record.update(file=cut['source'], boxes=[] if whole else cut['boxes'], checked=True,
+                      state='whole' if whole else 'manual')
+        record.pop('image', None)
+        record.pop('suggestion', None)
+        for index in cut['replaced']:
+            # Old frames and the whole picture live on in the collage itself, not among removed cards.
+            images[index]['collage_replaced'] = True
+            images[index]['collage'] = record['id']
+    for identifier in checked:
+        by_id[identifier]['checked'] = True
+    for identifier in dismissed:
+        by_id[identifier].update(state='dismissed', checked=True)
+        for entry in images:
+            if entry.get('collage') == identifier and not entry.get('removed'):
+                entry.pop('collage', None)
+    edit = new['edits'][-1]
+    if cut_summary:
+        edit['cuts'] = [{'collage': cut['collage'], 'pieces': cut['pieces'], 'replaced': cut['replaced']}
+                        for cut in cut_summary]
+    if checked:
+        edit['collage_checked'] = checked
+    if dismissed:
+        edit['collage_dismissed'] = dismissed
 
 
 def can_undo_last_save(report):
@@ -561,9 +840,13 @@ def restore_last_save(output, payload):
                 raise EditError('Резервная копия изменена. Отмена недоступна, чтобы сохранить ваши файлы.')
         previous = json.loads(_backup_io_path(backup_report).read_text(encoding='utf-8'))
         copies = edit.get('copies', [])
+        frames = [index for cut in edit.get('cuts', []) for index in cut['pieces']]
         if (not isinstance(previous['images'], list) or not isinstance(copies, list) or
-                len(previous['images'])+len(copies) != len(report['images'])):
+                len(previous['images'])+len(copies)+len(frames) != len(report['images'])):
             raise EditError('Резервная копия не соответствует этому результату.')
+        if any(type(index) is not int or not len(previous['images'])+len(copies) <= index < len(report['images'])
+               or not report['images'][index].get('collage') for index in frames):
+            raise EditError('Резервная копия не соответствует кадрам склеек в результате.')
         for index, item in enumerate(copies, len(previous['images'])):
             if (not isinstance(item, dict) or type(item.get('image')) is not int or item['image'] != index or
                     type(item.get('source')) is not int or not 0 <= item['source'] < len(previous['images']) or
@@ -663,8 +946,8 @@ def rename_item(output, payload):
     if kind == 'variant':
         name = clean_name(name)
         try:
-            key = int(target)
-        except (TypeError, ValueError):
+            key = variant_key(target)
+        except ValueError:
             raise EditError('Некорректный вариант.') from None
         members = [i for i, e in enumerate(images) if e['variant'] == key and not e.get('removed')]
         if not members:

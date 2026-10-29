@@ -1,5 +1,6 @@
 """Behaviour checks for the standalone, general-caption image exporter."""
 import contextlib
+import gc
 import importlib
 import importlib.util
 import io
@@ -132,6 +133,21 @@ class PhotoExport(unittest.TestCase):
                 str(Path('Вариант 1')/'Вариант 1.pdf'): 3,
                 str(Path('Вариант 2')/'Вариант 2.pdf'): 2,
                 str(Path('Вариант 10')/'Вариант 10.pdf'): 1})
+
+    def test_subvariant_heading_gets_its_own_pdf_after_its_variant(self):
+        with tempfile.TemporaryDirectory() as root:
+            titles = ['Вариант 3', 'Вариант 3.1', 'Перспективное изображение. Вариант 3.1',
+                      'Вариант 1, 2', 'Вариант 1. Общий вид']
+            pages = [{'images': [{'box': (50, 170, 800, 500)}],
+                      'text': [(title, 50, 120, 14)]} for title in titles]
+            report = self.run_export(make_pdf(root, pages))
+            self.assertEqual([e['variant'] for e in report['images']], [3, '3.1', '3.1', None, 1])
+            self.assertEqual({d['file']: d['pages'] for d in report['documents'] if d['variant'] is not None}, {
+                str(Path('Вариант 1')/'Вариант 1.pdf'): 1,
+                str(Path('Вариант 3')/'Вариант 3.pdf'): 1,
+                str(Path('Вариант 3.1')/'Вариант 3.1.pdf'): 2})
+            gallery = (Path(report['output'])/'Просмотр.html').read_text(encoding='utf-8')
+            self.assertLess(gallery.index('data-variant="3"'), gallery.index('data-variant="3.1"'))
 
     def test_one_variant_pdf_keeps_source_order_pixels_and_links_to_each_page(self):
         with tempfile.TemporaryDirectory() as root:
@@ -484,6 +500,9 @@ class PhotoExport(unittest.TestCase):
 
     def test_gui_success_and_failure_have_explicit_finished_states(self):
         self.assertIsNotNone(importlib.util.find_spec('photo_app'), 'Нет интерфейса новой версии')
+        # Destroyed Tk windows must release their Python cycles on this thread; collected later in a
+        # server thread, every Tk variable waits for a main loop and a save in another test times out.
+        self.addCleanup(gc.collect)
         import time
         import tkinter as tk
         from tkinter import ttk
@@ -592,6 +611,24 @@ class PhotoEdits(EditFixture, unittest.TestCase):
             self.assertFalse((output/'Вариант 2').exists())
             self.assertEqual(report['edits'][0]['reordered'], [1])
             self.assertEqual(report['counts_by_folder'], {'Вариант 1': 3, 'Вариант 3': 1})
+
+    def test_edit_creates_subvariant_and_keeps_its_key_through_reload(self):
+        from photo_edit import EditError, apply_edits, load_report
+        with tempfile.TemporaryDirectory() as root:
+            output, ids = self.export(root)
+            report, _ = apply_edits(output, {'revision': 0, 'variants': {
+                '1': [ids['green'], ids['red']], '1.1': [ids['blue']], '2': [ids['yellow']]}})
+            self.assertEqual(self.colors(output/'Вариант 1.1/Вариант 1.1.pdf'), ['blue'])
+            saved = load_report(output)
+            self.assertEqual(saved['images'][ids['blue']]['variant'], '1.1')
+            self.assertEqual(saved['images'][ids['green']]['variant'], 1)
+            report, _ = apply_edits(output, {'revision': 1, 'variants': {
+                '1': [ids['green'], ids['red']], '1,1': [ids['blue'], ids['yellow']], '2': []}})
+            self.assertEqual(self.colors(output/'Вариант 1.1/Вариант 1.1.pdf'), ['blue', 'yellow'])
+            for key in ('1.0', '0.1', '1.1.1'):
+                with self.assertRaises(EditError):
+                    apply_edits(output, {'revision': 2, 'variants': {key: [ids['green']], '1': [ids['red']],
+                                                                     '1.1': [ids['blue'], ids['yellow']]}})
 
     def test_invalid_or_stale_edits_change_nothing(self):
         from photo_edit import EditConflict, EditError, apply_edits
@@ -817,6 +854,7 @@ def post_dropped_files(hwnd, paths):
 
 class AppFileDrop(unittest.TestCase):
     def test_pdfs_dropped_from_explorer_start_processing(self):
+        self.addCleanup(gc.collect)  # Tk cycles, see test_gui_success_and_failure_have_explicit_finished_states.
         import time
         import tkinter as tk
         from tkinter import ttk

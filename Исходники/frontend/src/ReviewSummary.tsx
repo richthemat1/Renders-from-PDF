@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { ArrowRight, Check, ChevronDown, Layers, ScanEye, ScanSearch, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Layers, ScanEye, ScanSearch, Scissors, TriangleAlert } from "lucide-react";
 import "./review-summary.css";
 
 function issueFrom(value: unknown, error: boolean) {
@@ -22,12 +22,15 @@ interface Props {
   errors: unknown[];
   serviceCount: number;
   canRestoreService: boolean;
+  collages?: { total: number; check: number };
+  onCollages?(): void;
   onReview(): void;
   onService(): void;
   onReveal(page: number, sequence: number | null): void;
 }
 
-export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount, canRestoreService, onReview, onService, onReveal }: Props) {
+export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount, canRestoreService, collages, onCollages,
+  onReview, onService, onReveal }: Props) {
   const id = useId();
   const [open, setOpen] = useState(errors.length > 0);
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
@@ -41,7 +44,7 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
   const reviewCount = review + unsigned;
   const parts = [review && `${review} на проверку`, unsigned && `${unsigned} без подписи`].filter(Boolean).join(" и ");
   // Navigation already lists every count, so the panel keeps one task and only the diagnostics that exist.
-  const diagnostics = issues.length > 0 || serviceCount > 0;
+  const diagnostics = issues.length > 0 || serviceCount > 0 || !!collages?.total;
   return <section className={`review-summary${reviewCount ? "" : " is-complete"}`} aria-label="Сводка проверки">
     <div className="review-summary-header">
       <span className="review-summary-icon" aria-hidden="true">{reviewCount ? <ScanEye size={18} /> : <Check size={18} />}</span>
@@ -63,6 +66,10 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
         aria-controls={`${id}-issues`} onClick={() => setOpen((value) => !value)}>
         <TriangleAlert size={14} />Ошибки: {errors.length}<ChevronDown size={14} />
       </button>}
+      {!!collages?.total && <span className={`review-summary-collages${collages.check ? " needs-check" : ""}`}>
+        <Scissors size={14} /><span>Склейки: {collages.total}{collages.check ? `, проверить ${collages.check}` : ""}</span>
+        {onCollages && <button className="text-btn" onClick={onCollages}>{collages.check ? "Проверить склейки" : "Открыть склейки"}</button>}
+      </span>}
       {!!serviceCount && <span className="review-summary-services">
         <Layers size={14} /><span>Пропущены служебные элементы: <strong>{serviceCount}</strong></span>
         {canRestoreService && <button className="text-btn" onClick={onService}>Посмотреть и вернуть</button>}

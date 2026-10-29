@@ -12,6 +12,10 @@ import {
   payload,
   selectRange,
   variantLabel,
+  variantKey,
+  compareVariants,
+  nextSubvariant,
+  nextVariant,
 } from "./editor";
 import type { Report } from "./types";
 
@@ -120,7 +124,7 @@ describe("editor preserves stable report indices", () => {
   it("shows the last draft location for a removal made after moving a page", () => {
     let next = moveSelection(createDraft(report), [0], "2");
     next = editDraft(next, { type: "remove", ids: [0] });
-    expect(draftLocation(next, report, 0)).toEqual({ folder: "Вариант 2", status: "named", variant: 2 });
+    expect(draftLocation(next, report, 0)).toEqual({ folder: "Вариант 2", status: "named", variant: "2" });
   });
 });
 
@@ -201,7 +205,7 @@ describe("human folder labels keep the disk identifiers intact", () => {
     expect(variantLabel(labeled, "1")).toBe(variantName);
     const moved = moveSelection(createDraft(labeled), [3], "1");
     expect(draftLocation(moved, labeled, 3)).toEqual({
-      folder: variant, status: "named", variant: 1,
+      folder: variant, status: "named", variant: "1",
     });
     expect(payload(moved, 4).variants["1"]).toEqual([0, 1, 3]);
   });
@@ -242,5 +246,80 @@ describe("human folder labels keep the disk identifiers intact", () => {
     expect(folderLabel({ ...labeled, folder_labels: {} }, "constructor")).toBe("constructor");
     expect(folderLabel({ ...labeled, images: [image], folder_labels: { [folder]: "Проверенная подпись" } }, folder))
       .toBe("Проверенная подпись");
+  });
+});
+
+describe("subvariants", () => {
+  it("normalizes variant and subvariant numbers and rejects zero parts", () => {
+    expect(variantKey("3")).toBe("3");
+    expect(variantKey(" 03.01 ")).toBe("3.1");
+    expect(variantKey("3,2")).toBe("3.2");
+    expect(variantKey("3.0")).toBeNull();
+    expect(variantKey("0")).toBeNull();
+    expect(variantKey("3.1.1")).toBeNull();
+    expect(variantKey("1000")).toBeNull();
+  });
+  it("orders a subvariant after its variant and 3.2 before 3.10", () => {
+    expect(["4", "3.10", "3", "3.2", "1"].sort(compareVariants)).toEqual(["1", "3", "3.2", "3.10", "4"]);
+  });
+  it("suggests the next free variant and subvariant", () => {
+    expect(nextVariant(["1", "3", "3.1"])).toBe("4");
+    expect(nextSubvariant(["1", "3", "3.1"], "3")).toBe("3.2");
+    expect(nextSubvariant(["1", "3", "3.1"], "3.1")).toBe("3.2");
+  });
+  it("moves pages into a new subvariant and keeps subvariant keys from the report", () => {
+    const next = moveSelection(createDraft(report), [2], "1,1");
+    expect(payload(next, 4).variants).toEqual({ "1": [0, 1], "1.1": [2] });
+    const loaded = createDraft({ ...report, images: [...report.images, { variant: "1.1", pdf_page: 1 }] } as Report);
+    expect(draftVariant(loaded, 5)).toBe("1.1");
+    expect(() => moveSelection(loaded, [0], "1.0")).toThrow();
+  });
+});
+
+describe("collage cuts in the draft", () => {
+  const collageReport = {
+    revision: 2,
+    images: [
+      { variant: 1, pdf_page: 1, page: 1, sequence: 1, title: "Вариант 1", folder: "Вариант 1", status: "named", size: [400, 300] },
+      { variant: 2, pdf_page: 1, page: 2, sequence: 1, title: "Вариант 2", folder: "Вариант 2", status: "named", size: [1376, 768], collage: "2-h1" },
+      { variant: 2, pdf_page: 2, page: 3, sequence: 1, title: "Вариант 2", folder: "Вариант 2", status: "named", size: [400, 300] },
+    ],
+    collages: [{ id: "2-h1", page: 2, state: "suspected", checked: false, size: [1376, 768], image: 1 }],
+  } as unknown as Report;
+  const boxes: [number, number, number, number][] = [[0, 0, 688, 768], [688, 0, 1376, 768]];
+
+  it("puts frames where the whole picture was and sends their boxes after the copies", () => {
+    const copied = editDraft(createDraft(collageReport), { type: "copy", ids: [0], target: "same" });
+    const cut = editDraft(copied, { type: "cut", key: "2-h1", collage: "2-h1", source: null, replace: [1],
+      boxes, targets: ["keep", "keep"], trim: false });
+    expect(cut.variants["2"]).toEqual([4, 5, 2]);
+    expect(draftImage(cut, collageReport, 4).size).toEqual([688, 768]);
+    expect(draftVariant(cut, 5)).toBe("2");
+    expect(payload(cut, 2)).toEqual({
+      revision: 2,
+      variants: { "1": [0, 3], "2": [4, 5, 2] },
+      removed: [1],
+      copies: [0],
+      cuts: [{ collage: "2-h1", boxes }],
+    });
+  });
+  it("cutting again replaces the draft frames, a removed frame keeps its box out and undo restores the picture", () => {
+    const first = editDraft(createDraft(collageReport), { type: "cut", key: "2-h1", collage: "2-h1", source: null,
+      replace: [1], boxes, targets: ["keep", "1"], trim: true });
+    expect(first.variants["1"]).toEqual([0, 4]);
+    const again = editDraft(first, { type: "cut", key: "2-h1", collage: "2-h1", source: null, replace: [],
+      boxes: [[0, 0, 1376, 384], [0, 384, 1376, 768]], targets: ["keep", "keep"], trim: false });
+    expect(again.order).not.toContain(3);
+    expect(again.variants["2"]).toEqual([5, 6, 2]);
+    expect(payload(again, 2).cuts).toEqual([{ collage: "2-h1", boxes: [[0, 0, 1376, 384], [0, 384, 1376, 768]] }]);
+    const withoutOne = editDraft(again, { type: "remove", ids: [6] });
+    expect(payload(withoutOne, 2)).toMatchObject({ removed: [1], cuts: [{ collage: "2-h1", boxes: [[0, 0, 1376, 384]] }],
+      variants: { "1": [0], "2": [3, 2] } });
+    expect(editDraft(editDraft(again, { type: "undo" }), { type: "undo" }).variants["2"]).toEqual([1, 2]);
+  });
+  it("marks a collage checked or one photo", () => {
+    const draft = editDraft(editDraft(createDraft(collageReport), { type: "collage-check", id: "2-h1" }),
+      { type: "collage-dismiss", id: "2-h1" });
+    expect(payload(draft, 2)).toMatchObject({ collage_checked: ["2-h1"], collage_dismissed: ["2-h1"] });
   });
 });

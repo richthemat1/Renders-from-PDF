@@ -744,3 +744,31 @@
     margin-block: 6px;
   }
 }
+
+/* A subvariant (3.1) sits under its variant with a smaller marker of the same colour. */
+.app-shell > .sidebar .project-link.is-subvariant {
+  padding-left: 30px;
+}
+
+.app-shell > .sidebar .project-link.is-subvariant .variant-dot {
+  width: 5px;
+  height: 5px;
+  margin: 0 6.5px;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link.is-subvariant {
+  padding-left: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link.is-subvariant .variant-dot {
+  width: auto;
+  min-width: 30px;
+  height: 20px;
+  padding: 0 4px;
+  margin: 0;
+}
+
+.app-shell.is-sidebar-collapsed > .sidebar .project-link.is-subvariant .variant-dot > i {
+  font-size: 11px;
+  letter-spacing: -.02em;
+}

@@ -22,6 +22,28 @@ class ReviewFixesUI(unittest.TestCase):
             self.page.get_by_role('button', name='Сохранить', exact=True).click()
         expect(self.page.locator('.editor-save')).to_be_disabled()
 
+    def test_editor_creates_a_subvariant_listed_after_its_variant(self):
+        from photo_edit import load_report
+        self.page.get_by_role('button', name='Редактировать', exact=True).click()
+        self.page.locator('.asset-card[data-id="1"]').get_by_role('checkbox').check()
+        self.page.get_by_role('button', name='Новый вариант', exact=True).click()
+        dialog = self.page.get_by_role('dialog')
+        dialog.get_by_role('button', name='Подвариант 1.1', exact=True).click()
+        expect(dialog.get_by_label('Номер варианта или подварианта')).to_have_value('1.1')
+        dialog.get_by_role('button', name='Создать и перенести').click()
+        navigation = self.page.locator('#variant-navigation .nav-text')
+        expect(navigation).to_have_text(['Вариант 1', 'Вариант 1.1', 'Вариант 2'])
+        expect(self.page.locator('.library-header h2')).to_have_text('Вариант 1.1')
+        self.save()
+        report = load_report(self.output)
+        self.assertEqual(report['images'][1]['variant'], '1.1')
+        self.assertTrue((self.output / 'Вариант 1.1' / 'Вариант 1.1.pdf').is_file())
+        self.page.reload()
+        self.page.get_by_role('button', name='История обработки', exact=True).click()
+        self.page.locator('.history-row').first.click()
+        expect(self.page.locator('nav').get_by_role('button', name='Вариант 1.1 1', exact=True)).to_be_visible()
+        self.assertEqual(self.errors, [])
+
     def test_source_page_renders_original_slide_and_missing_source_has_its_own_error(self):
         self.card(0).locator('.cover-button').click()
         self.page.get_by_role('button', name='Исходная страница 1', exact=True).click()

@@ -1,8 +1,31 @@
 import type { ImageEntry, Report } from "./types";
 
+/** A frame of a collage in source pixels: left, top, right, bottom. */
+export type Box = [number, number, number, number];
+/** A frame that exists only in the draft until the next save. */
+export interface DraftFrame {
+  cut: string;
+  box: Box;
+  /** The card whose caption, variant and preview the frame starts from. */
+  template: number;
+  number: number;
+}
+export interface DraftCut {
+  collage: string | null;
+  /** A picture that is not a collage yet, cut by hand. */
+  source: number | null;
+  pieces: number[];
+  /** Saved cards the cut replaces: earlier frames or the whole picture. */
+  replaced: number[];
+  trim: boolean;
+}
 interface DraftData {
   sourceCount: number;
   copies: Record<number, number>;
+  frames: Record<number, DraftFrame>;
+  cuts: Record<string, DraftCut>;
+  collageChecked: string[];
+  collageDismissed: string[];
   variants: Record<string, number[]>;
   /** Removals made since the report was loaded; saved removals are separate. */
   removed: number[];
@@ -23,6 +46,10 @@ export type Edit =
   | { type: "restore"; ids: number[] }
   | { type: "return-to-misc" | "return"; ids: number[] }
   | { type: "move-edge"; ids: number[]; edge: "start" | "end" }
+  | { type: "cut"; key: string; collage: string | null; source: number | null; replace: number[];
+      boxes: Box[]; targets: (string | null | "keep")[]; trim: boolean }
+  | { type: "collage-check"; id: string }
+  | { type: "collage-dismiss"; id: string }
   | { type: "undo" };
 
 export function createDraft(report: Report): Draft {
@@ -41,8 +68,8 @@ export function createDraft(report: Report): Draft {
   }
   for (const ids of Object.values(variants))
     ids.sort((a, b) => report.images[a].pdf_page - report.images[b].pdf_page);
-  return { sourceCount: report.images.length, copies: {}, variants, removed: [], order, savedRemoved, sourceVariants, removedFrom,
-    restored: [], misc: [], past: [] };
+  return { sourceCount: report.images.length, copies: {}, frames: {}, cuts: {}, collageChecked: [], collageDismissed: [],
+    variants, removed: [], order, savedRemoved, sourceVariants, removedFrom, restored: [], misc: [], past: [] };
 }
 
 function remember(previous: Draft, data: DraftData): Draft {
@@ -57,15 +84,45 @@ function remember(previous: Draft, data: DraftData): Draft {
   };
 }
 
+/** «3» is a variant, «3.1» its subvariant; a comma is accepted as in Russian decimals. */
+export function variantKey(value: string): string | null {
+  const match = /^\s*(\d{1,3})(?:[.,](\d{1,3}))?\s*$/.exec(value);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = match[2] === undefined ? 0 : Number(match[2]);
+  if (major < 1 || (match[2] !== undefined && minor < 1)) return null;
+  return minor ? `${major}.${minor}` : String(major);
+}
+export const VARIANT_KEY_ERROR = "Номер варианта — от 1 до 999, подварианта — например 3.1.";
+export function compareVariants(a: string, b: string): number {
+  const [aMajor, aMinor = 0] = a.split(".").map(Number);
+  const [bMajor, bMinor = 0] = b.split(".").map(Number);
+  return aMajor - bMajor || aMinor - bMinor;
+}
+/** The whole variant a key belongs to: «3» for «3.1». */
+export function variantParent(key: string): string {
+  return key.split(".")[0];
+}
+/** The first unused subvariant of a variant: 3.1, then 3.2 and so on. */
+export function nextSubvariant(variants: string[], key: string): string {
+  const parent = variantParent(key);
+  for (let minor = 1; minor <= 999; minor++)
+    if (!variants.includes(`${parent}.${minor}`)) return `${parent}.${minor}`;
+  return parent;
+}
+export function nextVariant(variants: string[]): string {
+  return String(Math.max(0, ...variants.map((key) => Number(variantParent(key)))) + 1);
+}
+
 export function moveSelection(
   draft: Draft,
   ids: number[],
   target: string,
   before?: number,
 ): Draft {
-  if (!/^\d+$/.test(target) || Number(target) < 1 || Number(target) > 999)
-    throw new Error("Номер варианта должен быть от 1 до 999.");
-  target = String(Number(target));
+  const key = variantKey(target);
+  if (key === null) throw new Error(VARIANT_KEY_ERROR);
+  target = key;
   let selected = [...new Set(ids)];
   if (
     selected.some(
@@ -97,7 +154,66 @@ export function moveSelection(
   });
 }
 
+function cutDraft(draft: Draft, edit: Extract<Edit, { type: "cut" }>): Draft {
+  if (!edit.boxes.length) throw new Error("В склейке должен остаться хотя бы один кадр.");
+  if (edit.targets.length !== edit.boxes.length) throw new Error("Для каждого кадра укажите, куда его поместить.");
+  const previous = draft.cuts[edit.key];
+  const dropped = new Set(previous?.pieces ?? []);
+  const replaced = [...new Set([...(previous?.replaced ?? []), ...edit.replace])];
+  if (!replaced.length) throw new Error("Картинка для разрезания не найдена.");
+  // New frames take the place of the first earlier frame or of the whole picture.
+  const anchor = previous?.pieces.find((id) => draft.order.includes(id)) ?? replaced[0];
+  const anchorVariant = draftVariant(draft, anchor) ?? (isRemoved(draft, anchor) ? draft.removedFrom[anchor]?.variant ?? null : null);
+  const anchorMembers = anchorVariant === null ? [] : draft.variants[anchorVariant] ?? [];
+  const anchorAt = anchorMembers.indexOf(anchor);
+  const gone = new Set([...dropped, ...replaced]);
+  const variants = Object.fromEntries(Object.entries(draft.variants).map(([key, members]) =>
+    [key, members.filter((id) => !gone.has(id))]));
+  let misc = draft.misc.filter((id) => !gone.has(id));
+  const order = draft.order.filter((id) => !dropped.has(id));
+  const frames = Object.fromEntries(Object.entries(draft.frames).filter(([id]) => !dropped.has(Number(id))));
+  const sourceVariants = { ...draft.sourceVariants };
+  const template = replaced[0];
+  const start = Math.max(draft.sourceCount - 1, ...draft.order) + 1;
+  const kept: number[] = [];
+  edit.boxes.forEach((box, index) => {
+    const id = start + index;
+    order.push(id);
+    frames[id] = { cut: edit.key, box, template, number: index + 1 };
+    sourceVariants[id] = draft.sourceVariants[template] ?? null;
+    const target = edit.targets[index];
+    const key = target === "keep" ? anchorVariant : target === null ? null : variantKey(target);
+    if (target !== "keep" && target !== null && key === null) throw new Error(VARIANT_KEY_ERROR);
+    if (key === null) misc.push(id);
+    else if (key === anchorVariant) kept.push(id);
+    else (variants[key] ??= []).push(id);
+  });
+  if (anchorVariant !== null && kept.length) {
+    const members = variants[anchorVariant] ??= [];
+    const before = anchorMembers.slice(anchorAt + 1).find((id) => !gone.has(id));
+    const at = before === undefined ? members.length : members.indexOf(before);
+    members.splice(at < 0 ? members.length : at, 0, ...kept);
+  }
+  misc = [...new Set(misc)];
+  const removedFrom = { ...draft.removedFrom };
+  for (const id of edit.replace)
+    if (!isRemoved(draft, id)) removedFrom[id] = { variant: draftVariant(draft, id) };
+  return remember(draft, {
+    ...dataOf(draft), order, frames, variants, misc, sourceVariants, removedFrom,
+    removed: [...new Set([...draft.removed.filter((id) => !dropped.has(id)), ...edit.replace.filter((id) => !draft.savedRemoved.includes(id))])],
+    restored: draft.restored.filter((id) => !gone.has(id)),
+    cuts: { ...draft.cuts, [edit.key]: { collage: edit.collage, source: edit.source, replaced,
+      pieces: edit.boxes.map((_, index) => start + index), trim: edit.trim } },
+    collageDismissed: draft.collageDismissed.filter((id) => id !== edit.collage),
+  });
+}
+
 export function editDraft(draft: Draft, edit: Edit): Draft {
+  if (edit.type === "cut") return cutDraft(draft, edit);
+  if (edit.type === "collage-check")
+    return remember(draft, { ...dataOf(draft), collageChecked: [...new Set([...draft.collageChecked, edit.id])] });
+  if (edit.type === "collage-dismiss")
+    return remember(draft, { ...dataOf(draft), collageDismissed: [...new Set([...draft.collageDismissed, edit.id])] });
   if (edit.type === "undo") {
     const last = draft.past.at(-1);
     return last ? { ...last, past: draft.past.slice(0, -1) } : draft;
@@ -126,7 +242,11 @@ export function editDraft(draft: Draft, edit: Edit): Draft {
     });
     const variants = Object.fromEntries(Object.entries(draft.variants).map(([key, members]) =>
       [key, edit.target === "same" ? members.flatMap((id) => additions.has(id) ? [id, additions.get(id)!] : [id]) : [...members]]));
-    if (edit.target !== "same") (variants[String(+edit.target)] ??= []).push(...additions.values());
+    if (edit.target !== "same") {
+      const key = variantKey(edit.target);
+      if (key === null) throw new Error(VARIANT_KEY_ERROR);
+      (variants[key] ??= []).push(...additions.values());
+    }
     return remember(draft, { ...dataOf(draft), copies, variants, sourceVariants, misc,
       order: [...draft.order, ...additions.values()] });
   }
@@ -197,19 +317,32 @@ export function payload(draft: Draft, revision: number) {
   // selection, undo and the preview keep stable local IDs until the save finishes.
   const copies = draft.order.filter((id) => id in draft.copies && !isRemoved(draft, id));
   const wireIds = new Map(copies.map((id, index) => [id, draft.sourceCount + index]));
+  // Frames follow the copies, cut by cut and frame by frame, exactly as the server appends them.
+  const cuts: { collage?: string; source?: number; boxes: Box[]; trim?: boolean }[] = [];
+  for (const cut of Object.values(draft.cuts)) {
+    const pieces = cut.pieces.filter((id) => draft.order.includes(id) && !isRemoved(draft, id));
+    if (!pieces.length) continue;
+    for (const id of pieces) wireIds.set(id, draft.sourceCount + wireIds.size);
+    cuts.push({ ...(cut.collage === null ? { source: cut.source! } : { collage: cut.collage }),
+      boxes: pieces.map((id) => draft.frames[id].box), ...(cut.trim ? { trim: true } : {}) });
+  }
   const wire = (id: number) => wireIds.get(id) ?? id;
   const value: { revision: number; variants: Record<string, number[]>; removed: number[];
-    restored?: number[]; misc?: number[]; copies?: number[] } = {
+    restored?: number[]; misc?: number[]; copies?: number[]; cuts?: typeof cuts;
+    collage_checked?: string[]; collage_dismissed?: string[] } = {
     revision,
     variants: Object.fromEntries(Object.entries(draft.variants).filter(([, ids]) => ids.length)
-      .map(([key, ids]) => [key, ids.map(wire)])),
-    removed: draft.removed.filter((id) => !(id in draft.copies)).sort((a, b) => a - b),
+      .map(([key, ids]) => [key, ids.filter((id) => !isRemoved(draft, id) || !(id in draft.frames)).map(wire)])),
+    removed: draft.removed.filter((id) => !(id in draft.copies) && !(id in draft.frames)).sort((a, b) => a - b),
   };
   const restored = draft.restored.filter((id) => !isRemoved(draft, id)).sort((a, b) => a - b);
   const misc = draft.misc.filter((id) => !isRemoved(draft, id)).map(wire).sort((a, b) => a - b);
   if (restored.length) value.restored = restored;
   if (misc.length) value.misc = misc;
   if (copies.length) value.copies = copies.map((id) => draft.copies[id]);
+  if (cuts.length) value.cuts = cuts;
+  if (draft.collageChecked.length) value.collage_checked = draft.collageChecked;
+  if (draft.collageDismissed.length) value.collage_dismissed = draft.collageDismissed;
   return value;
 }
 function dataOf(draft: Draft): DraftData {
@@ -225,9 +358,17 @@ export function isRemoved(draft: Draft, id: number): boolean {
   return draft.removed.includes(id) || (draft.savedRemoved.includes(id) && !draft.restored.includes(id));
 }
 export function sourceId(draft: Draft, id: number): number {
-  return draft.copies[id] ?? id;
+  return draft.copies[id] ?? draft.frames[id]?.template ?? id;
 }
 export function draftImage(draft: Draft, report: Report, id: number): ImageEntry {
+  const frame = draft.frames[id];
+  if (frame) {
+    const template = report.images[frame.template];
+    const [left, top, right, bottom] = frame.box;
+    return { ...template, size: [right - left, bottom - top], crop_px: frame.box, collage: frame.cut, cut: "manual",
+      removed: undefined, collage_replaced: undefined,
+      original_location: template.original_location ?? { folder: template.folder, status: template.status } };
+  }
   const source = sourceId(draft, id);
   return source === id ? report.images[id] : { ...report.images[source], copy_of: source };
 }
@@ -254,8 +395,8 @@ export function folderLabel(report: Report, folder: string): string {
 
 function variantFolder(report: Report, variant: number | string): string {
   return report.variant_names?.[String(variant)] ||
-    report.images.find((image) => image.variant === Number(variant) && image.folder)?.folder ||
-    report.documents?.find((document) => document.variant === Number(variant))?.folder ||
+    report.images.find((image) => image.variant != null && String(image.variant) === String(variant) && image.folder)?.folder ||
+    report.documents?.find((document) => document.variant != null && String(document.variant) === String(variant))?.folder ||
     `Вариант ${variant}`;
 }
 
@@ -264,11 +405,11 @@ export function variantLabel(report: Report, variant: number | string): string {
 }
 
 export function draftLocation(draft: Draft, report: Report, id: number): {
-  folder: string; status: "named" | "review" | "unsigned"; variant: number | null;
+  folder: string; status: "named" | "review" | "unsigned"; variant: string | null;
 } {
   const image = draftImage(draft, report, id);
   const removedVariant = isRemoved(draft, id) ? draft.removedFrom[id]?.variant : null;
-  const variant = removedVariant == null ? draftVariant(draft, id) : Number(removedVariant);
+  const variant = removedVariant == null ? draftVariant(draft, id) : removedVariant;
   if (variant !== null) return {
     folder: variantFolder(report, variant), status: "named", variant,
   };
@@ -298,15 +439,15 @@ export function selectRange(
     ? [clicked]
     : visible.slice(Math.min(start, end), Math.max(start, end) + 1);
 }
-export function draftVariant(draft: Draft, id: number): number | null {
+export function draftVariant(draft: Draft, id: number): string | null {
   const key = Object.keys(draft.variants).find((key) =>
     draft.variants[key].includes(id),
   );
-  return key === undefined ? null : Number(key);
+  return key ?? null;
 }
 export function orderedIds(draft: Draft): number[] {
   const variants = Object.keys(draft.variants)
-    .sort((a, b) => Number(a) - Number(b))
+    .sort(compareVariants)
     .flatMap((key) => draft.variants[key]);
   const members = new Set(variants);
   return [

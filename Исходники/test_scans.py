@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 from reportlab.pdfgen import canvas
 
 from photo_export import extract, render_previews
-from test_photos import exported_image
+from test_photos import exported_image  # also registers the FixtureArial font
 
 
 def scan_pdf(root, labels=True, irregular=False, copies=1):
@@ -35,6 +35,258 @@ def scan_pdf(root, labels=True, irregular=False, copies=1):
         pdf.showPage()
     pdf.save()
     return target
+
+
+def render(draw, box, shade):
+    """A render with light corners (sky, snow on roofs): too doubtful for photo_panels on its own."""
+    left, top, right, bottom = box
+    for y in range(top, bottom):
+        draw.line((left, y, right-1, y), fill=(shade, 90+(y*7) % 90, 150-(y*3) % 60))
+    width, height = (right-left)*15//100, (bottom-top)*15//100
+    for x0, y0 in ((left, top), (right-width, top), (left, bottom-height), (right-width, bottom-height)):
+        draw.rectangle((x0, y0, x0+width-1, y0+height-1), fill='#f6f6f6')
+
+
+def collage(size=(740, 910), label_size=26, grid=False):
+    """Two renders stacked in one raster, as «ВИД №1 / ВИД №2» columns of a comparison slide."""
+    image = Image.new('RGB', size, 'white')
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype('C:/Windows/Fonts/arial.ttf', label_size)
+    width, height = size
+    rows = [(8, 420), (462, 872)]
+    columns = [(4, width//2-20), (width//2+20, width-4)] if grid else [(4, width-4)]
+    for row, (top, bottom) in enumerate(rows):
+        for column, (left, right) in enumerate(columns):
+            render(draw, (left, top, right, bottom), 60+40*row+20*column)
+        draw.text((width-140, bottom+6), f'ВИД №{row+1}', fill='black', font=font)
+    return image
+
+
+def render_row(count=4, size=(2752, 1536), separator='#e4e6ea', widths=None, gap=5):
+    """Renders side by side, edge to edge, divided by thin grey lines (or touching when gap=0)."""
+    image = Image.new('RGB', size, separator)
+    draw = ImageDraw.Draw(image)
+    width, height = size
+    widths = widths or [width//count]*count
+    left = 0
+    for index, piece in enumerate(widths):
+        box = (left+(gap if index else 0), 0, left+piece-(gap if index < len(widths)-1 else 0), height)
+        if gap:
+            render(draw, box, 50+30*index)
+        else:
+            for y in range(height):
+                draw.line((box[0], y, box[2]-1, y), fill=((40+55*index) % 230, 70+(y*7+index*45) % 120, 160-(y*3+index*35) % 90))
+        left += piece
+    return image
+
+
+def row_pdf(root, gap=5):
+    root = Path(root)
+    target = root/'row.pdf'
+    raster = root/'row.png'
+    render_row(gap=gap).save(raster)
+    pdf = canvas.Canvas(str(target), pagesize=(1208, 859))
+    pdf.setFont('FixtureArial', 9)
+    pdf.drawString(4, 859-62, 'Перспективное изображение №1. Вариант 3')
+    pdf.drawString(1000, 859-40, 'по адресу: ул. Примерная, д. 1')
+    pdf.drawImage(str(raster), 0, 859-67-674, 1208, 674)
+    pdf.showPage()
+    pdf.save()
+    return target
+
+
+def collage_pdf(root):
+    root = Path(root)
+    target = root/'collage.pdf'
+    pdf = canvas.Canvas(str(target), pagesize=(1000, 750))
+    for column in range(2):
+        raster = root/f'collage-{column}.png'
+        collage().save(raster)
+        pdf.setFont('FixtureArial', 16)
+        pdf.drawString(60+470*column, 750-110, f'Вариант {column+1}')
+        pdf.drawImage(str(raster), 60+470*column, 750-130-541, 440, 541)
+    pdf.showPage()
+    pdf.save()
+    return target
+
+
+class CollageEdits(unittest.TestCase):
+    def variants(self, report):
+        members = {}
+        for index, entry in enumerate(report['images']):
+            if entry['variant'] is not None and not entry.get('removed'):
+                members.setdefault(str(entry['variant']), []).append(index)
+        for ids in members.values():
+            ids.sort(key=lambda index: report['images'][index]['pdf_page'])
+        return members
+
+    def test_auto_collage_keeps_its_whole_picture_can_be_returned_whole_and_undone(self):
+        from photo_edit import apply_edits, load_report, restore_last_save
+        with tempfile.TemporaryDirectory() as root:
+            report = extract(collage_pdf(root))
+            output = Path(report['output'])
+            self.assertEqual([c['state'] for c in report['collages']], ['auto', 'auto'])
+            first = report['collages'][0]
+            self.assertTrue((output/first['file']).is_file())
+            self.assertTrue((output/first['preview']).is_file())
+            self.assertEqual(len(first['boxes']), 2)
+            self.assertEqual([e.get('collage') for e in report['images']], [first['id']]*2+[report['collages'][1]['id']]*2)
+            width, height = first['size']
+            variants = self.variants(report)
+            members = variants['1']
+            variants['1'] = [len(report['images'])]
+            saved, backup = apply_edits(output, {'revision': 0, 'variants': variants, 'removed': members,
+                                                 'cuts': [{'collage': first['id'], 'boxes': [[0, 0, width, height]]}]})
+            whole = saved['images'][-1]
+            self.assertEqual(whole['size'], [width, height])
+            self.assertEqual(whole['variant'], 1)
+            self.assertTrue(all(saved['images'][i]['removed'] and saved['images'][i]['collage_replaced'] for i in members))
+            record = next(c for c in saved['collages'] if c['id'] == first['id'])
+            self.assertEqual((record['state'], record['boxes'], record['checked']), ('whole', [], True))
+            with exported_image(saved, whole) as image:
+                self.assertEqual(list(image.size), [width, height])
+            restored, _ = restore_last_save(output, {'revision': 1})
+            self.assertEqual(len(restored['images']), 4)
+            self.assertEqual(next(c for c in restored['collages'] if c['id'] == first['id'])['state'], 'auto')
+            self.assertEqual(load_report(output)['images'][0].get('removed'), None)
+
+    def test_suspected_row_is_offered_with_equal_lines_and_cut_into_native_frames(self):
+        from photo_edit import apply_edits
+        with tempfile.TemporaryDirectory() as root:
+            with patch('photo_scan.WindowsOcr', side_effect=AssertionError('OCR не нужен')):
+                report = extract(row_pdf(root, gap=0))
+            self.assertEqual(len(report['images']), 1)
+            record = report['collages'][0]
+            self.assertEqual(record['state'], 'suspected')
+            self.assertEqual([box[0] for box in record['suggestion']], [0, 688, 1376, 2064])
+            self.assertEqual(report['images'][0]['collage'], record['id'])
+            variants = self.variants(report)
+            new = list(range(1, 5))
+            variants['3'] = new
+            saved, _ = apply_edits(Path(report['output']), {
+                'revision': 0, 'variants': variants, 'removed': [0],
+                'cuts': [{'collage': record['id'], 'boxes': record['suggestion']}]})
+            frames = saved['images'][1:]
+            self.assertEqual([f['size'] for f in frames], [[688, 1536]]*4)
+            self.assertEqual([f['pdf_page'] for f in frames], [1, 2, 3, 4])
+            self.assertTrue(saved['images'][0]['collage_replaced'])
+            self.assertEqual(next(c for c in saved['collages'] if c['id'] == record['id'])['state'], 'manual')
+            original = render_row(gap=0)
+            for frame, left in zip(frames, (0, 688, 1376, 2064)):
+                self.assertTrue((Path(report['output'])/frame['preview']).is_file())
+                with exported_image(saved, frame) as image:
+                    self.assertEqual(image.convert('RGB').getpixel((100, 700)), original.getpixel((left+100, 700)))
+
+    def test_one_photo_dismisses_the_hint_and_any_picture_can_be_cut_by_hand(self):
+        from photo_edit import EditError, apply_edits
+        with tempfile.TemporaryDirectory() as root:
+            report = extract(row_pdf(root, gap=0))
+            output = Path(report['output'])
+            identifier = report['collages'][0]['id']
+            saved, _ = apply_edits(output, {'revision': 0, 'variants': self.variants(report), 'removed': [],
+                                            'collage_dismissed': [identifier]})
+            self.assertEqual(saved['collages'][0]['state'], 'dismissed')
+            self.assertNotIn('collage', saved['images'][0])
+            with self.assertRaises(EditError):
+                apply_edits(output, {'revision': 1, 'variants': self.variants(saved), 'removed': [],
+                                     'cuts': [{'collage': identifier, 'boxes': [[0, 0, 100, 100]]}]})
+            variants = self.variants(saved)
+            key = next(iter(variants), None)
+            misc = [] if key else [1, 2]
+            if key:
+                variants[key] = [1, 2]
+            cut, _ = apply_edits(output, {'revision': 1, 'variants': variants, 'removed': [0], 'misc': misc,
+                                          'cuts': [{'source': 0, 'boxes': [[0, 0, 1376, 1536], [1376, 0, 2752, 1536]]}]})
+            manual = next(c for c in cut['collages'] if c['id'].endswith('-m0'))
+            self.assertEqual((manual['state'], len(manual['boxes'])), ('manual', 2))
+            self.assertTrue((output/manual['file']).is_file())
+            self.assertEqual([e['size'] for e in cut['images'][1:]], [[1376, 1536]]*2)
+
+    def test_invalid_cuts_change_nothing(self):
+        from photo_edit import EditError, apply_edits
+        with tempfile.TemporaryDirectory() as root:
+            report = extract(collage_pdf(root))
+            output = Path(report['output'])
+            before = (output/'Отчёт.json').read_bytes()
+            first = report['collages'][0]
+            variants = self.variants(report)
+            for cut, removed in (({'collage': first['id'], 'boxes': [[0, 0, 99999, 10]]}, [0, 1]),
+                                 ({'collage': first['id'], 'boxes': [[0, 0, 200, 200]]}, []),
+                                 ({'collage': 'нет', 'boxes': [[0, 0, 200, 200]]}, [0, 1])):
+                with self.assertRaises(EditError):
+                    apply_edits(output, {'revision': 0, 'variants': variants, 'removed': removed, 'cuts': [cut]})
+            self.assertEqual((output/'Отчёт.json').read_bytes(), before)
+
+
+class CollageCuts(unittest.TestCase):
+    def test_light_gutter_splits_stacked_renders_and_lower_view_keeps_its_column_variant(self):
+        with tempfile.TemporaryDirectory() as root:
+            # The gutters prove these cuts; Windows OCR is neither needed nor started.
+            with patch('photo_scan.WindowsOcr', side_effect=AssertionError('OCR не нужен')):
+                report = extract(collage_pdf(root))
+            self.assertEqual(report['warnings'], [])
+            self.assertEqual([e['variant'] for e in report['images']], [1, 1, 2, 2])
+            self.assertEqual([e['cut'] for e in report['images']], ['seam']*4)
+            self.assertEqual([d['pages'] for d in report['documents']], [2, 2])
+            self.assertIn('общая для всех кадров этой склейки', report['images'][1]['reason'])
+            original = collage()
+            for entry, (top, bottom) in zip(report['images'], [(8, 420), (462, 872)]*2):
+                self.assertEqual(entry['method'], 'native_scan_crop')
+                width, height = entry['size']
+                # The light corners and the «ВИД №» captions stay outside: each piece is one render.
+                self.assertLessEqual(abs(height-(bottom-top)), 6)
+                self.assertGreaterEqual(width, 720)
+                left, crop_top = entry['components'][0]['crop_px'][:2]
+                with exported_image(report, entry) as image:
+                    self.assertEqual(image.convert('RGB').getpixel((width//2, height//2)),
+                                     original.getpixel((left+width//2, crop_top+height//2)))
+
+    def test_row_of_renders_with_thin_grey_lines_is_cut_and_shares_the_heading(self):
+        with tempfile.TemporaryDirectory() as root:
+            with patch('photo_scan.WindowsOcr', side_effect=AssertionError('OCR не нужен')):
+                report = extract(row_pdf(root))
+            self.assertEqual(report['warnings'], [])
+            self.assertEqual([e['variant'] for e in report['images']], [3]*4)
+            # Header text above the last render must not rename that piece.
+            self.assertEqual({e['title'] for e in report['images']}, {'Перспективное изображение №1. Вариант 3'})
+            self.assertEqual([d['pages'] for d in report['documents']], [4])
+            for entry in report['images']:
+                self.assertLess(abs(entry['size'][0]-688), 12)
+                self.assertEqual(entry['size'][1], 1536)
+
+    def test_thin_line_needs_pieces_of_equal_size(self):
+        from photo_scan import gutter_panels
+        self.assertEqual(len(gutter_panels(render_row())), 4)
+        self.assertEqual(gutter_panels(render_row(count=2, widths=[900, 1852])), [])
+
+    def test_gutter_panels_find_a_grid_in_reading_order(self):
+        from photo_scan import gutter_panels
+        boxes = gutter_panels(collage(size=(1200, 910), grid=True))
+        self.assertEqual(len(boxes), 4)
+        self.assertEqual([box[1] < 440 for box in boxes], [True, True, False, False])
+        self.assertLess(boxes[0][0], boxes[1][0])
+
+    def test_a_large_caption_inside_the_gutter_does_not_break_it(self):
+        from photo_scan import gutter_panels
+        boxes = gutter_panels(collage(label_size=40))
+        self.assertEqual(len(boxes), 2)
+        self.assertLess(boxes[0][3], 440)
+        self.assertLess(boxes[1][3], 880)
+
+    def test_gutter_panels_keep_drawings_single_renders_and_partial_gaps_whole(self):
+        from photo_scan import gutter_panels
+        drawing = Image.new('RGB', (900, 900), 'white')
+        draw = ImageDraw.Draw(drawing)
+        for x in range(40, 860, 60):
+            draw.line((x, 40, x, 400), fill='black', width=2)
+            draw.line((x, 480, x, 860), fill='black', width=2)
+        self.assertEqual(gutter_panels(drawing), [])
+        single = Image.new('RGB', (800, 600), 'white')
+        render(ImageDraw.Draw(single), (0, 120, 800, 600), 80)
+        self.assertEqual(gutter_panels(single), [])
+        bridged = collage()
+        ImageDraw.Draw(bridged).rectangle((300, 400, 420, 480), fill='#336699')
+        self.assertEqual(gutter_panels(bridged), [])
 
 
 class ScanExport(unittest.TestCase):

@@ -5,7 +5,7 @@ export interface ImageEntry {
   folder: string;
   file: string;
   preview: string | null;
-  variant: number | null;
+  variant: number | string | null;
   pdf_page: number;
   status: "named" | "review" | "unsigned";
   size: [number, number];
@@ -15,6 +15,13 @@ export interface ImageEntry {
   suppressed?: boolean;
   suppression_code?: string;
   copy_of?: number;
+  /** The collage this card belongs to: one of its frames, or the whole picture offered for cutting. */
+  collage?: string;
+  /** A frame's box in the collage pixels. */
+  crop_px?: [number, number, number, number];
+  cut?: "seam" | "manual";
+  /** An earlier frame (or the whole picture) replaced by a new cut; kept for undo, not shown as removed. */
+  collage_replaced?: boolean;
   manual?: boolean;
   group?: string;
   auto_folder?: string;
@@ -35,10 +42,11 @@ export interface Report {
   documents: {
     file: string;
     folder: string;
-    variant: number | null;
+    variant: number | string | null;
     pages: number;
   }[];
   variant_names?: Record<string, string>;
+  collages?: Collage[];
   folder_labels?: Record<string, string>;
   suppressed?: unknown[];
   counts_by_status: Record<string, number>;
@@ -46,6 +54,21 @@ export interface Report {
   errors: unknown[];
   can_undo_save?: boolean;
   edits?: { backup?: string; action?: string; kind?: string }[];
+}
+export interface Collage {
+  id: string;
+  page: number;
+  /** suspected — offered for cutting; auto/manual — cut; whole — cut undone; dismissed — one photo. */
+  state: "suspected" | "auto" | "manual" | "whole" | "dismissed";
+  checked: boolean;
+  size: [number, number];
+  preview?: string | null;
+  file?: string;
+  image?: number;
+  title?: string | null;
+  boxes?: [number, number, number, number][];
+  suggestion?: [number, number, number, number][];
+  reason?: string;
 }
 export interface Result {
   id: string;

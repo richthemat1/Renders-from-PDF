@@ -24,10 +24,10 @@ from pypdf.generic import ContentStream
 from photo_layout import (bounds, caption_for, caption_with_variant_context, clean_text,
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
-                          text_lines, tile_groups, variant_numbers)
+                          text_lines, tile_groups, found_variant, variant_numbers, variant_sort_key)
 from photo_scan import (analyse_scans, blank_layer_ink, column_caption, is_large_raster, LARGE_RASTER_PIXELS,
                         open_large_raster,
-                        prepare_scan_continuations, whole_scan_caption)
+                        prepare_scan_continuations, seam_caption, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
 # make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
@@ -37,7 +37,7 @@ pypdf.filters.MAX_DECLARED_STREAM_LENGTH = max(pypdf.filters.MAX_DECLARED_STREAM
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.33'
+VERSION = '3.34'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -48,6 +48,8 @@ PERSPECTIVE_TITLE = re.compile(r'^\W*перспективн\w*\s+изображ�
 OUTDATED_VARIANT = re.compile(r'\b(?:предыдущ|первоначальн|прежн|устаревш|архивн|отклон[её]нн|неактуальн)\w*'
                               r'|\bне\s+принят\w*', re.I)
 SUPPRESSED_DIR = 'Служебные элементы'
+# The whole picture of every collage is kept here, so its cut can be checked, changed or undone.
+COLLAGES_DIR = 'Склейки'
 PDFIUM_LOCK = RLock()
 
 
@@ -92,6 +94,14 @@ def group_caption(match, conflict=None):
                             'отнесено к варианту 1.')
         return match, 'Вариант 1'
     return match, match['title']
+
+
+def region_caption(page, box):
+    match = caption_for(page, box)
+    match = whole_scan_caption(page, match)
+    match = column_caption(page, box, match)
+    match = selected_caption_with_variant(page, match)
+    return caption_with_variant_context(page, box, match)
 
 
 def entry_group(entry):
@@ -264,8 +274,8 @@ def selection_table_references(page, lines):
         for row in table.extract():
             for cell in row:
                 match = SELECTION_REFERENCE.fullmatch(clean_text(cell or ''))
-                if match:
-                    references.append({'marker': match[1], 'variant': int(match[2] or match[3]),
+                if match and found_variant(match[2] or match[3]) is not None:
+                    references.append({'marker': match[1], 'variant': found_variant(match[2] or match[3]),
                                        'cell_text': clean_text(cell),
                                        'table_bbox': [round(value, 3) for value in table.bbox]})
     return references
@@ -727,6 +737,38 @@ def render_previews(staging, report, progress=None):
         except Exception as error:
             entry['preview'] = None
             report['preview_errors'].append({'file': entry['file'], 'error': str(error)})
+    for collage in report.get('collages', []):
+        collage['preview'] = render_collage_preview(staging, report, collage)
+
+
+COLLAGE_PREVIEW = 1600
+
+
+def render_collage_preview(output, report, collage):
+    """A large picture of the whole collage: cut lines are placed on it to the source pixel."""
+    import pypdfium2
+    source = report['images'][collage['image']] if 'image' in collage else {'file': collage['file'], 'pdf_page': 1}
+    path = Path(output)/SERVICE_DIR/'Миниатюры'/f'склейка {collage["id"]} r{report.get("revision", 0)}.png'
+    try:
+        with PDFIUM_LOCK, pypdfium2.PdfDocument(Path(output)/source['file']) as document:
+            pdf_page = document[source['pdf_page']-1]
+            try:
+                width, height = collage['size']
+                scale = min(COLLAGE_PREVIEW, max(width, height))/max(pdf_page.get_width(), pdf_page.get_height())
+                bitmap = pdf_page.render(scale=scale)
+                try:
+                    with bitmap.to_pil() as image:
+                        image.thumbnail((COLLAGE_PREVIEW, COLLAGE_PREVIEW), Image.Resampling.LANCZOS)
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        image.save(path, 'PNG')
+                finally:
+                    bitmap.close()
+            finally:
+                pdf_page.close()
+        return str(path.relative_to(output))
+    except Exception as error:
+        report.setdefault('preview_errors', []).append({'file': source['file'], 'error': str(error)})
+        return None
 
 
 def write_gallery(staging, report):
@@ -739,7 +781,7 @@ def write_gallery(staging, report):
     members = {}
     for index, entry in images:
         members.setdefault((entry_group(entry), entry['folder']), []).append((index, entry))
-    group_keys = sorted(members, key=lambda key: (key[1], key[0] is None, key[0] or 0))
+    group_keys = sorted(members, key=lambda key: (key[1], variant_sort_key(key[0])))
     for number, (variant, folder) in enumerate(group_keys, 1):
         entries = members[variant, folder]
         if variant is not None:
@@ -752,7 +794,7 @@ def write_gallery(staging, report):
         else:
             kind = 'caption'
         groups[kind].append((f'g{number}', folder, entries))
-    groups['variant'].sort(key=lambda group: group[2][0][1]['variant'])
+    groups['variant'].sort(key=lambda group: variant_sort_key(group[2][0][1]['variant']))
 
     def card(item, kind, anchor=None):
         index, entry = item
@@ -1348,12 +1390,54 @@ def extract(source, output=None, progress=None):
         raise ValueError('Некорректный путь временной папки.')
     folders, folder_owners = {}, {'без подписи': '__unsigned', 'на проверку': '__review',
                                  '_просмотр': '__preview', 'отчёт.json': '__report', 'просмотр.html': '__gallery'}
-    entries, errors, suppressed, folder_labels = [], [], [], {}
+    entries, errors, suppressed, folder_labels, collages = [], [], [], {}, []
     warnings = [page[key] for page in pages for key in ('scan_warning', 'quality_warning') if page.get(key)]
     conflict = perspective_conflict(pages)
     pdfium_document = None
     reader = None
     raw_workspace = None
+
+    def record_collages(page, paths, wholes, pieces, hinted):
+        """Keep the whole picture of each cut collage and offer edge-to-edge renders for cutting."""
+        folder = staging/SERVICE_DIR/COLLAGES_DIR
+        for number, item in enumerate(page.get('seam_sources', []), 1):
+            original = item['image']
+            raster = tuple(original[k] for k in ('x0', 'top', 'x1', 'bottom'))
+            members = pieces.get(raster, [])
+            if not members:
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder/f'Страница {page["number"]:03d} — склейка {number}.pdf'
+            whole = wholes.get(raster, ({},))[0]
+            saved = export_region(page, paths, [original], bounds([original]), 900+number, target,
+                                  whole.get('title'), quiet=True)
+            if 'error' in saved:
+                continue
+            # A huge raster may be stored reduced; the boxes follow the pixels actually kept.
+            scale = saved['size'][0]/original['srcsize'][0]
+            identifier = f'{page["number"]}-{number}'
+            checked = not item['thin'] and all(entries[index]['variant'] is not None for index in members)
+            collages.append({
+                'id': identifier, 'page': page['number'], 'state': 'auto', 'checked': checked,
+                'file': saved['file'], 'size': saved['size'], 'bbox': saved['bbox'], 'title': whole.get('title'),
+                'boxes': [[round(value*scale) for value in entries[index]['components'][0]['crop_px']]
+                          for index in members],
+                'reason': ('Разрезано по тонким линиям между кадрами одинакового размера.' if item['thin']
+                           else 'Разрезано по светлым полосам между кадрами.')})
+            for index in members:
+                entries[index]['collage'] = identifier
+        for number, (index, original) in enumerate(hinted, 1):
+            entry = entries[index]
+            sx, sy = entry['size'][0]/original['srcsize'][0], entry['size'][1]/original['srcsize'][1]
+            identifier = f'{page["number"]}-h{number}'
+            collages.append({
+                'id': identifier, 'page': page['number'], 'state': 'suspected', 'checked': False,
+                'image': index, 'size': entry['size'], 'title': entry['title'],
+                'suggestion': [[round(box[0]*sx), round(box[1]*sy), round(box[2]*sx), round(box[3]*sy)]
+                               for box in original['collage_hint']],
+                'reason': 'Рендеры стоят вплотную без светлых полос: программа предлагает разделить '
+                          'картинку на равные части, но сама не режет.'})
+            entry['collage'] = identifier
 
     def export_region(page, paths, group, box, sequence, target, title, quiet=False):
         """Write one region as a single-page PDF; return its report fields or an error record."""
@@ -1404,6 +1488,8 @@ def extract(source, output=None, progress=None):
                 groups.sort(key=lambda group: min(im['scan_order'] for im in group))
             planned_groups = [(group, group_suppression(page, group)) for group in groups]
             page['regions'] = [bounds(group) for group, suppression in planned_groups if suppression is None]
+            seam_sources = {}
+            seam_pieces, hinted = {}, []
             for sequence, (group, suppression) in enumerate(planned_groups, 1):
                 if progress:
                     progress({'stage': 'images', 'current': page['number'], 'total': len(pages),
@@ -1451,13 +1537,17 @@ def extract(source, output=None, progress=None):
                     match = {'status': 'unsigned', 'title': None, 'candidates': [],
                              'reason': 'Повторяющийся элемент шапки: подпись рендера к нему не применяется.'}
                 else:
-                    match = caption_for(page, box)
-                    match = whole_scan_caption(page, match)
-                    match = column_caption(page, box, match)
-                    match = selected_caption_with_variant(page, match)
-                    match = caption_with_variant_context(page, box, match)
+                    match = region_caption(page, box)
+                seam = len(group) == 1 and group[0].get('seam_cut')
+                if seam:
+                    raster = tuple(group[0]['source_bbox'])
+                    if raster not in seam_sources:
+                        whole = dict(zip(('x0', 'top', 'x1', 'bottom'), raster), repeated_static=False)
+                        seam_sources[raster] = (region_caption(page, whole), [])
+                    match = dict(seam_caption(box, match, *seam_sources[raster]), cut='seam')
                 if page.get('scan'):
-                    match['caption_method'] = 'windows_ocr' if not page['scan'].get('error') else 'unavailable'
+                    match['caption_method'] = ('pdf_text' if seam else 'windows_ocr'
+                                               if not page['scan'].get('error') else 'unavailable')
                 match, grouping_title = group_caption(match, conflict)
                 if match['status'] == 'named':
                     key = clean_text(grouping_title).casefold()
@@ -1490,6 +1580,11 @@ def extract(source, output=None, progress=None):
                     continue
                 entries.append(match | {'page': page['number'], 'sequence': sequence, 'folder': folder,
                                         **saved, 'components': components})
+                if seam:
+                    seam_pieces.setdefault(raster, []).append(len(entries)-1)
+                elif len(group) == 1 and group[0].get('collage_hint'):
+                    hinted.append((len(entries)-1, group[0]))
+            record_collages(page, paths, seam_sources, seam_pieces, hinted)
             if progress:
                 progress({'stage': 'images', 'current': page['number'], 'total': len(pages),
                           'found': sum(not entry.get('removed') for entry in entries)})
@@ -1515,6 +1610,7 @@ def extract(source, output=None, progress=None):
                   'counts_by_folder': dict(sorted(Counter(e['folder'] for e in active).items())),
                   'counts_by_status': dict(Counter(e['status'] for e in active)),
                   'warnings': warnings, 'errors': errors, 'images': entries, 'documents': documents,
+                  'collages': collages,
                   'suppressed': suppressed, 'counts_by_suppression': dict(Counter(item['suppression_code'] for item in suppressed)),
                   'perspective_conflict': conflict,
                   'note': 'Изображения каждого варианта объединены в один PDF в порядке исходных страниц '

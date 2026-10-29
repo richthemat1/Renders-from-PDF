@@ -4,16 +4,50 @@ import math
 import re
 import unicodedata
 
-FULL_VARIANT = re.compile(r'^Вариант\s*№?\s*(\d+)$', re.I)
-SHORT_VARIANT = re.compile(r'^[ВBV]\s*[-№]?\s*(\d+)$', re.I)
-VARIANT_LABEL = re.compile(r'\bвариант\s*№?\s*(\d+)\b', re.I)
+# «Вариант 3.1» is a subvariant of 3; only a dot joins the parts, so «Вариант 1, 2» still lists two.
+VARIANT_NUMBER = r'\d+(?:\.\d+)?'
+FULL_VARIANT = re.compile(rf'^Вариант\s*№?\s*({VARIANT_NUMBER})$', re.I)
+SHORT_VARIANT = re.compile(rf'^[ВBV]\s*[-№]?\s*({VARIANT_NUMBER})$', re.I)
+VARIANT_LABEL = re.compile(rf'\bвариант\s*№?\s*({VARIANT_NUMBER})\b', re.I)
+VARIANT_KEY = re.compile(r'(\d{1,3})(?:\.(\d{1,3}))?', re.A)
 NUMBERED_NAME = re.compile(r'^(?:№\s*)?(\d+)[.)]?\s+(.+)$')
 COMPARISON_HEADING = re.compile(r'\bсравн\w*\b.*\bвариант\w*\b', re.I)
 SELECTED_MARKER = re.compile(r'^(?:ВПМ|Выбранный\s+вариант)$', re.I)
 SELECTION_REFERENCE = re.compile(
     r'^(ВПМ|Выбранный\s+вариант)\s*[:—–-]?\s*'
-    r'(?:(?:вариант\s*№?\s*(\d+))|(?:№?\s*(\d+)\s*(?:вариант)?))$', re.I)
+    rf'(?:(?:вариант\s*№?\s*({VARIANT_NUMBER}))|(?:№?\s*({VARIANT_NUMBER})\s*(?:вариант)?))$', re.I)
 PLAN_CAPTION = re.compile(r'\b(?:схем\w*|ситуационн\w*|генплан\w*|карт[аыуе]\w*|ПОЗУ|планировочн\w*)\b', re.I)
+
+
+def variant_key(value):
+    """A whole variant stays an int (3, as in older reports); a subvariant is the string '3.1'."""
+    match = VARIANT_KEY.fullmatch(str(value).strip().replace(',', '.'))
+    major = match and int(match[1])
+    minor = match and match[2] and int(match[2])
+    if not match or not 1 <= major <= 999 or minor == 0:
+        raise ValueError(f'Некорректный номер варианта: {value}')
+    return f'{major}.{minor}' if minor else major
+
+
+def found_variant(text):
+    """A variant number read from a presentation, or None when it is out of range."""
+    try:
+        return variant_key(text)
+    except ValueError:
+        return None
+
+
+def variant_sort_key(key):
+    """Order 3 before 3.1 and 3.2 before 3.10; no variant goes last."""
+    if key is None:
+        return (1000, 0)
+    major, _, minor = str(key).partition('.')
+    return (int(major), int(minor or 0))
+
+
+def variant_parent(key):
+    """The whole variant a key belongs to: 3 for '3.1' and for 3."""
+    return int(str(key).partition('.')[0])
 
 
 def clean_text(value):
@@ -94,8 +128,9 @@ def text_lines(words):
 
 def prepare_captions(pages):
     repeated = Counter()
-    explicit_variants = {int(match[1]) for page in pages for line in page['lines']
-                         if (match := FULL_VARIANT.fullmatch(line['text']))}
+    explicit_variants = {key for page in pages for line in page['lines']
+                         if (match := FULL_VARIANT.fullmatch(line['text']))
+                         and (key := found_variant(match[1])) is not None}
     for page in pages:
         repeated.update({line['text'].casefold() for line in page['lines']
                          if line['top'] < page['height']*.13})
@@ -120,9 +155,10 @@ def prepare_captions(pages):
         for line in merged:
             full = FULL_VARIANT.fullmatch(line['text'])
             short = SHORT_VARIANT.fullmatch(line['text'])
-            if full or (short and int(short[1]) in explicit_variants):
+            key = found_variant((full or short)[1]) if full or short else None
+            if key is not None and (full or key in explicit_variants):
                 line.setdefault('source_text', line['text'])
-                line['text'] = f'Вариант {int((full or short)[1])}'
+                line['text'] = f'Вариант {key}'
         page['captions'] = merged
     prepare_numbered_variant_labels(pages)
 
@@ -133,11 +169,11 @@ def prepare_numbered_variant_labels(pages):
     for page in pages:
         for line in page['lines']+page['captions']:
             full = VARIANT_LABEL.match(line['text'])
-            if not full or variant_numbers(line['text']) != {int(full[1])}:
+            if not full or variant_numbers(line['text']) != {found_variant(full[1])}:
                 continue
             name = clean_text(line['text'][full.end():].lstrip(' .:;|—–-'))
             if name and not name[0].isdigit() and re.search(r'[^\W\d_]', name):
-                references.setdefault((int(full[1]), name.casefold()), page['number'])
+                references.setdefault((found_variant(full[1]), name.casefold()), page['number'])
     for page in pages:
         if not any(line['top'] < page['height']*.25 and COMPARISON_HEADING.search(line['text'])
                    for line in page['lines']):
@@ -161,11 +197,12 @@ def prepare_numbered_variant_labels(pages):
 
 def variant_numbers(text):
     found = list(VARIANT_LABEL.finditer(text or ''))
-    numbers = {int(item[1]) for item in found}
+    numbers = {found_variant(item[1]) for item in found}
     for item in found:
-        following = re.match(r'\s*(?:[/,–-]|и)\s*№?\s*(\d+)\b', text[item.end():], re.I)
+        following = re.match(rf'\s*(?:[/,–-]|и)\s*№?\s*({VARIANT_NUMBER})\b', text[item.end():], re.I)
         if following:
-            numbers.add(int(following[1]))
+            numbers.add(found_variant(following[1]))
+    numbers.discard(None)
     return numbers
 
 

@@ -1,4 +1,4 @@
-Third-party license notices for PDF Photos 3.33.
+Third-party license notices for PDF Photos 3.34.
 Built using Python and PyInstaller.
 Optional OCR calls the Windows-provided Windows.Media.Ocr API through Windows PowerShell 5.1.
 Microsoft Windows OCR binaries and language packs are not redistributed with this program.

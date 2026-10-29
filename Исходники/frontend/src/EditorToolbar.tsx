@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, Ellipsis, FolderInput,
-  LoaderCircle, Plus, RotateCcw, Save, SquarePen, Trash2, TriangleAlert, Undo2,
+  LoaderCircle, Plus, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
 } from "lucide-react";
 import { ActionMenu, Dialog } from "./components";
 import type { ActionMenuItem } from "./components";
@@ -35,6 +35,9 @@ interface Props {
   onUndoSave(): void;
   onRemove(): void;
   onCopy(): void;
+  /** Open the cut editor for the one selected picture. */
+  onCut(): void;
+  canCut: boolean;
   onUndo(): void;
   onReset(): void;
   onSave(): void;
@@ -89,6 +92,7 @@ export function EditorToolbar(props: Props) {
     { value: "new", label: "Новый вариант", icon: <Plus size={16} />, disabled: noSelection },
     { value: "copy", label: "Создать копии выбранных", icon: <Copy size={16} />,
       disabled: props.saving || !props.selectedActive },
+    { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: props.saving || !props.canCut },
     { value: "up", label: "Раньше в варианте", icon: <ArrowUp size={16} />,
       disabled: props.saving || !props.canMoveUp },
     { value: "down", label: "Позже в варианте", icon: <ArrowDown size={16} />,
@@ -114,6 +118,7 @@ export function EditorToolbar(props: Props) {
     else if (value.startsWith("move:")) props.onMove(value.slice(5));
     else if (value === "new") props.onNewVariant();
     else if (value === "copy") props.onCopy();
+    else if (value === "cut") props.onCut();
     else if (value === "up") props.onReorder(-1);
     else if (value === "down") props.onReorder(1);
     else if (value === "start" || value === "end") props.onMoveEdge(value);
