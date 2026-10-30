@@ -82,9 +82,6 @@
 .history-entry .history-name small {
   line-height: 1.5;
 }
-.help-dialog {
-  width: min(720px, calc(100vw - 40px));
-}
 .repeat-list {
   margin: 16px 0;
   padding-left: var(--space-4);

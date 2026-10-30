@@ -27,6 +27,8 @@ import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import { ProcessingPage } from "./ProcessingPage";
 import { failureMessage } from "./processing-model";
+import { HelpDialog } from "./Help";
+import type { HelpTopic } from "./Help";
 import "./app-ux.css";
 import "./history-visual.css";
 
@@ -40,7 +42,7 @@ export function App() {
     null,
   );
   const [waiting, setWaiting] = useState(false);
-  const [help, setHelp] = useState(false);
+  const [help, setHelp] = useState<HelpTopic | null>(null);
   const [fileDrag, setFileDrag] = useState(false);
   const [, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -326,7 +328,7 @@ export function App() {
           Настройки
         </span>
       </button>
-      <button className="project-link" title="Как пользоваться" onClick={() => setHelp(true)}>
+      <button className="project-link" title="Как пользоваться" onClick={() => setHelp("start")}>
         <span>
           <CircleHelp size={17} />
           Как пользоваться
@@ -413,33 +415,8 @@ export function App() {
           </div>
         </div>
       </Dialog>}</Presence>
-      <Presence>{help && (
-        <Dialog title="Как пользоваться" className="help-dialog" onClose={() => setHelp(false)}>
-          <ol className="help-list">
-            <li>Выберите PDF или перетащите файлы и папки из Проводника. Обработка начнётся сразу.</li>
-            <li>Откройте результат в этом окне. «Разобрать» на панели проверки сразу покажет изображения без подписи и на проверку — в режиме правки.</li>
-            <li>Отметьте карточки флажками (Ctrl или Shift — несколько), перенесите их в нужный вариант или уберите. Файлы меняются только по «Сохранить».</li>
-            <li>«Склейки» — картинки из нескольких рендеров: проверьте, как программа их разрезала, или разрежьте вручную.</li>
-            <li>«Вырезки» — если поверх рендера лежит схема, обведите на странице PDF только нужную часть.</li>
-            <li>В крупном просмотре ←/→ листают изображения, колесо меняет масштаб, «Исходная страница» показывает слайд целиком.</li>
-          </ol>
-          <p>
-            Исходные PDF не меняются. Прежние версии файлов результата
-            сохраняются в резервных копиях, а убранные изображения можно вернуть
-            из раздела «Убранные».
-          </p>
-          <p className="muted">
-            Ctrl+O — выбрать PDF · Ctrl+K — поиск · Ctrl+A — выделить видимые ·
-            Ctrl+Z — отменить правку · Delete — убрать выбранное.
-          </p>
-          <div className="dialog-choices">
-            <button className="btn primary" onClick={() => setHelp(false)}>Понятно</button>
-            <div className="dialog-alternatives">
-              <button className="btn secondary" onClick={() => void run(async () => { await native("open_help"); })}><FileText size={16} />Открыть полную инструкцию</button>
-            </div>
-          </div>
-        </Dialog>
-      )}</Presence>
+      <Presence>{help && <HelpDialog topic={help} onClose={() => setHelp(null)}
+        onOpenGuide={() => void run(async () => { await native("open_help"); })} />}</Presence>
     </>
   );
   if (page === "viewer" && result)
@@ -454,6 +431,7 @@ export function App() {
           onDirty={trackDirty}
           onBack={() => navigate("history")}
           onSaveReady={registerSave}
+          onHelp={setHelp}
         />
         {chrome}
       </>

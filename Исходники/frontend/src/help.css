@@ -1,0 +1,991 @@
+/* «Как пользоваться» — one help window with sections: tabs on the left, the section on the right, a footer across.
+ * The window keeps the card language of the small dialogs; inside, each section opens with a sketch whose numbered
+ * pins are the numbers of the steps under it. Selectors start from .help-center and outweigh the shared
+ * `.dialog:not(.preview-dialog) …` rules, which styles.css loads after this file. */
+.dialog.help-center {
+  container: help / inline-size;
+  width: min(920px, calc(100vw - 40px));
+  height: min(728px, calc(100vh - 48px));
+  max-height: none;
+  padding: 0;
+  overflow: hidden;
+}
+.dialog.help-center[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dialog.help-center:not(.preview-dialog) .dialog-heading {
+  flex-shrink: 0;
+  gap: 12px;
+  margin: 0;
+  padding: 16px 20px 16px 24px;
+  border-bottom: 1px solid #eceef3;
+}
+.dialog.help-center:not(.preview-dialog) .dialog-heading h2 {
+  flex: 1;
+  font-size: 17px;
+  line-height: 24px;
+}
+.dialog.help-center .dialog-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #f0f2ff;
+  color: #4050be;
+}
+/* Prose takes its size and colour from the block around it. */
+.dialog.help-center:not(.preview-dialog) p {
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.help-center h3,
+.help-center h4 {
+  margin: 0;
+}
+
+.help-center .help-body {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.help-center .help-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px 12px;
+  border-right: 1px solid #eceef3;
+  background: #f7f8fb;
+  overflow-y: auto;
+}
+.help-center .help-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.help-center .help-tab,
+.help-center .help-guide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: left;
+  transition: background-color 0.15s, color 0.15s;
+}
+.help-center .help-tab {
+  width: 100%;
+  color: #3b4556;
+}
+.help-center .help-tab-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: #647184;
+}
+.help-center .help-tab:hover,
+.help-center .help-guide:hover {
+  background: #eceef4;
+}
+.help-center .help-tab[aria-selected="true"] {
+  background: #e9edff;
+  color: #3a49b3;
+  font-weight: 700;
+}
+.help-center .help-tab[aria-selected="true"] .help-tab-icon {
+  color: #4050be;
+}
+.help-center .help-guide {
+  margin-top: auto;
+  color: #4050be;
+}
+/* Inside the scrolling menu and panel the ring is drawn inward, so the edge never cuts it off. */
+.help-center .help-tab:focus-visible,
+.help-center .help-guide:focus-visible,
+.help-center .help-panel:focus-visible {
+  outline: 2px solid #8190f0;
+  outline-offset: -2px;
+}
+
+.help-center .help-panel {
+  container: help-panel / inline-size;
+  min-width: 0;
+  min-height: 0;
+  padding: 28px 32px 32px;
+  overflow-y: auto;
+}
+.help-center .help-article {
+  max-width: 640px;
+}
+.help-center .help-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #5d6678;
+  font-size: 14px;
+  line-height: 22px;
+}
+.help-center .help-heading h3 {
+  color: #232432;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+}
+.help-center .help-heading p {
+  max-width: 62ch;
+}
+
+/* Steps: a real sequence, so they are numbered and joined by a line. */
+.help-center .help-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.help-center .help-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  column-gap: 14px;
+  padding-bottom: 20px;
+}
+.help-center .help-step:last-child {
+  padding-bottom: 0;
+}
+.help-center .help-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 32px;
+  bottom: 6px;
+  left: 12px;
+  width: 2px;
+  border-radius: 1px;
+  background: #e4e7f1;
+}
+.help-center .help-number,
+.help-center .hf-pin {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #5969db;
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.help-center .help-number {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+.help-center .help-step-copy h4 {
+  padding-top: 2px;
+  color: #232432;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+}
+.help-center .help-step-text {
+  margin-top: 4px;
+  color: #4a5466;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+/* Names of buttons and menu items as they read in the window, and keys as keys. */
+.help-center .help-ui {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid #e1e4ec;
+  border-radius: 6px;
+  background: #f6f7fa;
+  color: #283241;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.help-center .help-path svg {
+  margin: 0 3px;
+  color: #8a93a3;
+  vertical-align: -1px;
+}
+.help-center .help-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+.help-center kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border: 1px solid #d9dde6;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: #30313d;
+  font: 700 12px/18px "Manrope Variable", "Manrope", sans-serif;
+  text-align: center;
+}
+.help-center .help-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #4050be;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.help-center .help-link:hover {
+  color: #2f3c9c;
+}
+
+/* A label and what it means: the same badges as on the cards and in «Склейки». */
+.help-center .help-terms {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px 14px;
+  margin: 10px 0;
+}
+.help-center .help-terms > div {
+  display: contents;
+}
+.help-center .help-terms dt,
+.help-center .help-terms dd,
+.help-center .help-menu dt,
+.help-center .help-menu dd,
+.help-center .help-keymap dt,
+.help-center .help-keymap dd {
+  margin: 0;
+}
+.help-center .help-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.help-center .help-badge.review,
+.help-center .hf-tag.review {
+  background: #ffd57b;
+  color: #47320e;
+}
+.help-center .help-badge.unsigned,
+.help-center .hf-tag.unsigned {
+  background: #fff;
+  color: #4e5360;
+  box-shadow: inset 0 0 0 1px #dfe3ea;
+}
+.help-center .help-badge.removed {
+  background: #f4e9ed;
+  color: #72545f;
+}
+
+.help-center .help-group {
+  margin-top: 24px;
+}
+.help-center .help-group h4 {
+  color: #232432;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 22px;
+}
+.help-center .help-menu,
+.help-center .help-keymap {
+  margin: 10px 0 0;
+  border: 1px solid #e7e7ef;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.help-center .help-menu > div {
+  display: grid;
+  grid-template-columns: minmax(0, 17em) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px 16px;
+  padding: 10px 14px;
+}
+.help-center .help-menu > div + div,
+.help-center .help-keymap > div + div {
+  border-top: 1px solid #eef0f4;
+}
+.help-center .help-menu dt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.help-center .help-menu dd,
+.help-center .help-terms dd {
+  color: #4a5466;
+  font-size: 13px;
+  line-height: 20px;
+}
+.help-center .help-keymap > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+.help-center .help-keymap dt {
+  color: #30313d;
+  font-size: 13px;
+  line-height: 20px;
+}
+.help-center .help-keymap dd {
+  flex-shrink: 0;
+  color: #5d6678;
+  font-size: 12.5px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.help-center .help-note {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid #eceef3;
+  border-radius: 12px;
+  background: #f7f8fb;
+}
+.help-center .help-note h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #30313d;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+}
+.help-center .help-note h4 svg {
+  flex-shrink: 0;
+  color: #8a5a12;
+}
+.help-center .help-note ul {
+  margin: 8px 0 0;
+  padding-left: 24px;
+  color: #4a5466;
+  font-size: 13px;
+  line-height: 20px;
+}
+.help-center .help-note li + li {
+  margin-top: 6px;
+}
+.help-center .help-note li::marker {
+  color: #a0a7b4;
+}
+.help-center .help-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 24px;
+  padding: 12px 16px;
+  border: 1px solid #e4e7ef;
+  border-radius: 12px;
+  background: #fff;
+  color: #3a49b3;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.help-center .help-next:hover {
+  border-color: #c9d0f3;
+  background: #f7f8ff;
+}
+
+.help-center .help-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 12px 20px 12px 24px;
+  border-top: 1px solid #eceef3;
+}
+.help-center .help-safe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #56657a;
+  font-size: 12px;
+  line-height: 18px;
+}
+.help-center .help-safe svg {
+  flex-shrink: 0;
+}
+.help-center .help-footer .btn {
+  min-width: 132px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+/* Sketches: the window's parts in miniature. They repeat what the steps say, so screen readers skip them. */
+.help-center .help-figure {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 20px 0 0;
+  padding: 24px 20px;
+  border: 1px solid #e9ebf2;
+  border-radius: 14px;
+  background: #f5f6fa;
+  color: #4c5668;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 16px;
+  overflow: hidden;
+}
+.help-center .help-figure.is-stacked {
+  flex-direction: column;
+}
+.help-center .hf-pin {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #fff;
+}
+.help-center .hf-arrow {
+  flex-shrink: 0;
+  color: #a3abb9;
+}
+.help-figure .tone-1 { background: #dbe3f4; }
+.help-figure .tone-2 { background: #e5dff0; }
+.help-figure .tone-3 { background: #d9e9e3; }
+.help-figure .tone-4 { background: #efe6d8; }
+.help-center .hf-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #e4e7ee;
+}
+.help-center .hf-bar.is-short {
+  width: 60%;
+}
+.help-center .hf-bar.is-title {
+  width: 140px;
+  height: 8px;
+  background: #dfe3ea;
+}
+.help-center .hf-doc,
+.help-center .hf-grid,
+.help-center .hf-variants,
+.help-center .hf-btn,
+.help-center .hf-card,
+.help-center .hf-chip,
+.help-center .hf-tabs > span,
+.help-center .hf-switch > span,
+.help-center .hf-round,
+.help-center .hf-zoom {
+  position: relative;
+}
+.help-center .hf-doc {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 6px;
+  width: 72px;
+  height: 92px;
+  padding: 34px 10px 10px;
+  border: 1px solid #dfe3ea;
+  border-radius: 6px 16px 6px 6px;
+  background: #fff;
+}
+.help-center .hf-doc-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef0f5;
+  font-weight: 700;
+}
+.help-center .hf-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #dfe3ea;
+  border-radius: 10px;
+  background: #fff;
+}
+.help-center .hf-thumb {
+  height: 28px;
+  border-radius: 4px;
+}
+.help-center .hf-thumb.is-flagged {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #e0a43a;
+}
+.help-center .hf-variants {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.help-center .hf-variant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  border: 1px solid #dfe3ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #30313d;
+  white-space: nowrap;
+}
+.help-center .hf-variant i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.help-center .hf-variant .dot-1 { background: #5969db; }
+.help-center .hf-variant .dot-2 { background: #2f7d63; }
+.help-center .hf-variant .dot-3 { background: #c08a2e; }
+.help-center .hf-window {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 440px);
+  padding: 12px;
+  border: 1px solid #dfe3ea;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px #28243f0d;
+}
+.help-center .hf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.help-center .hf-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid #e7e9f0;
+  border-radius: 9px;
+  background: #fafbfd;
+  color: #647184;
+}
+.help-center .hf-strip .hf-bar {
+  flex: 1;
+}
+.help-center .hf-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #dfe3ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #30313d;
+  white-space: nowrap;
+}
+.help-center .hf-btn.is-primary {
+  border-color: #5969db;
+  background: #5969db;
+  color: #fff;
+}
+.help-center .hf-btn.is-target {
+  border-color: #9aa6ef;
+  box-shadow: 0 0 0 3px #dfe3fc;
+}
+.help-center .hf-btn.is-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: #4050be;
+}
+.help-center .hf-cards {
+  display: flex;
+  gap: 10px;
+}
+.help-center .hf-card {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 100px;
+  padding: 5px;
+  border: 1px solid #dfe3ea;
+  border-radius: 9px;
+  background: #fff;
+}
+.help-center .hf-review .hf-card {
+  flex: 1;
+  flex-shrink: 1;
+  width: auto;
+}
+.help-center .hf-card.is-picked {
+  border-color: #5969db;
+  box-shadow: 0 0 0 1px #5969db;
+}
+.help-center .hf-img {
+  display: block;
+  height: 60px;
+  border-radius: 5px;
+}
+.help-center .hf-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.help-center .hf-open {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 1px 2px #28243f1a;
+}
+.help-center .hf-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #b7bdca;
+  border-radius: 4px;
+  background: #fff;
+  color: #fff;
+}
+.help-center .hf-check.is-on {
+  border-color: #5969db;
+  background: #5969db;
+}
+.help-center .hf-dock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid #dfe3ea;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 6px 18px #28243f14;
+}
+.help-center .hf-dock-count {
+  margin-right: 4px;
+  color: #30313d;
+  white-space: nowrap;
+}
+.help-center .hf-collages {
+  width: min(100%, 470px);
+}
+.help-center .hf-tabs {
+  display: flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: #f1f3f7;
+}
+.help-center .hf-tabs > span {
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: #5d6678;
+  white-space: nowrap;
+}
+.help-center .hf-tabs > span.is-active {
+  background: #fff;
+  color: #30313d;
+  box-shadow: 0 1px 2px #28243f1a;
+}
+.help-center .hf-collage {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.help-center .hf-split {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex-shrink: 0;
+  gap: 3px;
+  width: 168px;
+  height: 92px;
+  padding: 3px;
+  border: 1px solid #dfe3ea;
+  border-radius: 8px;
+  background: #fff;
+}
+.help-center .hf-split > span {
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px #5969db;
+}
+.help-center .hf-collage-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.help-center .hf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.help-center .hf-chip.blue {
+  background: #eef1ff;
+  color: #4050be;
+}
+.help-center .hf-card.is-large {
+  width: 150px;
+}
+.help-center .hf-card.is-large .hf-img {
+  height: 100px;
+}
+.help-center .hf-btn.hf-over {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 2px 6px #28243f1f;
+}
+.help-center .hf-cutout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.help-center .hf-page {
+  position: relative;
+  width: 200px;
+  height: 124px;
+  border: 1px solid #dfe3ea;
+  background: #fff;
+  box-shadow: 0 2px 6px #28243f12;
+}
+.help-center .hf-page-picture {
+  position: absolute;
+  inset: 14px;
+  border-radius: 2px;
+  background: #e5dff0;
+}
+.help-center .hf-page-scheme {
+  position: absolute;
+  top: 24px;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 50px;
+  padding: 7px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 1px 3px #28243f1f;
+}
+.help-center .hf-page-scheme i {
+  height: 5px;
+  border-radius: 3px;
+  background: #c9ced9;
+}
+.help-center .hf-page-scheme i:nth-child(2) {
+  width: 70%;
+}
+.help-center .hf-frame {
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 14px;
+  width: 100px;
+  border: 2px solid #5969db;
+  border-radius: 2px;
+  background: #5969db14;
+}
+.help-center .hf-frame i {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #5969db;
+  border-radius: 2px;
+  background: #fff;
+}
+.help-center .hf-frame i:nth-child(1) { top: -5px; left: -5px; }
+.help-center .hf-frame i:nth-child(2) { top: -5px; right: -5px; }
+.help-center .hf-frame i:nth-child(3) { bottom: -5px; left: -5px; }
+.help-center .hf-frame i:nth-child(4) { right: -5px; bottom: -5px; }
+.help-center .hf-frame .hf-pin {
+  top: 50%;
+  right: -12px;
+  transform: translateY(-50%);
+}
+.help-center .hf-stage {
+  position: relative;
+  display: block;
+  width: min(100%, 460px);
+  height: 196px;
+  border-radius: 12px;
+  background: #e9ecf2;
+}
+.help-center .hf-stage-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 186px;
+  height: 90px;
+  border-radius: 3px;
+  box-shadow: 0 2px 8px #28243f1f;
+  transform: translate(-50%, -50%);
+}
+.help-center .hf-switch,
+.help-center .hf-zoom {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 3px #28243f1f;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.help-center .hf-switch {
+  top: 12px;
+  gap: 2px;
+  padding: 3px;
+}
+.help-center .hf-switch > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  color: #5d6678;
+}
+.help-center .hf-switch > span.is-target {
+  background: #eef1ff;
+  color: #3a49b3;
+}
+.help-center .hf-zoom {
+  bottom: 12px;
+  gap: 9px;
+  height: 30px;
+  padding: 0 10px;
+  color: #30313d;
+}
+.help-center .hf-zoom b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.help-center .hf-zoom i {
+  width: 1px;
+  height: 14px;
+  background: #dfe3ea;
+}
+.help-center .hf-round {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #fff;
+  color: #30313d;
+  box-shadow: 0 1px 3px #28243f1f;
+  transform: translateY(-50%);
+}
+.help-center .hf-round.is-left {
+  left: 14px;
+}
+.help-center .hf-round.is-right {
+  right: 14px;
+}
+
+/* A narrow window: the sections move above the text and wrap; a narrow panel drops what no longer fits. */
+@container help (max-width: 720px) {
+  .help-center .help-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .help-center .help-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 12px;
+    border-right: 0;
+    border-bottom: 1px solid #eceef3;
+    overflow: visible;
+  }
+  .help-center .help-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .help-center .help-tab,
+  .help-center .help-guide {
+    width: auto;
+    min-height: 34px;
+    margin-top: 0;
+    padding: 6px 10px;
+  }
+  .help-center .help-panel {
+    padding: 22px 20px 24px;
+  }
+}
+@container help (max-width: 520px) {
+  .help-center .help-footer .btn {
+    width: 100%;
+  }
+}
+@container help-panel (max-width: 600px) {
+  .help-center .hf-dock .hf-btn:not(.is-target, .is-primary) {
+    display: none;
+  }
+}
+@container help-panel (max-width: 520px) {
+  .help-center .help-figure {
+    display: none;
+  }
+  .help-center .help-terms,
+  .help-center .help-menu > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .help-center .help-terms dt + dd {
+    margin-bottom: 6px;
+  }
+}

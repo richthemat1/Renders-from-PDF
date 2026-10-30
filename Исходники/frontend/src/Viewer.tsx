@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
 import { ActionMenu, Dialog, Empty, Select, Shell, StatusNote, VariantSuggestions } from "./components";
+import type { HelpTopic } from "./Help";
 import {
   boxRect,
   createDraft,
@@ -97,6 +98,7 @@ export function Viewer({
   onDirty,
   onBack,
   onSaveReady,
+  onHelp,
 }: {
   result: Result;
   footer: ReactNode;
@@ -105,6 +107,8 @@ export function Viewer({
   onDirty(dirty: boolean): void;
   onBack(): void;
   onSaveReady?(save: (() => Promise<boolean>) | null): void;
+  /** Open the help window on a section: the editor's «?» opens «Редактирование». */
+  onHelp?(topic: HelpTopic): void;
 }) {
   const initial = useMemo(() => createDraft(result.report), [result]);
   const [draftState, setDraft] = useState<Draft>(initial);
@@ -1118,6 +1122,7 @@ export function Viewer({
             onUndoSave={() => void undoSaved(result)}
             onRemove={() => change({ type: "remove", ids: selectedActive })}
             onCopy={() => startCopy(selectedActive)}
+            onHelp={() => onHelp?.("edit")}
             sameSize={sameSizeIds.length}
             onSelectSameSize={() => setSelected((ids) => [...new Set([...ids, ...sameSizeIds])])}
             canCut={selectedActive.length === 1}

@@ -1937,20 +1937,6 @@ details[open] > summary::after {
   line-height: 1.6;
   max-width: 70ch;
 }
-/* The steps lead; the note and the shortcuts under them stay quieter. */
-.help-list {
-  padding-left: var(--space-4);
-  color: #2f3a4a;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.help-list li {
-  margin: 8px 0;
-}
-.dialog.help-dialog p {
-  font-size: var(--text-small);
-  line-height: 1.6;
-}
 /* Notices — Figma 85:855 / 85:842: a white card with a mark, a title, a detail and the action under them. */
 .toast {
   position: fixed;
