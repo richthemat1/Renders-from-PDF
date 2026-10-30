@@ -119,6 +119,11 @@ class ProcessingPageUI(unittest.TestCase):
         self.refresh()
         panel = self.page.locator('.job-panel[data-outcome="complete"]')
         expect(panel).to_contain_text(second.name)
+        # The totals add both files up, so each file of the queue is listed with its own result.
+        rows = panel.locator('.processing-batch .history-row')
+        expect(rows).to_have_count(2)
+        expect(rows.nth(0)).to_contain_text(first.name)
+        expect(rows.nth(1)).to_contain_text(second.name)
         older = next(item for item in state['history'] if item['source'] == str(first))
         self.page.get_by_role('button', name='История обработки', exact=True).click()
         self.page.locator('.history-row').filter(has_text=older['name']).click()
@@ -139,6 +144,9 @@ class ProcessingPageUI(unittest.TestCase):
         self.refresh()
         result = self.page.locator('.processing-operation')
         next_pdf = self.page.get_by_role('complementary', name='Новая обработка', exact=True)
+        # «Открыть результат» is the one main action; the next choice steps back beside it.
+        expect(self.page.locator('.processing-page .btn.primary')).to_have_count(1)
+        expect(next_pdf.get_by_role('button', name='Выбрать PDF', exact=True)).to_have_class('btn secondary')
         for width, height in ((1600, 1000), (1440, 900), (1100, 760), (800, 640), (780, 620)):
             with self.subTest(viewport=(width, height)):
                 self.page.set_viewport_size({'width': width, 'height': height})

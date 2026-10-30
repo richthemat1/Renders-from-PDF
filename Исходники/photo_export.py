@@ -26,8 +26,8 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
                           text_lines, tile_groups, found_variant, variant_numbers, variant_sort_key)
-from photo_scan import (analyse_scans, blank_layer_ink, column_caption, is_large_raster, LARGE_RASTER_PIXELS,
-                        native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
+from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, drawn_share, is_large_raster,
+                        LARGE_RASTER_PIXELS, native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
                         prepare_scan_continuations, seam_caption, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
@@ -41,7 +41,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.36'
+VERSION = '3.37'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -134,6 +134,14 @@ def has_service_dir(report):
 def group_title(key, report=None):
     """A variant keeps its number; a manual rename only changes the name of its folder and PDF."""
     return ((report or {}).get('variant_names') or {}).get(str(key), f'Вариант {key}')
+
+
+def drop_empty_folders(folder, root):
+    """Remove folder and its empty parents up to root, after its only picture was set aside."""
+    folder, root = Path(folder), Path(root)
+    while folder != root and root in folder.parents and folder.is_dir() and not any(folder.iterdir()):
+        folder.rmdir()
+        folder = folder.parent
 
 
 def hide(path):
@@ -476,6 +484,16 @@ def prepare_image_quality(source, pages):
                 clusters.append(near)
         static_pages = sorted({page['number'] for cluster in clusters for page, _ in cluster})
         if not static_pages:
+            # A key plan of the site keeps its pixels but moves to a free corner of each slide.
+            # Without a stable place it takes one page more than a static asset: a small photo
+            # shown again on three slides is still a photo, on four or more it is an auxiliary picture.
+            small = [(page, image) for page, image in occurrences
+                     if (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height']) <= .05
+                     and not region_is_clipped(page, image)]
+            pages_seen = sorted({page['number'] for page, _ in small})
+            if len(small) == len(occurrences) and len(pages_seen) >= 4:
+                for page, image in small:
+                    image['repeated_resource'] = {'pages': pages_seen, 'identity_sha256': image['identity_sha256']}
             continue
         for page, image in eligible:
             # A stable placement proves the auxiliary asset's role. The same small
@@ -515,6 +533,12 @@ def group_suppression(page, group):
     if all(image.get('repeated_static') for image in group) and not any('scan_crop_px' in image for image in group):
         return {'suppression_code': 'repeated_static', 'reason': 'Одинаковый вспомогательный элемент повторяется в одном месте не менее чем на трёх страницах.',
                 'evidence': [image['repeated_static'] for image in group]}
+    if all(image.get('repeated_resource') for image in group) and not any('scan_crop_px' in image for image in group):
+        pages = group[0]['repeated_resource']['pages']
+        return {'suppression_code': 'repeated_resource',
+                'reason': f'Одна и та же небольшая картинка повторяется на {len(pages)} страницах в разных местах слайда — '
+                          'например, план-схема участка.',
+                'evidence': [image['repeated_resource'] for image in group]}
     left, top = page['origin']
     width = max(0, min(box['x1'], left+page['width'])-max(box['x0'], left))
     height = max(0, min(box['bottom'], top+page['height'])-max(box['top'], top))
@@ -1462,8 +1486,43 @@ def extract(source, output=None, progress=None):
                           'картинку на равные части, но сама не режет.'})
             entry['collage'] = identifier
 
-    def export_region(page, paths, group, box, sequence, target, title, quiet=False):
-        """Write one region as a single-page PDF; return its report fields or an error record."""
+    def set_aside(page, paths, group, box, sequence, components, suppression):
+        """Record a service element and keep a recoverable copy: the filters are heuristics."""
+        first = group[0]
+        if len(group) == 1:
+            crop = first.get('scan_crop_px')
+            suppressed_size = [crop[2]-crop[0], crop[3]-crop[1]] if crop else list(first['srcsize'])
+        else:
+            suppressed_size = [round((box['x1']-box['x0'])*first['srcsize'][0]/max(first['x1']-first['x0'], .01)),
+                               round((box['bottom']-box['top'])*first['srcsize'][1]/max(first['bottom']-first['top'], .01))]
+        record = {'page': page['number'], 'sequence': sequence,
+                  'bbox': [round(box[k], 3) for k in ('x0', 'top', 'x1', 'bottom')],
+                  'size': suppressed_size, 'components': components, **suppression}
+        suppressed.append(record)
+        service_folder = staging/SERVICE_DIR/SUPPRESSED_DIR
+        name = f'Страница {page["number"]:03d} — {sequence:03d}.pdf'
+        if len(str(destination/SERVICE_DIR/SUPPRESSED_DIR/name)) > 239:
+            record['export_error'] = 'Путь результата слишком длинный для копии служебного элемента.'
+            return
+        service_folder.mkdir(parents=True, exist_ok=True)
+        saved = export_region(page, paths, group, box, sequence, service_folder/name, None, quiet=True)
+        if 'error' in saved:
+            record['export_error'] = saved['error']
+            return
+        record['image'] = len(entries)
+        entries.append({'status': 'unsigned', 'title': None, 'candidates': [],
+                        'reason': suppression['reason'], 'variant': None, 'group': None,
+                        'page': page['number'], 'sequence': sequence, 'folder': 'Без подписи',
+                        **saved, 'components': components, 'removed': True, 'suppressed': True,
+                        'suppression_code': suppression['suppression_code'],
+                        'original_location': {'folder': 'Без подписи', 'status': 'unsigned',
+                                              'label': 'Без подписи',
+                                              'reason': 'Возвращено вручную из служебных элементов.'}})
+
+    def export_region(page, paths, group, box, sequence, target, title, quiet=False, blank_check=False):
+        """Write one region as a single-page PDF; return its report fields or an error record.
+
+        With blank_check, a raster with almost nothing drawn returns {'blank': share} and writes nothing."""
         nonlocal pdfium_document
         base = raw_folder/f'{page["number"]:03d}-{sequence:03d}'
         try:
@@ -1480,6 +1539,15 @@ def extract(source, output=None, progress=None):
                                      'reason': str(error), 'fallback': 'Снимок области страницы, 200 dpi.'})
             except Exception as fallback_error:
                 return {'error': str(error), 'fallback_error': str(fallback_error)}
+        if blank_check:
+            try:
+                share = drawn_share(raster)
+            except Exception:
+                # The measure only refines the result: a raster it cannot read is exported as before.
+                share = None
+            if share is not None and share < BLANK_DRAWN_SHARE:
+                raster.unlink(missing_ok=True)
+                return {'blank': round(share, 6)}
         bbox = [box[k] for k in ('x0', 'top', 'x1', 'bottom')]
         try:
             with raster.open('rb') as stream:
@@ -1523,37 +1591,7 @@ def extract(source, output=None, progress=None):
                                **({'crop_px': im['scan_crop_px'], 'source_bbox': im['source_bbox']}
                                   if 'scan_crop_px' in im else {})} for im in group]
                 if suppression is not None:
-                    first = group[0]
-                    if len(group) == 1:
-                        crop = first.get('scan_crop_px')
-                        suppressed_size = [crop[2]-crop[0], crop[3]-crop[1]] if crop else list(first['srcsize'])
-                    else:
-                        suppressed_size = [round((box['x1']-box['x0'])*first['srcsize'][0]/max(first['x1']-first['x0'], .01)),
-                                           round((box['bottom']-box['top'])*first['srcsize'][1]/max(first['bottom']-first['top'], .01))]
-                    record = {'page': page['number'], 'sequence': sequence,
-                              'bbox': [round(box[k], 3) for k in ('x0', 'top', 'x1', 'bottom')],
-                              'size': suppressed_size, 'components': components, **suppression}
-                    suppressed.append(record)
-                    # Keep a recoverable copy: the filter is a heuristic, a person may still need the element.
-                    service_folder = staging/SERVICE_DIR/SUPPRESSED_DIR
-                    name = f'Страница {page["number"]:03d} — {sequence:03d}.pdf'
-                    if len(str(destination/SERVICE_DIR/SUPPRESSED_DIR/name)) > 239:
-                        record['export_error'] = 'Путь результата слишком длинный для копии служебного элемента.'
-                        continue
-                    service_folder.mkdir(parents=True, exist_ok=True)
-                    saved = export_region(page, paths, group, box, sequence, service_folder/name, None, quiet=True)
-                    if 'error' in saved:
-                        record['export_error'] = saved['error']
-                        continue
-                    record['image'] = len(entries)
-                    entries.append({'status': 'unsigned', 'title': None, 'candidates': [],
-                                    'reason': suppression['reason'], 'variant': None, 'group': None,
-                                    'page': page['number'], 'sequence': sequence, 'folder': 'Без подписи',
-                                    **saved, 'components': components, 'removed': True, 'suppressed': True,
-                                    'suppression_code': suppression['suppression_code'],
-                                    'original_location': {'folder': 'Без подписи', 'status': 'unsigned',
-                                                          'label': 'Без подписи',
-                                                          'reason': 'Возвращено вручную из служебных элементов.'}})
+                    set_aside(page, paths, group, box, sequence, components, suppression)
                     continue
                 box['repeated_static'] = all(im.get('repeated_static') for im in group)
                 if all(im.get('repeated_header') for im in group):
@@ -1597,7 +1635,16 @@ def extract(source, output=None, progress=None):
                 if available < len(prefix):
                     raise OutputPathError('Путь результата слишком длинный. Выберите другую папку ближе к корню диска.')
                 target = target_folder/(stem[:available].rstrip(' .')+'.pdf')
-                saved = export_region(page, paths, group, box, sequence, target, match['title'])
+                # A plain title strip or a white box is no picture; seam frames and scan crops keep their own checks.
+                saved = export_region(page, paths, group, box, sequence, target, match['title'],
+                                      blank_check=not seam and not any('scan_crop_px' in im for im in group))
+                if 'blank' in saved:
+                    drop_empty_folders(target_folder, staging)
+                    set_aside(page, paths, group, box, sequence, components, {
+                        'suppression_code': 'blank_image', 'drawn_share': saved['blank'],
+                        'reason': 'Почти однотонная картинка: нарисовано меньше 0,5 % площади — '
+                                  'например, пустая плашка заголовка или белая подложка.'})
+                    continue
                 if 'error' in saved:
                     errors.append({'page': page['number'], 'image': sequence, 'components': len(group), **saved})
                     continue
@@ -1625,7 +1672,9 @@ def extract(source, output=None, progress=None):
                   'output_format': 'pdf', 'grouping': 'explicit_variant_then_caption',
                   'variant_output': 'one_multipage_pdf_per_variant',
                   'folders': {'other': OTHER_DIR, 'service': SERVICE_DIR},
-                  'folder_labels': folder_labels,
+                  # A caption whose only picture was set aside as blank names no folder.
+                  'folder_labels': {folder: label for folder, label in folder_labels.items()
+                                    if any(entry['folder'] == folder for entry in entries)},
                   'page_contexts': [{'page': p['number'], 'divider': p['variant_divider'],
                                      'context': p['variant_context']} for p in pages],
                   'output': str(destination), 'pages': len(pages), 'source_components': total_components,

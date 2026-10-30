@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plural } from "./api";
+import { noticeParts, plural } from "./api";
 
 describe("Russian counter endings", () => {
   it.each([
@@ -9,5 +9,17 @@ describe("Russian counter endings", () => {
     [111, "файлов"], [114, "файлов"], [-2, "файла"],
   ])("uses the correct word for %i", (count, expected) => {
     expect(plural(count as number, ["файл", "файла", "файлов"])).toBe(expected);
+  });
+});
+
+describe("Notice title and detail", () => {
+  it.each([
+    ["Правки сохранены. Резервная копия создана.", "Правки сохранены.", "Резервная копия создана."],
+    ["Запись убрана из истории. Файлы результата сохранены.", "Запись убрана из истории.", "Файлы результата сохранены."],
+    ["Сначала сохраните изменения: разрезать можно сохранённое изображение.", "Сначала сохраните изменения: разрезать можно сохранённое изображение.", ""],
+    ["Переименовано: «Вид. Север» → «Вид 3.1».", "Переименовано: «Вид. Север» → «Вид 3.1».", ""],
+    ["Исходный PDF недоступен. Он мог быть перемещён. Готовые PDF остаются.", "Исходный PDF недоступен.", "Он мог быть перемещён. Готовые PDF остаются."],
+  ])("splits %s", (text, title, detail) => {
+    expect(noticeParts(text)).toEqual({ title, detail });
   });
 });

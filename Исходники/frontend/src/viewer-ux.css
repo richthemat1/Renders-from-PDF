@@ -219,25 +219,28 @@
   border-color: #aeb8ea;
   background: #f3f5ff;
 }
-.viewer-content .removed-explanation {
+/* One short line under a section heading («Убранные», «Служебные», «Склейки», «Вырезки»): what the section holds
+   and what returning or saving does. 36px high when it fits a line. */
+.viewer-content .section-note {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 18px;
-  padding: 12px 14px;
-  color: #617086;
-  background: #eaf0f7;
-  border: 1px solid #dce4ee;
-  border-radius: 10px;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  color: #556377;
+  background: #eef2f8;
+  border: 1px solid #dfe6ef;
+  border-radius: 8px;
   font-size: 12px;
+  line-height: 18px;
 }
-.viewer-content .removed-explanation > svg {
+.viewer-content .section-note > svg {
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 1px;
+  color: #7a879a;
 }
-.viewer-content .removed-explanation p {
+.viewer-content .section-note p {
   margin: 0;
-  line-height: 1.6;
 }
 .viewer-content .status-badge.removed {
   color: #72545f;

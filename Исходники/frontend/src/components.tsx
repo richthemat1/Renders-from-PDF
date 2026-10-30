@@ -1,12 +1,43 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, PropsWithChildren, ReactNode } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, PropsWithChildren, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
-import { Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil, Plus } from "lucide-react";
+import { noticeParts } from "./api";
 import { APP_ICON_AVAILABLE } from "./app-icon.generated";
+import { DIALOG_MOTION, MENU_MOTION, TOAST_MOTION, useAnimatedOpen, useMotion, usePresence, useRefreshMotion } from "./motion";
+import type { Notice } from "./types";
 import { nextSubvariant, nextVariant, variantKey, variantParent, VARIANT_KEY_ERROR } from "./editor";
 import { clampSidebarWidth, setSidebarPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_RAIL_WIDTH,
   useSidebarPreferences } from "./sidebar";
 import "./sidebar-visual.css";
+
+function canScroll(node: HTMLElement, dx: number, dy: number) {
+  const style = getComputedStyle(node);
+  const scrolls = (overflow: string) => /auto|scroll|overlay/.test(overflow);
+  return (dy !== 0 && scrolls(style.overflowY) && (dy < 0 ? node.scrollTop > 0
+      : node.scrollTop + node.clientHeight < node.scrollHeight - 1))
+    || (dx !== 0 && scrolls(style.overflowX) && (dx < 0 ? node.scrollLeft > 0
+      : node.scrollLeft + node.clientWidth < node.scrollWidth - 1));
+}
+
+/** The wheel over a panel scrolls only the panel's own lists, never the page behind it. */
+export function useContainedWheel(ref: RefObject<HTMLElement | null>, active = true) {
+  useEffect(() => {
+    const panel = ref.current;
+    if (!panel || !active) return;
+    const onWheel = (event: WheelEvent) => {
+      // Ctrl+wheel belongs to zoom (the preview and editors handle it themselves).
+      if (event.ctrlKey) return;
+      for (let node = event.target as Element | null; node; node = node.parentElement) {
+        if (node instanceof HTMLElement && canScroll(node, event.deltaX, event.deltaY)) return;
+        if (node === panel) break;
+      }
+      event.preventDefault();
+    };
+    panel.addEventListener("wheel", onWheel, { passive: false });
+    return () => panel.removeEventListener("wheel", onWheel);
+  }, [ref, active]);
+}
 
 export function Shell({
   navigation,
@@ -17,7 +48,9 @@ export function Shell({
 }: PropsWithChildren<{
   navigation: ReactNode;
   footer: ReactNode;
-  header: ReactNode;
+  /** Search and actions of the page. Without them there is no top bar: the page shows its own title,
+   * and a narrow window keeps only the menu button there. */
+  header?: ReactNode;
   version?: string;
 }>) {
   const nav = useRef<HTMLElement>(null);
@@ -44,6 +77,9 @@ export function Shell({
   const collapseLabel = collapsed ? "Развернуть меню" : "Свернуть меню";
   const [tip, setTip] = useState<{ text: string; count: string; top: number; left: number } | null>(null);
   const tipOwner = useRef<HTMLElement | null>(null);
+  const scrim = useRef<HTMLButtonElement>(null);
+  useContainedWheel(nav);
+  useContainedWheel(scrim, mobile && drawerOpen);
 
   function hideTip() {
     const owner = tipOwner.current;
@@ -218,10 +254,10 @@ export function Shell({
           }}
         />}
       </aside>
-      <button className="sidebar-scrim" aria-label="Закрыть боковую панель"
+      <button ref={scrim} className="sidebar-scrim" aria-label="Закрыть боковую панель"
         tabIndex={-1} aria-hidden={!mobile || !drawerOpen} onClick={closeDrawer} />
       <div className="workspace-main">
-        <header className="topbar">
+        {(header || mobile) && <header className={`topbar${header ? "" : " is-bare"}`}>
           <div className="topbar-inner">
           {mobile && <button
             ref={toggle} className="icon-btn sidebar-toggle"
@@ -232,7 +268,7 @@ export function Shell({
           </button>}
           {header}
           </div>
-        </header>
+        </header>}
         {preferences.problem && <p className="sidebar-save-warning" role="status">{preferences.problem}</p>}
         {children}
       </div>
@@ -246,6 +282,7 @@ export function Shell({
 export function Dialog({
   title,
   subtitle,
+  icon,
   headerActions,
   children,
   onClose,
@@ -255,6 +292,8 @@ export function Dialog({
 }: PropsWithChildren<{
   title: string;
   subtitle?: ReactNode;
+  /** A tool mark before the title, as in the page editor. */
+  icon?: ReactNode;
   headerActions?: ReactNode;
   onClose(): void;
   busy?: boolean;
@@ -263,19 +302,30 @@ export function Dialog({
 }>) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
-  useEffect(() => {
+  // Over the window or its backdrop the gallery behind stays where it was.
+  useContainedWheel(ref);
+  useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const el = ref.current!;
     el.showModal();
+    // A field marked data-autofocus takes the focus once the window is shown: React's autoFocus would run while
+    // it is still closed and hidden, and showModal alone picks the close button.
+    el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => {
       el.close();
       previous?.focus();
     };
   }, []);
+  // Under <Presence> the window fades in and, once closed, out again; its backdrop follows in CSS (data-leaving).
+  const presence = usePresence();
+  useMotion(ref, presence.show, DIALOG_MOTION, presence.exited);
+  const leaving = !presence.show;
   return (
     <dialog
       ref={ref}
       className={`${wide ? "dialog preview-dialog" : "dialog"} ${className}`}
+      data-leaving={leaving || undefined}
+      inert={leaving}
       aria-labelledby={id}
       onCancel={(e) => {
         e.preventDefault();
@@ -283,6 +333,7 @@ export function Dialog({
       }}
     >
       <div className="dialog-heading">
+        {icon && <span className="dialog-icon" aria-hidden="true">{icon}</span>}
         {subtitle ? <div className="dialog-heading-copy"><h2 id={id} title={title}>{title}</h2>{subtitle}</div>
           : <h2 id={id}>{title}</h2>}
         {headerActions}
@@ -297,6 +348,34 @@ export function Dialog({
       </div>
       {children}
     </dialog>
+  );
+}
+
+/** The notice at the bottom of the window (Figma 85:855 / 85:842): a white card with its mark and the first sentence
+ * as the title. Under <Presence> it rises in and sinks away; the next notice fades into the card already shown. */
+export function Toast({ notice, busy, onAction, onClose }: {
+  notice: Notice; busy: boolean; onAction(): void; onClose(): void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const presence = usePresence();
+  useMotion(ref, presence.show, TOAST_MOTION, presence.exited);
+  useRefreshMotion(ref, notice);
+  const { title, detail } = noticeParts(notice.text);
+  return (
+    <div ref={ref} className={`toast${notice.error ? " error" : ""}`} role={notice.error ? "alert" : "status"}>
+      <span className="toast-mark" aria-hidden="true">
+        {notice.error ? <AlertTriangle size={16} strokeWidth={2} absoluteStrokeWidth />
+          : <Check size={16} strokeWidth={2} absoluteStrokeWidth />}
+      </span>
+      <div className="toast-body">
+        <p className="toast-message"><strong>{title}</strong>{detail && <span>{detail}</span>}</p>
+        {notice.action && <button className="toast-action" onClick={onAction} disabled={busy}>
+          {notice.action.icon}{notice.action.label}</button>}
+      </div>
+      <button className="toast-close" aria-label="Скрыть сообщение" onClick={onClose}>
+        <X size={16} strokeWidth={2} absoluteStrokeWidth />
+      </button>
+    </div>
   );
 }
 
@@ -339,9 +418,11 @@ export function ActionMenu({
   const focusLast = useRef(false);
   const id = useId();
   const expanded = open && !disabled;
+  useContainedWheel(menu, expanded);
+  const menuShown = useAnimatedOpen(expanded, menu, MENU_MOTION);
+  // The submenu is reset when the menu opens again, not on closing: the closing menu fades out as it was.
   function close(restoreFocus = false) {
     setOpen(false);
-    setSubmenu(null);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
   }
   useLayoutEffect(() => {
@@ -399,13 +480,14 @@ export function ActionMenu({
             event.preventDefault();
             event.stopPropagation();
             focusLast.current = event.key === "ArrowUp";
+            if (!open) setSubmenu(null);
             setOpen(true);
           }
         }}
       >
         {icon}<span>{label}{!icon && "…"}</span><ChevronDown size={12} />
       </button>
-      {expanded && createPortal(
+      {menuShown && createPortal(
         <div
           ref={menu}
           id={id}
@@ -413,6 +495,7 @@ export function ActionMenu({
           role="menu"
           aria-label={label}
           style={position}
+          data-side={position.bottom !== undefined ? "top" : "bottom"}
           onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node) &&
                 event.relatedTarget !== trigger.current) close();
@@ -515,7 +598,7 @@ export function NewVariantDialog({ variants, preferred, subject, onCreate, onClo
       }}>
         <p>{subject} Целый номер создаёт вариант, номер с точкой — подвариант. Папка и PDF появятся после сохранения.</p>
         <label htmlFor={input} className="form-label new-variant-label">Номер варианта или подварианта</label>
-        <input id={input} autoFocus className="form-input" type="text" inputMode="decimal" autoComplete="off" required
+        <input id={input} data-autofocus className="form-input" type="text" inputMode="decimal" autoComplete="off" required
           aria-invalid={!!error} value={number} onChange={(event) => { setNumber(event.target.value); setError(""); }} />
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <VariantSuggestions variants={variants} current={number} preferred={preferred}
@@ -548,6 +631,8 @@ export function Select({ value, options, onChange, label, placeholder = "Выб�
   const id = useId();
   const current = options.find((option) => option.value === value);
   const expanded = open && !disabled;
+  useContainedWheel(list, expanded);
+  const listShown = useAnimatedOpen(expanded, list, MENU_MOTION);
   function close(restoreFocus = false) {
     setOpen(false);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
@@ -601,8 +686,9 @@ export function Select({ value, options, onChange, label, placeholder = "Выб�
         <span className={current ? "select-value" : "select-value is-placeholder"}>{current?.label ?? placeholder}</span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
-      {expanded && createPortal(
+      {listShown && createPortal(
         <div ref={list} id={id} role="listbox" aria-label={label} className="action-menu select-menu" style={position}
+          data-side={position.bottom !== undefined ? "top" : "bottom"}
           onBlur={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) close();
           }}

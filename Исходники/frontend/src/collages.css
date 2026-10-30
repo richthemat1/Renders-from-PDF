@@ -13,16 +13,23 @@
   object-fit: fill;
 }
 
-.collages-page { display: flex; flex-direction: column; gap: 20px; container: collages / inline-size; }
-.collages-heading { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; }
-.collages-heading p { max-width: 720px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+/* Heading row (title, count, tabs or the main button), the section note, then the cards. */
+.collages-page { display: flex; flex-direction: column; gap: 16px; container: collages / inline-size; }
+.viewer-content .collages-page > .section-note { margin: 0; }
 .collages-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: #eceef4; }
 .collages-tabs button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 7px;
-  background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
-.collages-tabs button b { color: #8b95a5; font-size: 12px; font-weight: 650; }
+  background: transparent; color: #4f5b6d; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.collages-tabs button b { color: #5b6678; font-size: 12px; font-weight: 650; }
 .collages-tabs button.active { background: #fff; color: var(--ink); font-weight: 650; box-shadow: 0 1px 2px #17202b14; }
 .collages-tabs button.active b { color: var(--accent-dark); }
 .collages-empty { margin: 0; padding: 32px; border: 1px dashed #cfd5df; border-radius: 14px; color: var(--muted); text-align: center; font-size: 13px; }
+/* No collage at all: the same card as an empty «Вырезки» section. */
+.collages-empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; border: 1px solid var(--line);
+  border-radius: 14px; background: #fff; text-align: center; }
+.collages-empty-state strong { color: var(--ink); font-size: 15px; }
+.collages-empty-state p { max-width: 520px; margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.collages-empty-state .btn { margin-top: 4px; }
+.collages-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 20px; background: #eef0f5; color: #647184; }
 
 .collages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr)); gap: 20px; }
 .collage-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
@@ -117,7 +124,7 @@ button.text-action:disabled { color: var(--muted); cursor: default; }
 .cut-callout button { display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 5px; background: #ffffff24; color: #fff; cursor: pointer; }
 .cut-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; color: var(--muted); font-size: 12px; }
 .cut-hints span { display: inline-flex; align-items: center; gap: 6px; }
-.cut-hints kbd { padding: 2px 6px; border: 1px solid #dfe3ea; border-radius: 5px; background: #fff; color: #4c5668; font: inherit; font-size: 11px; font-weight: 600; }
+.cut-hints kbd { padding: 2px 6px; border: 1px solid #dfe3ea; border-radius: 5px; background: #fff; color: #4c5668; font: inherit; font-size: 12px; font-weight: 600; }
 .cut-note { margin: 0 !important; color: #4c5668 !important; }
 
 .cut-panel { display: flex; flex-direction: column; flex: 0 0 340px; min-height: 0; border-left: 1px solid var(--line); }

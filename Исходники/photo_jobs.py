@@ -62,7 +62,7 @@ class JobService:
         self._progress, self._found, self._next_log = 0, 0, 0
         self._totals = dict.fromkeys(('images', 'documents', 'unsigned', 'review'), 0)
         self._job = {'outcome': 'idle', 'total': 0, 'completed': 0, 'failed': 0,
-                     'warnings': 0, 'errors': 0, 'active_file': None}
+                     'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
         self._logs = []
         self._pending_paths, self._pending_repeat = (), None
         if self.workspace.warning:
@@ -176,8 +176,9 @@ class JobService:
                 return self.snapshot()
             self._pending_paths, self._pending_repeat = (), None
             self._cancel.clear()
+            # outputs: result folders of this queue in order, so a batch lists each of its files.
             self._job = {'outcome': 'processing', 'total': len(paths), 'completed': 0, 'failed': 0,
-                         'warnings': 0, 'errors': 0, 'active_file': None}
+                         'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
             self._current_output = None
             self._totals = dict.fromkeys(self._totals, 0)
             self._progress, self._found = 0, 0
@@ -387,11 +388,13 @@ class JobService:
                         self._found = 0
                         successes += 1
                         self._job['completed'] += 1
+                        self._job['outputs'].append(report['output'])
                         self._job['warnings'] += len(report['warnings'])
                         self._job['errors'] += len(report['errors'])
                         partial += bool(report['errors'])
-                        self._append(f'Сохранено {len(report["documents"])} PDF из '
-                                     f'{sum(not image.get("removed") for image in report["images"])} изображений.', 'ok')
+                        # Not «N PDF из M изображений»: a variant joins many images into one PDF.
+                        self._append(f'Сохранено: изображений — {sum(not image.get("removed") for image in report["images"])}, '
+                                     f'готовых PDF — {len(report["documents"])}.', 'ok')
                         for key, title in (('unsigned', 'без подписи'), ('review', 'на проверку')):
                             if counts.get(key):
                                 self._append(f'Проверьте вручную: {title} — {counts[key]}.', 'warn')

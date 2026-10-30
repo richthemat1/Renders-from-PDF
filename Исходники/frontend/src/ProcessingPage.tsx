@@ -18,7 +18,6 @@ import {
   LockKeyhole,
   ScanEye,
   ShieldCheck,
-  Square,
   Tag,
   TriangleAlert,
 } from "lucide-react";
@@ -41,9 +40,11 @@ interface ProcessingPageProps {
   failures: ReactNode;
 }
 
-function UploadZone({ fileDrag, waiting, onChoose }: {
+function UploadZone({ fileDrag, waiting, quiet = false, onChoose }: {
   fileDrag: boolean;
   waiting: boolean;
+  /** «Открыть результат» is the main action beside it, so the next choice steps back. */
+  quiet?: boolean;
   onChoose(): void;
 }) {
   return <section className={`upload-zone processing-upload${fileDrag ? " is-drag-over" : ""}`} aria-labelledby="upload-title">
@@ -52,7 +53,7 @@ function UploadZone({ fileDrag, waiting, onChoose }: {
       <h3 id="upload-title">{fileDrag ? "Отпустите PDF для обработки" : "Перетащите PDF сюда"}</h3>
       <p>Один файл, несколько презентаций или папка из Проводника</p>
     </div>
-    <button className="btn primary" onClick={onChoose} disabled={waiting} aria-keyshortcuts="Control+O">
+    <button className={`btn ${quiet ? "secondary" : "primary"}`} onClick={onChoose} disabled={waiting} aria-keyshortcuts="Control+O">
       <FilePlus2 size={17} />Выбрать PDF<kbd aria-hidden="true">Ctrl O</kbd>
     </button>
   </section>;
@@ -113,7 +114,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
               {view.subtitle && <p>{view.subtitle}</p>}
             </div>
             {processing ? <button className="btn secondary processing-main-action" onClick={onCancel} disabled={waiting || state.cancelling}>
-              <Square size={16} />{state.cancelling ? "Останавливаю…" : "Остановить обработку"}
+              <CircleStop size={16} />{state.cancelling ? "Останавливаю…" : "Остановить обработку"}
             </button> : view.canOpenResult && <button className={`btn ${complete ? "primary" : "secondary"} processing-main-action`} disabled={waiting} onClick={onOpenResult}>
               <ArrowUpRight size={16} />{complete ? "Открыть результат" : "Открыть сохранённый результат"}
             </button>}
@@ -122,6 +123,20 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
           {processing ? (view.fileName || view.phase) && <div className="processing-file-panel">
             {view.fileName && <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>}
             {view.phase && <p className="processing-phase">{view.phase}</p>}
+          </div> : view.batch.length > 1 ? <div className="processing-finished-file processing-batch">
+            <p className="processing-file-context">Файлы очереди — у каждого свой результат</p>
+            <div className="processing-recent-list">
+              {view.batch.map((item) => {
+                const check = item.unsigned + item.review;
+                return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}>
+                  <span className="file-icon"><FileText size={21} /></span>
+                  <span className="history-name"><strong>{item.name}</strong>
+                    <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.documents} PDF{check > 0 && ` · проверить: ${check}`}</small>
+                  </span>
+                  <ChevronRight size={18} />
+                </button>;
+              })}
+            </div>
           </div> : view.fileName && <div className="processing-finished-file">
             {(!complete || (state.job?.total ?? 0) > 1) && <p className="processing-file-context">Последний сохранённый результат</p>}
             <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>
@@ -166,7 +181,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
     {view.showJob && !processing && <aside className="processing-next-panel" aria-labelledby="next-processing-title">
       <h2 id="next-processing-title"><FilePlus2 size={18} />Новая обработка</h2>
-      <UploadZone fileDrag={fileDrag} waiting={waiting} onChoose={onChoose} />
+      <UploadZone fileDrag={fileDrag} waiting={waiting} quiet={complete} onChoose={onChoose} />
       <p className="processing-next-local"><ShieldCheck size={14} /><span>Обработка на вашем компьютере</span></p>
     </aside>}
     </div>

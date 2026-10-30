@@ -68,6 +68,17 @@ summary:focus-visible {
   outline: 3px solid #8190f0;
   outline-offset: 3px;
 }
+/* Controls that stand side by side keep the ring to themselves, so it never covers the neighbour. */
+.filter-tabs > button:focus-visible,
+.collages-tabs > button:focus-visible,
+.asset-title > .icon-btn:focus-visible {
+  outline-width: 2px;
+  outline-offset: -2px;
+}
+.asset-title > button:first-child:focus-visible {
+  outline-width: 2px;
+  outline-offset: 0;
+}
 ::selection {
   background: #dbe0ff;
   color: #24328b;
@@ -1069,7 +1080,9 @@ fieldset {
   border: 0;
   background: transparent;
 }
+/* Over a photo the light common ring gets lost; the accent stays visible on any picture. */
 .cover-button:focus-visible {
+  outline-color: var(--accent);
   outline-offset: -4px;
 }
 .asset-image img {
@@ -1711,6 +1724,18 @@ details[open] > summary::after {
 }
 .dialog::backdrop {
   background: #10182787;
+  transition: opacity 0.28s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+/* The window itself is animated with GSAP (motion.tsx); its backdrop fades in and out with it here. */
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+.dialog[data-leaving]::backdrop {
+  opacity: 0;
+  transition-duration: 0.18s;
+  transition-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
 }
 .dialog-heading {
   display: flex;
@@ -1850,6 +1875,12 @@ details[open] > summary::after {
   color: var(--ink);
   font-size: var(--text-main);
 }
+/* A text field marks focus inside its own border: the common outer ring would cover the hints right under it. */
+.form-input:focus-visible {
+  border-color: #8190f0;
+  outline: none;
+  box-shadow: inset 0 0 0 1px #8190f0;
+}
 .rename-dialog {
   width: min(680px, calc(100vw - 40px));
 }
@@ -1906,58 +1937,129 @@ details[open] > summary::after {
   line-height: 1.6;
   max-width: 70ch;
 }
+/* The steps lead; the note and the shortcuts under them stay quieter. */
 .help-list {
   padding-left: var(--space-4);
-  color: #516078;
-  font-size: var(--text-small);
-  line-height: 1.8;
+  color: #2f3a4a;
+  font-size: 13px;
+  line-height: 1.6;
 }
 .help-list li {
-  margin: 10px 0;
+  margin: 8px 0;
 }
+.dialog.help-dialog p {
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+/* Notices — Figma 85:855 / 85:842: a white card with a mark, a title, a detail and the action under them. */
 .toast {
   position: fixed;
   z-index: 70;
   bottom: 25px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centred by margins: GSAP moves the card with transform as it comes and goes (motion.tsx). */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  max-width: min(680px, calc(100vw - 40px));
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-panel);
-  background: #243b32;
-  color: white;
-  box-shadow: 0 8px 28px #10182735;
-  font-size: var(--text-small);
-  line-height: 1.5;
+  align-items: flex-start;
+  gap: 12px;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid #e7e7ef;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 6px #28243f05, 0 8px 28px #28243f14;
 }
-.toast.error {
-  background: #77343d;
+.toast-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #eef7f2;
+  color: #328266;
+}
+.toast.error .toast-mark {
+  background: #fdf1f3;
+  color: #b54757;
+}
+.toast-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.toast-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.toast-message strong {
+  color: #232432;
+  font-size: 14px;
+  font-weight: 600;
+}
+.toast-message span {
+  color: #737584;
+  font-size: 13px;
+}
+.toast .toast-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #625cd0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19px;
+  cursor: pointer;
+}
+.toast .toast-action:hover:not(:disabled) {
+  color: #4a44b8;
+}
+.toast .toast-action:disabled {
+  color: #a4aabd;
+  cursor: default;
+}
+.toast-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #737584;
+  cursor: pointer;
+}
+.toast-close:hover {
+  background: #f0f2f6;
+  color: #232432;
 }
 body:has(.edit-panel.is-floating) .toast {
   bottom: calc(116px + env(safe-area-inset-bottom));
-  left: calc(50% + var(--sidebar-space) / 2);
+  left: var(--sidebar-space);
   max-width: min(680px, calc(100vw - var(--sidebar-space) - 48px));
 }
 @media (max-width: 760px) {
   body:has(.edit-panel.is-floating) .toast {
-    left: 50%;
+    left: 0;
     max-width: calc(100vw - 32px);
   }
-}
-.toast > span {
-  overflow-wrap: anywhere;
-}
-.toast button {
-  display: grid;
-  place-items: center;
-  padding: var(--space-1);
-  border: 0;
-  color: inherit;
-  background: transparent;
-  margin-left: 6px;
 }
 .connection {
   position: fixed;
@@ -2009,6 +2111,20 @@ body:has(.edit-panel.is-floating) .toast {
   display: block;
   padding: 0;
   background: #fff;
+}
+/* Pages without search or actions have no top bar (the page heading names them); a narrow window keeps
+   a low bar for the menu button. The pages that fill the window subtract what the bar takes. */
+.workspace-main {
+  --topbar-height: 0px;
+}
+.workspace-main:has(> .topbar) {
+  --topbar-height: 72px;
+}
+.workspace-main:has(> .topbar.is-bare) {
+  --topbar-height: 56px;
+}
+.app-shell .topbar.is-bare {
+  height: 56px;
 }
 .topbar-inner {
   display: flex;
@@ -2380,7 +2496,8 @@ kbd,
   }
   *,
   *::before,
-  *::after {
+  *::after,
+  .dialog::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

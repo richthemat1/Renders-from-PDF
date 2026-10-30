@@ -21,7 +21,7 @@
 .review-issue-detail p { margin: 0; padding: 8px 12px; border-radius: 6px; background: #f5f4fa; color: var(--muted); line-height: 20px; overflow-wrap: anywhere; }
 .review-summary [hidden] { display: none; }
 .review-summary-header { display: flex; align-items: center; gap: 12px 14px; min-height: 64px; padding: 12px 16px; }
-.review-summary-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px; background: #eef1ff; color: var(--accent); }
+.review-summary-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px; background: #f0f2f6; color: #647184; }
 .review-summary.is-complete .review-summary-icon { background: #e9f6f1; color: #2f8a6d; }
 .review-summary-task { flex: 1; min-width: 0; }
 .review-summary-count { display: block; font-size: 14px; font-weight: 650; line-height: 20px; }

@@ -1,6 +1,6 @@
 .app-shell .content.settings-content {
   max-width: 1440px;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - var(--topbar-height));
   padding: 40px var(--content-gutter) 44px;
   background: #f5f6fa;
 }

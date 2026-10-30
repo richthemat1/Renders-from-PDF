@@ -1,5 +1,4 @@
 /* Cutouts: the section and the page editor. The editor shares the frame of the cut editor (collages.css). */
-.cutouts-page .collages-heading { align-items: center; }
 .cutout-picture { background: #eef0f5; }
 .collage-card.cutout-card .collage-frame.cutout-card-frame { border-color: #5969db; background: #5969db14; }
 .collage-card.cutout-card .collage-frame.cutout-card-frame b { border: 2px solid #fff; background: #5969db; }
@@ -10,44 +9,87 @@
 .cutouts-empty .btn { margin-top: 4px; }
 .cutouts-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 20px; background: #eef0f5; color: #647184; }
 
+/* Page editor — Figma 81:5036. It takes the whole window: header 80, tools 56, pages 128, list 344, footer 76. */
+.dialog.cut-editor.cutout-editor { width: calc(100vw - 32px); height: calc(100vh - 32px); border-radius: 14px; }
+.dialog.cutout-editor > .dialog-heading { box-sizing: border-box; height: 80px; align-items: center; gap: 14px; margin: 0; padding: 0 24px;
+  border-bottom-color: #e4e6ed; }
+.cutout-editor .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; background: #f4f3ff;
+  color: #647184; }
+.cutout-editor > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
+.cutout-editor > .dialog-heading h2 { padding: 0; color: #17202b; font-size: 20px; font-weight: 700; line-height: normal; }
+.cutout-editor .cut-editor-subtitle { display: flex; align-items: center; gap: 12px; margin: 0 !important; color: #647184 !important;
+  font-size: 12px !important; line-height: normal; }
+.cutout-editor .cut-editor-subtitle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cutout-editor .cut-editor-subtitle i { flex-shrink: 0; width: 3px; height: 3px; border-radius: 50%; background: #939ba9; }
+.cutout-editor > .dialog-heading .icon-btn { width: 32px; height: 32px; margin: 0; color: #647184; }
 .cutout-loading { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px;
   color: var(--muted); text-align: center; }
 .cutout-loading strong { color: var(--ink); font-size: 15px; }
 .cutout-loading p { max-width: 520px; margin: 0; }
-.cutout-pager b { min-width: 64px; }
+
+/* Tools */
+.cutout-editor .cut-tools { box-sizing: border-box; flex-wrap: nowrap; gap: 16px; height: 56px; padding: 0 24px; border-bottom-color: #e4e6ed; }
+.cutout-editor .cut-divider { flex-shrink: 0; height: 22px; background: #e4e6ed; }
+.cutout-pager, .cutout-zoom { display: inline-flex; flex-shrink: 0; align-items: center; color: #647184; font-size: 12px; white-space: nowrap; }
+.cutout-pager { gap: 12px; }
+.cutout-pager b + span { margin-left: -5px; }
+.cutout-zoom { gap: 14px; }
+.cutout-pager button, .cutout-zoom button { display: grid; place-items: center; width: 24px; height: 24px; margin: -4px; padding: 0; border: 0;
+  border-radius: 6px; background: transparent; color: #647184; cursor: pointer; }
+.cutout-pager button:hover:not(:disabled), .cutout-zoom button:hover:not(:disabled) { background: #f0f2f6; color: #17202b; }
+.cutout-pager button:disabled, .cutout-zoom button:disabled { opacity: .4; cursor: default; }
+.cutout-pager b { display: grid; place-items: center; box-sizing: border-box; min-width: 30px; height: 28px; padding: 0 6px; border: 1px solid #e4e6ed;
+  border-radius: 6px; color: #17202b; font-size: 12px; font-weight: 700; }
+.cutout-zoom b { min-width: 32px; color: #17202b; font-weight: 600; text-align: center; }
+.cutout-editor .cut-tools .btn.text-action { flex-shrink: 0; gap: 8px; height: 36px; min-height: 36px; padding: 0 14px; border-radius: 8px;
+  color: #4050be; font-size: 13px; font-weight: 600; }
+.cutout-editor .cut-tools .btn.text-action:disabled { color: #a4aabd; }
+.cutout-editor .cut-toggle { flex-shrink: 0; gap: 8px; color: #17202b; font-size: 12px; font-weight: 400; white-space: nowrap; }
+.cutout-editor .cut-toggle > svg { color: #647184; }
+.cutout-editor .cut-toggle span { width: 28px; height: 16px; border-radius: 8px; background: #d9dde5; }
+.cutout-editor .cut-toggle span::after { top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 6px; }
+.cutout-editor .cut-toggle input:checked + span { background: #6260da; }
+.cutout-editor .cut-toggle input:checked + span::after { left: 14px; }
 
 /* Pages */
-.cutout-pages { display: flex; flex: 0 0 140px; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: #fff; }
-.cutout-pages h3 { display: flex; align-items: center; gap: 6px; margin: 0; padding: 18px 16px 10px; color: var(--ink); font-size: 13px; }
-.cutout-pages h3 span { color: var(--muted); font-size: 12px; font-weight: 500; }
-.cutout-pages ol { display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 4px 16px 18px; overflow: auto; list-style: none; }
+.cutout-pages { display: flex; flex: 0 0 128px; flex-direction: column; min-height: 0; border-right: 1px solid #e4e6ed; background: #fafafc; }
+.cutout-pages h3 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; padding: 18px 12px 0; color: #17202b;
+  font-size: 12px; font-weight: 700; }
+.cutout-pages h3 span { color: #647184; font-size: 11px; font-weight: 400; }
+.cutout-pages ol { display: flex; flex-direction: column; gap: 21px; margin: 0; padding: 21px 12px 18px; overflow: auto; overscroll-behavior: contain;
+  list-style: none; }
 .cutout-pages button { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0; background: transparent;
   color: #647184; font: inherit; cursor: pointer; }
-.cutout-sheet { display: block; width: 104px; max-height: 140px; overflow: hidden; border: 1px solid #dfe3ea; border-radius: 4px; background: #fff; }
+.cutout-sheet { display: block; box-sizing: border-box; width: 104px; max-height: 140px; overflow: hidden; border: 1px solid #e4e6ed; border-radius: 4px;
+  background: #fff; }
 .cutout-sheet img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .cutout-pages button:hover .cutout-sheet { border-color: #a4aabd; }
-.cutout-pages button.is-current .cutout-sheet { border: 2px solid #5969db; }
-.cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cutout-pages button.is-current .cutout-sheet { border: 2px solid #6260da; }
+.cutout-pages button:focus-visible { outline: none; }
+.cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid #8190f0; outline-offset: 2px; }
 .cutout-sheet-caption { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
-.cutout-pages button.is-current .cutout-sheet-caption { color: #4050be; font-weight: 700; }
-.cutout-sheet-caption b { padding: 1px 6px; border-radius: 8px; background: #5969db; color: #fff; font-size: 11px; line-height: 15px; }
+.cutout-sheet-caption b { padding: 1px 6px; border-radius: 8px; background: #6260da; color: #fff; font-size: 11px; font-weight: 700; line-height: 15px; }
 
 /* Page */
-.cutout-center { display: flex; flex: 1; flex-direction: column; gap: 10px; min-width: 0; padding-bottom: 14px; background: #f4f5f8; }
-.cutout-scroller { display: flex; flex: 1; min-height: 0; padding: 24px 28px 8px; overflow: hidden; }
-.cutout-scroller.is-zoomed { overflow: auto; }
-.cutout-stage { position: relative; flex-shrink: 0; margin: auto; border-radius: 4px; background: #fff; box-shadow: 0 2px 14px #17202b1a;
-  cursor: crosshair; outline: none; user-select: none; touch-action: none; }
-.cutout-stage > img { display: block; width: 100%; height: 100%; border-radius: 4px; pointer-events: none; }
+.cutout-center { display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; padding-bottom: 12px; background: #f1f2f5; }
+/* The side room holds the number of a frame at the left edge of the page. */
+.cutout-scroller { display: flex; flex: 1; min-height: 0; padding: 18px 36px 0; overflow: hidden; }
+.cutout-scroller.is-zoomed { overflow: auto; overscroll-behavior: contain; }
+.cutout-stage { position: relative; flex-shrink: 0; margin: auto; background: #fff; box-shadow: 0 3px 16px #18202e12; cursor: crosshair;
+  outline: none; user-select: none; touch-action: none; }
+.cutout-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cutout-found { position: absolute; box-sizing: border-box; border: 1px dashed #8b95a5; border-radius: 3px; pointer-events: none; }
 .cutout-found .collage-chip { position: absolute; left: -1px; bottom: calc(100% + 4px); min-height: 20px; padding: 1px 6px; font-size: 11px;
   white-space: nowrap; }
-.cutout-frame { position: absolute; z-index: 2; box-sizing: border-box; border: 2px solid #7b88e6; border-radius: 2px; background: #5969db14; cursor: move; }
-.cutout-frame.is-selected { z-index: 3; border-color: #5969db; background: #5969db24; }
-.cutout-frame.is-drawing { border-style: dashed; border-color: #5969db; pointer-events: none; }
-.cutout-frame > b { position: absolute; top: 6px; left: 6px; display: grid; place-items: center; width: 24px; height: 24px; border: 2px solid #fff;
-  border-radius: 12px; background: #5969db; color: #fff; font-size: 12px; font-weight: 700; pointer-events: none; }
-.cutout-handle { position: absolute; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 2px solid #5969db; border-radius: 2px; background: #fff; }
+.cutout-frame { position: absolute; z-index: 2; box-sizing: border-box; border: 1.5px solid #6260da; border-radius: 2px; background: #6260da05;
+  cursor: move; }
+.cutout-frame.is-selected { z-index: 3; border-width: 2px; background: #6260da08; }
+.cutout-frame.is-drawing { border-style: dashed; pointer-events: none; }
+/* The number stands beside the frame, so it never covers what the frame cuts out. */
+.cutout-frame > b { position: absolute; top: 6px; left: -30px; display: grid; place-items: center; box-sizing: border-box; width: 24px; height: 24px;
+  border: 2px solid #fff; border-radius: 12px; background: #5969db; color: #fff; font-size: 12px; font-weight: 700; pointer-events: none; }
+.cutout-handle { position: absolute; box-sizing: border-box; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 2px solid #5969db;
+  border-radius: 2px; background: #fff; }
 .cutout-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
 .cutout-handle.n { left: 50%; top: 0; cursor: ns-resize; }
 .cutout-handle.ne { left: 100%; top: 0; cursor: nesw-resize; }
@@ -56,28 +98,60 @@
 .cutout-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
 .cutout-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
 .cutout-handle.w { left: 0; top: 50%; cursor: ew-resize; }
-.cutout-callout { z-index: 4; margin: 0; }
-.cutout-callout.above { margin-bottom: 10px; }
-.cutout-callout.below { margin-top: 10px; }
-/* The note and the summary keep their room, so the page does not jump when their text changes. */
-.cutout-center .cut-note { min-height: 18px; padding: 0 28px; font-size: 12px; line-height: 18px; text-align: center; }
-.cutout-editor .cut-footer p { min-height: 3em; align-items: center; }
+.cutout-callout { z-index: 4; box-sizing: border-box; height: 29px; margin: 0 0 0 34px; padding: 0 10px; border-radius: 6px; background: #4946bd;
+  color: #e4e2ff; font-size: 11px; }
+.cutout-callout b { color: #fff; font-weight: 700; }
+.cutout-callout.above { margin-bottom: 9px; }
+.cutout-callout.below { margin-top: 9px; }
+/* Under the page, at its left edge; the note keeps its room, so the page does not jump when it changes. */
+.cutout-editor .cut-hints { display: flex; flex-direction: column; align-items: stretch; gap: 5px; box-sizing: border-box; width: 100%;
+  margin: 0 auto; padding: 0; }
+.cutout-editor .cut-hints p { margin: 0 !important; color: #556377 !important; font-size: 12px; line-height: normal; text-align: left; }
+.cutout-editor .cut-hints .cut-note { min-height: 14px; color: #4c5668 !important; }
 
 /* Cutouts list */
-.cutout-list { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px; overflow: auto; }
+.cutout-editor .cutout-panel { flex: 0 0 344px; border-left-color: #e4e6ed; background: #fafafc; }
+.cutout-editor .cut-panel-head { gap: 14px; padding: 18px; border-bottom-color: #e4e6ed; }
+.cutout-editor .cut-panel-head h3 { color: #17202b; font-size: 16px; font-weight: 700; }
+.cutout-editor .cut-panel-head h3 b { padding: 3px 8px; border-radius: 6px; background: #f0f2f6; color: #4c5668; font-size: 12px; font-weight: 600;
+  line-height: 17px; }
+.cutout-editor .cut-bulk { color: #647184; font-weight: 400; }
+.cutout-editor .cut-bulk .select-field { border-color: #e4e6ed; }
+.cutout-editor .cut-subvariants { color: #4946bd; font-size: 12px; font-weight: 600; }
+.cutout-list { display: flex; flex-direction: column; gap: 10px; padding: 18px; overflow: auto; overscroll-behavior: contain; }
 .cutout-list-empty { margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
-.cutout-group { display: flex; flex-direction: column; gap: 8px; }
-.cutout-group h4 { margin: 0; color: #647184; font-size: 11px; font-weight: 600; line-height: 15px; }
-.cutout-row { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid #e4e8ed; border-radius: 10px; background: #fff; }
-.cutout-row.is-selected { border: 1.5px solid #5969db; background: #f5f6fe; }
+.cutout-group { display: flex; flex-direction: column; gap: 10px; }
+.cutout-group + .cutout-group { margin-top: 8px; }
+.cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; color: #647184; }
+.cutout-group h4 b { font-size: 12px; font-weight: 700; }
+.cutout-group h4 span { font-size: 11px; font-weight: 400; }
+.cutout-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid #e4e8ed; border-radius: 10px; background: #fff; }
+.cutout-row.is-selected { padding: 9.5px; border: 1.5px solid #6260da; background: #f4f3ff; }
 .cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
-.cutout-row strong { display: flex; align-items: baseline; gap: 8px; color: var(--ink); font-size: 13px; }
-.cutout-row strong span, .cutout-row > div > span { color: var(--muted); font-size: 12px; font-weight: 400; }
+.cutout-row strong { display: flex; align-items: baseline; gap: 8px; color: #17202b; font-size: 13px; font-weight: 700; }
+.cutout-row strong span, .cutout-row > div > span { color: #647184; font-size: 12px; font-weight: 400; }
 .cutout-row .select-field { width: 100%; }
-.cutout-row .cut-thumb { max-height: 100px; }
+/* A crop of any shape sits whole in the 56 × 100 slot. */
+.cutout-editor .cut-thumb { display: flex; flex: 0 0 56px; align-items: center; justify-content: center; width: 56px; height: 100px; max-height: none;
+  overflow: hidden; border-radius: 4px; background: #f1f2f5; }
+.cutout-editor .cut-thumb .cropped-image { width: 100%; }
+.cutout-editor .cut-thumb.is-tall .cropped-image { width: auto; height: 100%; }
 .cutout-row-actions { display: flex; gap: 2px; }
-.cutout-row-actions .text-action { padding: 6px 8px; font-size: 13px; }
+.cutout-row-actions .text-action { gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; color: #4050be; font-size: 13px; font-weight: 600; }
 .cutout-warning { display: inline-flex; align-items: center; gap: 4px; color: #8a5a12 !important; }
+.cutout-kind-note { display: flex; gap: 8px; padding: 4px 2px; color: #647184; }
+.cutout-kind-note > svg { flex-shrink: 0; }
+.cutout-kind-note p { display: flex; flex-direction: column; gap: 4px; margin: 0 !important; color: #647184 !important; font-size: 11px; line-height: 1.6; }
+.cutout-kind-note b { font-weight: 600; line-height: normal; }
+
+/* Footer */
+.cutout-editor .cut-footer { box-sizing: border-box; gap: 12px; height: 76px; padding: 0 24px; border-top-color: #e4e6ed; }
+.cutout-editor .cut-footer > svg { flex-shrink: 0; color: #647184; }
+.cutout-editor .cut-footer p { flex-direction: column; gap: 4px; min-width: 0; line-height: normal; }
+.cutout-editor .cut-footer p b { color: #17202b; font-size: 12px; font-weight: 600; }
+.cutout-editor .cut-footer p span { color: #647184; font-size: 12px; }
+.cutout-editor .cut-footer .btn { height: 36px; min-height: 36px; padding: 0 14px; font-size: 13px; }
+.cutout-editor .cut-footer .btn.secondary { border-color: #dfe3ea; color: #17202b; }
 
 /* Gallery hooks */
 .asset-image .cutout-cut-button { position: absolute; left: 50%; bottom: 12px; z-index: 3; transform: translateX(-50%); min-height: 34px; opacity: 0;
@@ -85,6 +159,9 @@
 .asset-card:hover .cutout-cut-button, .asset-card:focus-within .cutout-cut-button { opacity: 1; }
 
 @media (max-width: 1100px) {
-  .cutout-pages { flex-basis: 120px; }
+  .cutout-pages { flex-basis: 112px; }
   .cutout-sheet { width: 88px; }
+  .cutout-editor .cutout-panel { flex-basis: 300px; }
+  /* The tools wrap instead of running out of the window. */
+  .cutout-editor .cut-tools { flex-wrap: wrap; height: auto; padding-block: 8px; row-gap: 8px; }
 }

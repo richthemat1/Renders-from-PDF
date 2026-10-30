@@ -44,6 +44,7 @@
   min-height: 0;
   padding: 18px 14px 20px;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #555c70 #232936;
 }
@@ -517,7 +518,8 @@
   display: none;
 }
 
-.app-shell > .sidebar #folder-navigation {
+/* On the inner list: the group itself animates its height (Collapsible in motion.tsx). */
+.app-shell > .sidebar #folder-navigation > .category-list {
   padding-bottom: 4px;
 }
 

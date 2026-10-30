@@ -5,6 +5,7 @@ import { Check, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, Rows3, Sciss
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
 import type { SelectOption } from "./components";
+import { Presence } from "./motion";
 import type { Box } from "./editor";
 import { compareVariants, nextSubvariant } from "./editor";
 import type { Collage } from "./types";
@@ -88,13 +89,14 @@ function status(view: CollageView): { tone: string; icon: ReactNode; label: stri
   return { tone: "green", icon: <Scissors size={14} />, label: `Разрезано вручную · ${frames}` };
 }
 
-export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole }: {
+export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole, onBrowse }: {
   views: CollageView[];
   saving: boolean;
   onCut(view: CollageView): void;
   onCheck(view: CollageView): void;
   onDismiss(view: CollageView): void;
   onWhole(view: CollageView): void;
+  onBrowse(): void;
 }) {
   // «Все» by default: a collage handled here must not vanish from under the pointer.
   const [tab, setTab] = useState<"all" | "check" | "done">("all");
@@ -103,18 +105,30 @@ export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole
     ["check", "Нужно проверить", views.filter(needsCheck).length], ["done", "Готовы", views.filter((view) => !needsCheck(view)).length]];
   return (
     <section className="collages-page" aria-label="Склейки">
-      <div className="collages-heading">
-        <p>Картинки, в которых склеено несколько рендеров. Программа режет их по светлым полосам между кадрами;
-          проверьте результат или разрежьте вручную то, что она оставила целым.</p>
-        <div className="collages-tabs" role="group" aria-label="Фильтр склеек">
+      {/* The tabs share the heading row, as the status tabs of «Все изображения» do. */}
+      <div className="library-header">
+        <div><h2>Склейки</h2><span>{views.length}</span></div>
+        {!!views.length && <div className="collages-tabs" role="group" aria-label="Фильтр склеек">
           {tabs.map(([key, label, count]) => (
             <button key={key} className={tab === key ? "active" : ""} aria-pressed={tab === key} onClick={() => setTab(key)}>
               {label}<b>{count}</b>
             </button>
           ))}
-        </div>
+        </div>}
       </div>
-      {shown.length ? (
+      {/* An empty section explains itself in its card. */}
+      {!!views.length && <div className="section-note"><Scissors size={16} aria-hidden="true" />
+        <p>Картинки из нескольких рендеров: программа режет их по светлым полосам. Проверьте кадры или разрежьте вручную то, что осталось целым.</p>
+      </div>}
+      {!views.length ? (
+        <div className="collages-empty-state">
+          <span className="collages-empty-icon"><Scissors size={20} /></span>
+          <strong>Склеек не найдено</strong>
+          <p>Программа не нашла картинок, в которых склеено несколько рендеров. Любую картинку можно разрезать вручную:
+            «Разрезать…» в крупном просмотре или «Ещё → Разрезать склейку…» в режиме правки.</p>
+          <button className="btn secondary" onClick={onBrowse}>Перейти к изображениям</button>
+        </div>
+      ) : shown.length ? (
         <div className="collages-grid">
           {shown.map((view) => {
             const chip = status(view);
@@ -596,9 +610,9 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
           </button>
         </div>
       </div>
-      {naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+      <Presence>{naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
         subject={naming.length === 1 ? `Кадр ${naming[0] + 1} встанет в новый вариант.` : "Все кадры встанут в новый вариант."}
-        onCreate={(key) => { choose(naming, key); setNaming(null); }} />}
+        onCreate={(key) => { choose(naming, key); setNaming(null); }} />}</Presence>
     </Dialog>
   );
 }

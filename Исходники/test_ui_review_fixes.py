@@ -16,6 +16,7 @@ class ReviewFixesUI(unittest.TestCase):
     setUp = fixture.DesktopUI.setUp
     card = fixture.DesktopUI.card
     edit = fixture.DesktopUI.edit
+    extend_gallery = fixture.DesktopUI.extend_gallery
 
     def save(self):
         with self.page.expect_response(lambda r: r.url.endswith('/apply') and r.status == 200):
@@ -167,8 +168,8 @@ class ReviewFixesUI(unittest.TestCase):
         self.page.reload()
         self.page.get_by_role('button', name='История обработки', exact=True).click()
         self.page.locator('.history-row').first.click()
-        self.page.get_by_role('button', name='Начать проверку', exact=True).click()
-        self.edit()
+        # «Разобрать» opens the doubtful images ready to move.
+        self.page.get_by_role('button', name='Разобрать', exact=True).click()
         self.card(3).get_by_role('checkbox').check()
         self.page.get_by_role('button', name='Перенести в вариант', exact=True).click()
         self.page.get_by_role('menuitem', name='Вариант 1', exact=True).click()
@@ -177,6 +178,173 @@ class ReviewFixesUI(unittest.TestCase):
         expect(self.page.get_by_role('heading', name='Спорные изображения распределены', exact=True)).to_be_visible()
         self.page.get_by_role('searchbox').fill('нет такого изображения')
         expect(self.page.get_by_role('heading', name='Изображения не найдены', exact=True)).to_be_visible()
+
+    def test_edit_is_the_main_action_and_sorting_opens_the_doubtful_images_for_editing(self):
+        report_path = self.output / 'Отчёт.json'
+        report = json.loads(report_path.read_text(encoding='utf-8'))
+        report['images'][3]['status'] = 'review'
+        report_path.write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        self.page.reload()
+        self.page.get_by_role('button', name='История обработки', exact=True).click()
+        self.page.locator('.history-row').first.click()
+        expect(self.page.get_by_role('button', name='Редактировать', exact=True)).to_have_class('btn primary')
+        sort = self.page.get_by_role('button', name='Разобрать', exact=True)
+        expect(sort).to_have_class('btn secondary review-summary-start')
+        sort.click()
+        expect(self.page.locator('.library-header h2')).to_have_text('Нужно проверить')
+        expect(self.page.locator('.asset-card')).to_have_count(1)
+        expect(self.page.get_by_role('button', name='Завершить правки', exact=True)).to_have_class('btn secondary')
+        expect(self.card(3).get_by_role('checkbox')).to_be_visible()
+        self.assertEqual(self.errors, [])
+
+    def test_collages_are_listed_even_when_the_program_found_none(self):
+        section = self.page.locator('nav').get_by_role('button', name='Склейки 0', exact=True)
+        expect(section).to_be_visible()
+        section.click()
+        empty = self.page.get_by_role('region', name='Склейки').locator('.collages-empty-state')
+        expect(empty).to_contain_text('Склеек не найдено')
+        expect(self.page.locator('.collages-tabs')).to_have_count(0)
+        empty.get_by_role('button', name='Перейти к изображениям').click()
+        expect(self.page.locator('.asset-card')).to_have_count(4)
+
+    def test_wheel_over_the_menu_or_a_window_leaves_the_gallery_in_place(self):
+        self.extend_gallery()
+        expect(self.page.locator('.asset-card')).to_have_count(40)
+        self.page.set_viewport_size({'width': 1380, 'height': 700})
+        self.page.evaluate('scrollTo(0, 300)')
+        self.assertEqual(self.page.evaluate('scrollY'), 300)
+        for point in ((120, 40), (120, 400), (120, 680)):
+            self.page.mouse.move(*point)
+            self.page.mouse.wheel(0, 1500)
+        self.page.wait_for_timeout(200)
+        self.assertEqual(self.page.evaluate('scrollY'), 300)
+        self.card(1).locator('.cover-button').click()
+        expect(self.page.get_by_role('dialog')).to_be_visible()
+        for point in ((700, 100), (4, 400)):
+            self.page.mouse.move(*point)
+            self.page.mouse.wheel(0, 1500)
+        self.page.wait_for_timeout(200)
+        self.assertEqual(self.page.evaluate('scrollY'), 300)
+        self.page.get_by_role('button', name='Закрыть диалог').click()
+        # The gallery itself still scrolls.
+        self.page.mouse.move(800, 400)
+        self.page.mouse.wheel(0, 400)
+        self.page.wait_for_timeout(200)
+        self.assertGreater(self.page.evaluate('scrollY'), 300)
+
+    def test_status_note_and_badges_mark_only_what_needs_attention(self):
+        # A result that was only opened has not been saved here.
+        expect(self.page.locator('.status-note')).to_have_count(0)
+        # A found caption is the usual case and carries no badge.
+        expect(self.card(0).locator('.status-badge')).to_have_count(0)
+        self.edit()
+        expect(self.page.locator('.status-note')).to_have_count(0)
+        self.card(3).get_by_role('checkbox').check()
+        self.page.keyboard.press('Delete')
+        expect(self.page.locator('.status-note')).to_have_text('Есть изменения')
+        self.save()
+        expect(self.page.locator('.status-note')).to_have_text('Изменения сохранены')
+
+    def test_same_size_selection_takes_every_image_of_that_pixel_size(self):
+        self.edit()
+        self.card(0).get_by_role('checkbox').check()
+        self.page.get_by_role('button', name='Ещё', exact=True).click()
+        # The four pictures of the fixture are drawn in one frame, so they share their pixel size.
+        self.page.get_by_role('menuitem', name='Выбрать такие же по размеру (3)', exact=True).click()
+        expect(self.page.locator('.selection-count')).to_contain_text('Выбрано: 4')
+        self.page.get_by_role('button', name='Ещё', exact=True).click()
+        expect(self.page.get_by_role('menuitem', name='Выбрать такие же по размеру', exact=True)).to_be_disabled()
+
+    def test_saved_notice_is_a_card_with_title_detail_and_undo(self):
+        self.edit()
+        self.card(3).get_by_role('checkbox').check()
+        self.page.keyboard.press('Delete')
+        self.save()
+        toast = self.page.locator('.toast')
+        expect(toast.locator('.toast-message strong')).to_have_text('Правки сохранены.')
+        expect(toast.locator('.toast-message span')).to_have_text('Резервная копия создана.')
+        expect(toast.get_by_role('button', name='Отменить сохранение')).to_be_visible()
+        self.assertEqual(round(toast.bounding_box()['width']), 420)
+        self.assertEqual(toast.evaluate('t => getComputedStyle(t).backgroundColor'), 'rgb(255, 255, 255)')
+        toast.get_by_role('button', name='Скрыть сообщение').click()
+        expect(toast).to_have_count(0)
+
+    def test_windows_and_the_notice_fade_in_and_out_when_windows_shows_animations(self):
+        self.page.emulate_media(reduced_motion='no-preference')
+        sample = """selector => {
+          window.__frames = [];
+          const tick = () => {
+            const el = document.querySelector(selector);
+            window.__frames.push(el ? +getComputedStyle(el).opacity : null);
+            if (window.__frames.length < 45) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }"""
+
+        def frames(selector, action):
+            self.page.evaluate(sample, selector)
+            action()
+            self.page.wait_for_function('window.__frames.length >= 45')
+            return self.page.evaluate('window.__frames')
+
+        def passes_through_partial(values):
+            self.assertTrue(any(value is not None and 0.05 < value < 0.95 for value in values), values)
+
+        self.edit()
+        self.card(3).get_by_role('checkbox').check()
+        new_variant = self.page.get_by_role('button', name='Новый вариант', exact=True)
+        shown = frames('dialog', new_variant.click)
+        passes_through_partial(shown)
+        # Still fading in, the window already takes the typing.
+        expect(self.page.get_by_role('dialog').get_by_label('Номер варианта или подварианта')).to_be_focused()
+        hidden = frames('dialog', lambda: self.page.keyboard.press('Escape'))
+        passes_through_partial(hidden)
+        self.assertIsNone(hidden[-1])
+        expect(new_variant).to_be_focused()
+
+        self.page.keyboard.press('Delete')
+        toast = self.page.locator('.toast')
+        shown = frames('.toast', self.save)
+        passes_through_partial(shown)
+        hidden = frames('.toast', toast.get_by_role('button', name='Скрыть сообщение').click)
+        passes_through_partial(hidden)
+        expect(toast).to_have_count(0)
+        self.assertEqual(self.errors, [])
+
+    def test_pages_name_themselves_once_and_section_notes_take_one_line(self):
+        # The result keeps its top bar for search and «Редактировать»; the history names itself in its heading only.
+        expect(self.page.locator('.topbar .searchbox')).to_be_visible()
+        self.page.get_by_role('button', name='Вернуться в историю обработки').click()
+        expect(self.page.locator('h1')).to_have_text('История обработки')
+        expect(self.page.locator('.topbar')).to_have_count(0)
+        self.page.locator('.history-row').first.click()
+        self.page.locator('nav').get_by_role('button', name='Убранные', exact=False).click()
+        header = self.page.locator('.library-header').bounding_box()
+        note = self.page.locator('.section-note')
+        expect(note).to_contain_text('Верните нужные карточки и сохраните результат.')
+        box = note.bounding_box()
+        self.assertLessEqual(box['height'], 40)
+        self.assertEqual(round(box['y'] - header['y'] - header['height']), 12)
+        # An empty «Склейки» explains itself in its card, so the note is not repeated above it.
+        self.page.locator('nav').get_by_role('button', name='Склейки', exact=False).click()
+        expect(self.page.locator('.library-header h2')).to_have_text('Склейки')
+        expect(self.page.locator('.collages-empty-state')).to_be_visible()
+        expect(self.page.locator('.section-note')).to_have_count(0)
+
+    def test_a_dialog_field_takes_the_focus_and_marks_it_inside_its_border(self):
+        self.edit()
+        self.card(3).get_by_role('checkbox').check()
+        self.page.get_by_role('button', name='Новый вариант', exact=True).click()
+        field = self.page.get_by_role('dialog').get_by_label('Номер варианта или подварианта')
+        expect(field).to_be_focused()
+        style = field.evaluate('f => [getComputedStyle(f).outlineStyle, getComputedStyle(f).boxShadow]')
+        self.assertEqual(style[0], 'none')
+        self.assertIn('inset', style[1])
+        hints = self.page.get_by_role('group', name='Свободные номера').bounding_box()
+        box = field.bounding_box()
+        self.assertGreaterEqual(hints['y'], box['y'] + box['height'])
+        self.page.keyboard.press('Escape')
+        expect(self.page.get_by_role('button', name='Новый вариант', exact=True)).to_be_focused()
 
 
 if __name__ == '__main__':

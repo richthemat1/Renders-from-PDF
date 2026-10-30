@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, Crop, Ellipsis, FolderInput,
+  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, CopyCheck, Crop, Ellipsis, FolderInput,
   LoaderCircle, Plus, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
 } from "lucide-react";
 import { ActionMenu, Dialog } from "./components";
 import type { ActionMenuItem } from "./components";
+import { DOCK_MOTION, Presence, useMotion, usePresence } from "./motion";
 
 interface Props {
   selected: number;
@@ -35,6 +36,9 @@ interface Props {
   onUndoSave(): void;
   onRemove(): void;
   onCopy(): void;
+  /** Unselected images of the same pixel size as the selection: a key plan or a title strip repeated on every slide. */
+  sameSize: number;
+  onSelectSameSize(): void;
   /** Open the cut editor for the one selected picture. */
   onCut(): void;
   canCut: boolean;
@@ -54,6 +58,10 @@ export function EditorToolbar(props: Props) {
   const [help, setHelp] = useState(false);
   const floatingRef = useRef(false);
   floatingRef.current = floating;
+  // The panel fades in with editing; when editing ends the floating dock sinks away, the inline one goes at once
+  // so the gallery does not wait under an empty space.
+  const presence = usePresence();
+  useMotion(panel, presence.show, floating ? DOCK_MOTION : { ...DOCK_MOTION, exit: 0 }, presence.exited);
   useLayoutEffect(() => {
     const element = panel.current!;
     const measure = () => {
@@ -94,6 +102,8 @@ export function EditorToolbar(props: Props) {
     { value: "new", label: "Новый вариант", icon: <Plus size={16} />, disabled: noSelection },
     { value: "copy", label: "Создать копии выбранных", icon: <Copy size={16} />,
       disabled: props.saving || !props.selectedActive },
+    { value: "same", label: props.sameSize ? `Выбрать такие же по размеру (${props.sameSize})` : "Выбрать такие же по размеру",
+      icon: <CopyCheck size={16} />, disabled: props.saving || !props.sameSize },
     { value: "up", label: "Раньше в варианте", icon: <ArrowUp size={16} />,
       disabled: props.saving || !props.canMoveUp },
     { value: "down", label: "Позже в варианте", icon: <ArrowDown size={16} />,
@@ -122,6 +132,7 @@ export function EditorToolbar(props: Props) {
     else if (value.startsWith("move:")) props.onMove(value.slice(5));
     else if (value === "new") props.onNewVariant();
     else if (value === "copy") props.onCopy();
+    else if (value === "same") props.onSelectSameSize();
     else if (value === "cut") props.onCut();
     else if (value === "cutout") props.onCutout();
     else if (value === "up") props.onReorder(-1);
@@ -217,17 +228,18 @@ export function EditorToolbar(props: Props) {
           </div>}
         </section>
       </div>
-      {help && <Dialog title="Как редактировать результат" onClose={() => setHelp(false)}>
+      <Presence>{help && <Dialog title="Как редактировать результат" onClose={() => setHelp(false)}>
         <p>Флажки и Ctrl+щелчок добавляют карточки к выделению. Выбор сохраняется между разделами и при поиске. Shift+щелчок выбирает диапазон в текущем разделе, Ctrl+A добавляет все видимые карточки.</p>
         <p>Счётчик показывает всё выделение, в том числе скрытые карточки. Перенос и удаление применяются ко всему выбору. «Снять выделение» убирает выбор только с видимых карточек; «Снять всё» и Escape снимают всё выделение.</p>
         <p>Перенесите выбранные в существующий или новый вариант. В меню переноса можно вернуть их в папку подписи / «Все остальное». Стрелки меняют порядок одной страницы, а «Ещё → В начало / В конец варианта» перемещает всю выбранную группу.</p>
         <p>«Ещё → Создать копии выбранных» дублирует выбранные карточки на месте или в другом варианте. Кнопка «Копия PDF» рядом с названием варианта дублирует весь его PDF, включая скрытые поиском страницы. Оригиналы сохраняются. Копии записываются по кнопке «Сохранить»; Ctrl+Z отменяет создание до сохранения.</p>
         <p>«Ещё → Вырезать часть со страницы…» и «Вырезать часть…» на карточке открывают страницы исходного PDF: обведите рамкой нужную часть картинки, например рендер без схемы поверх него. Вырезка встаёт в вариант на место картинки, а сама картинка хранится в разделе «Вырезки», откуда её можно вернуть.</p>
+        <p>«Ещё → Выбрать такие же по размеру» добавляет к выбору все изображения того же размера в пикселях — например, план участка или плашку заголовка, повторённые на каждом слайде, — чтобы убрать их одним действием.</p>
         <p>Delete убирает выбранные из результата. Раздел «Убранные» позволяет вернуть отдельные карточки и после сохранения. В «Ещё» можно отменить последнее сохранение, пока нет новых правок.</p>
         <p>Двойной щелчок по карточке открывает подробный просмотр. ←/→ листают изображения; 1–9 переносят открытое изображение в существующий вариант с этим номером. Колесо мыши и двойной щелчок меняют масштаб.</p>
         <p>Ctrl+Z отменяет шаг. «Сбросить» отменяет все несохранённые правки. Ctrl+S сохраняет изменения в PDF с резервной копией. Escape снимает выделение.</p>
         <div className="dialog-choices"><button className="btn primary" onClick={() => setHelp(false)}>Понятно</button></div>
-      </Dialog>}
+      </Dialog>}</Presence>
     </>
   );
 }

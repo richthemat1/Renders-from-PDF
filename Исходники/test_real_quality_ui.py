@@ -193,7 +193,7 @@ class RealQualityUI(unittest.TestCase):
         expect(self.page.locator('.report-notes')).to_have_count(0)
         self.assertEqual(self.page.locator('.asset-card').evaluate_all(
             'cards => cards.map(card => Number(card.dataset.id))'), [1, 2, 3])
-        self.page.get_by_role('button', name='Начать проверку', exact=True).click()
+        self.page.get_by_role('button', name='Разобрать', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(2)
         self.assertEqual(self.errors, [])
 

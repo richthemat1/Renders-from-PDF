@@ -77,6 +77,8 @@ class CutoutsUI(unittest.TestCase):
         editor = self.page.locator('dialog.cutout-editor')
         expect(editor.locator('.cutout-found')).to_have_count(1)
         expect(editor.locator('.cutout-found')).to_contain_text('Найденная картинка · Вариант 2')
+        # No frame yet and nothing cut before: there is nothing to apply.
+        expect(editor.get_by_role('button', name='Применить', exact=True)).to_be_disabled()
         # A double click frames the whole picture; its right edge is pulled in to leave the plan out.
         self.page.mouse.dblclick(*self.at(.3, .4))
         rows = editor.locator('.cutout-row')

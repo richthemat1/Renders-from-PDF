@@ -66,6 +66,7 @@ import { byPlace, CutoutEditor, CutoutsPage, pageUrl } from "./Cutouts";
 import type { CutoutResult, CutoutSource, PictureInfo } from "./Cutouts";
 import type { Box } from "./editor";
 import { ReviewSummary } from "./ReviewSummary";
+import { Collapsible, Presence } from "./motion";
 import type { NoticeAction, Rect, Result } from "./types";
 import "./viewer-ux.css";
 import "./preview-visual.css";
@@ -117,6 +118,8 @@ export function Viewer({
   const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
+  // «Изменения сохранены» reports a save made here, not a result that was only opened.
+  const [savedHere, setSavedHere] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [rename, setRename] = useState<Rename | null>(null);
   const [newVariant, setNewVariant] = useState(false);
@@ -564,8 +567,9 @@ export function Viewer({
       onResult(value.result);
       setSelected([]);
       onDirty(false);
+      setSavedHere(true);
       notify("Правки сохранены. Резервная копия создана.", false, {
-        label: "Отменить сохранение", run: () => undoSaved(value.result),
+        label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => undoSaved(value.result),
       });
       return true;
     } catch (error) {
@@ -596,6 +600,7 @@ export function Viewer({
         setFilter(`folder:${value.result.report.images[id]?.folder || rename.name.trim()}`);
       }
       setRename(null);
+      setSavedHere(true);
       notify(value.message);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setConflict(true);
@@ -710,7 +715,11 @@ export function Viewer({
     : previewRow && removedSet.has(previewRow.id) ? "Изображение убрано из результата. Верните его и сохраните правки, чтобы открыть PDF."
     : previewRow?.image.removed ? "Изображение восстановлено в черновике. Сохраните правки, чтобы открыть его PDF."
     : pendingLocation ? `Изображение будет помещено в «${previewRow?.label}» после сохранения правок.`
-    : previewRow?.image.reason || "Изображение извлечено из PDF. Подпись и расположение можно проверить в редакторе.";
+    : [previewRow?.image.reason || "Изображение извлечено из PDF. Подпись и расположение можно проверить в редакторе.",
+      // A doubtful card names the captions it was torn between, so the choice of variant has something to go on.
+      previewRow?.image.status === "review" && previewRow.image.candidates?.length
+        ? `Возможные подписи: ${previewRow.image.candidates.map((caption) => `«${caption}»`).join(", ")}.` : ""]
+      .filter(Boolean).join(" ");
   const previewSourceId = preview === null ? -1 : sourceId(draft, preview);
   const sourceKey = `${result.id}:${previewSourceId}:${report.revision}`;
   const previewKey = `${sourceKey}:${sourcePage ? "source" : "image"}`;
@@ -886,6 +895,13 @@ export function Viewer({
   const selectedRemoved = selected.filter((id) => removedSet.has(id));
   const selectedActive = selected.filter((id) => !removedSet.has(id));
   const selectionVariants = new Set(selectedActive.map((id) => draftVariant(draft, id)));
+  // «Такие же по размеру»: a repeated key plan or title strip shares its pixel size on every slide.
+  const sizeKey = (id: number) => allRows[id]?.image.size?.join("×");
+  const selectedSizes = new Set(selectedActive.map(sizeKey).filter(Boolean));
+  const chosenIds = new Set(selected);
+  const sameSizeIds = selectedSizes.size
+    ? rows.filter((row) => !removedSet.has(row.id) && !chosenIds.has(row.id) && selectedSizes.has(sizeKey(row.id))).map((row) => row.id)
+    : [];
   const canMoveEdge = selectedActive.length > 0 && selectionVariants.size === 1 && !selectionVariants.has(null);
   const variantCount = variants.filter((key) => draft.variants[key].length && !key.includes(".")).length;
   const subvariantCount = variants.filter((key) => draft.variants[key].length && key.includes(".")).length;
@@ -908,7 +924,8 @@ export function Viewer({
           {sidebar("removed", "Убранные", removed.length, <Trash2 size={17} />)}
           {!!report.images.some((image) => image.suppressed || image.suppression_code) &&
             sidebar("service", "Служебные", service.length, <Shapes size={17} />)}
-          {!!collageViews.length && sidebar("collages", "Склейки", collageViews.length,
+          {/* Always listed: any picture can be cut by hand, even when the program found no collage. */}
+          {sidebar("collages", "Склейки", collageViews.length,
             <span className={`nav-icon-attention${collageCheck ? " has-attention" : ""}`}
               title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={17} /></span>)}
           {sidebar("cutouts", "Вырезки", cutoutCount, <Crop size={17} />)}
@@ -917,7 +934,7 @@ export function Viewer({
             onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
             <Layers3 size={16} /><span>Варианты</span><b>{variants.length}</b><ChevronDown size={14} />
           </button>
-          <div id="variant-navigation" hidden={!variantsOpen}>
+          <Collapsible id="variant-navigation" open={variantsOpen}>
           {variants.map((key) =>
             sidebar(
               `variant:${key}`,
@@ -932,7 +949,7 @@ export function Viewer({
           {!variants.length && (
             <p className="nav-empty">Варианты пока не определены</p>
           )}
-          </div>
+          </Collapsible>
           <div className="nav-label spaced">Статус</div>
           {sidebar(
             "review",
@@ -953,7 +970,7 @@ export function Viewer({
                 onClick={(event) => { event.stopPropagation(); setFoldersOpen((value) => !value); }}>
                 <Tags size={16} /><span>Подписи</span><b>{folders.length}</b><ChevronDown size={14} />
               </button>
-              <div id="folder-navigation" className="category-list" hidden={!foldersOpen}>
+              <Collapsible id="folder-navigation" className="category-list" open={foldersOpen}>
                 {folders.map((folder, i) =>
                   sidebar(
                     `folder:${folder}`,
@@ -964,7 +981,7 @@ export function Viewer({
                     <span className="variant-dot folder-dot" aria-hidden="true"><i>{i + 1}</i></span>,
                   ),
                 )}
-              </div>
+              </Collapsible>
             </>
           )}
         </>
@@ -984,15 +1001,16 @@ export function Viewer({
             <kbd>Ctrl K</kbd>
           </label>
           <div className="topbar-actions">
-            <StatusNote busy={saving} dirty={dirty}>
+            {(saving || dirty || savedHere) && <StatusNote busy={saving} dirty={dirty}>
               {saving
                 ? "Сохраняю…"
                 : dirty
                   ? "Есть изменения"
                   : "Изменения сохранены"}
-            </StatusNote>
+            </StatusNote>}
+            {/* The main action of a result; while editing, «Сохранить» in the toolbar takes over. */}
             <button
-              className={`btn ${editing ? "primary" : "secondary"}`}
+              className={`btn ${editing ? "secondary" : "primary"}`}
               disabled={saving}
               onClick={() => {
                 if (editing && dirty) {
@@ -1024,7 +1042,8 @@ export function Viewer({
               <span>{rows.length} {plural(rows.length, ["изображение", "изображения", "изображений"])}</span>
               <span>{variantCount} {plural(variantCount, ["вариант", "варианта", "вариантов"])}</span>
               {!!subvariantCount && <span>{subvariantCount} {plural(subvariantCount, ["подвариант", "подварианта", "подвариантов"])}</span>}
-              <span>{report.documents.length} {plural(report.documents.length, ["готовый", "готовых", "готовых"])} PDF из {report.pages} {plural(report.pages, ["страницы", "страниц", "страниц"])}</span>
+              <span>{report.documents.length} {plural(report.documents.length, ["готовый", "готовых", "готовых"])} PDF</span>
+              <span>{report.pages} {plural(report.pages, ["страница", "страницы", "страниц"])} в презентации</span>
             </p>
           </div>
           <button className="btn secondary" onClick={() => open()}>
@@ -1038,7 +1057,11 @@ export function Viewer({
           serviceCount={report.suppressed?.length || 0} canRestoreService={service.length > 0}
           collages={{ total: collageViews.length, check: collageCheck }}
           onCollages={() => { setFilter("collages"); setStatus("all"); setQuery(""); }}
-          onReview={() => { setFilter("needs-review"); setStatus("all"); setQuery(""); }}
+          onReview={() => {
+            setFilter("needs-review"); setStatus("all"); setQuery("");
+            // The doubtful images open ready to move, as after «Редактировать».
+            if (!editing) { setEditing(true); setSelected([]); }
+          }}
           onService={() => { setFilter("service"); setStatus("all"); setQuery(""); }}
           onReveal={revealIssue} />}
         {sectionPage && editing && (dirty || conflict) && (
@@ -1054,7 +1077,7 @@ export function Viewer({
               {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить"}</button>
           </section>
         )}
-        {editing && !sectionPage && (
+        <Presence>{editing && !sectionPage && (
           <EditorToolbar
             selected={selected.length}
             visibleSelected={visibleSelected}
@@ -1095,6 +1118,8 @@ export function Viewer({
             onUndoSave={() => void undoSaved(result)}
             onRemove={() => change({ type: "remove", ids: selectedActive })}
             onCopy={() => startCopy(selectedActive)}
+            sameSize={sameSizeIds.length}
+            onSelectSameSize={() => setSelected((ids) => [...new Set([...ids, ...sameSizeIds])])}
             canCut={selectedActive.length === 1}
             onCut={() => cutImage(selectedActive[0])}
             onCutout={() => startCutout(selectedActive.length === 1 ? selectedActive[0] : undefined)}
@@ -1102,16 +1127,15 @@ export function Viewer({
             onReset={() => setReset(true)}
             onSave={() => void save()}
           />
-        )}
+        )}</Presence>
         {filter === "collages" ? <>
-          <div className="library-header"><div><h2>Склейки</h2><span>{collageViews.length}</span></div></div>
           <CollagesPage views={collageViews} saving={saving} onCut={startCut}
+            onBrowse={() => { setFilter("all"); setStatus("all"); }}
             onCheck={(view) => { if (!editing) setEditing(true); change({ type: "collage-check", id: view.collage! }); }}
             onDismiss={(view) => { if (!editing) setEditing(true); change({ type: "collage-dismiss", id: view.collage! }); }}
             onWhole={(view) => { if (!editing) setEditing(true); applyCut(view, [[0, 0, view.size[0], view.size[1]]], ["keep"], false); }} />
         </> : filter === "cutouts" ? <>
-          <div className="library-header"><div><h2>Вырезки</h2><span>{cutoutCount}</span></div></div>
-          <CutoutsPage views={shownCutouts} saving={saving} onOpen={(page) => startCutout(undefined, page)}
+          <CutoutsPage views={shownCutouts} count={cutoutCount} saving={saving} onOpen={(page) => startCutout(undefined, page)}
             onReturn={(view) => { if (!editing) setEditing(true); applyCutouts([{ source: view, rects: [], targets: [] }]); }} />
         </> : <>
         <div className="library-header">
@@ -1166,11 +1190,11 @@ export function Viewer({
             ))}
           </div>}
         </div>
-        {filter === "service" && <div className="removed-explanation">
-          <Shapes size={18} /><p>Эти элементы программа пропустила автоматически: логотипы, повторяющиеся значки, мелкие фрагменты и полностью закрытые картинки. Если среди них есть нужное изображение, верните его — оно появится в «Без подписи», после чего его можно перенести в вариант. Изменение применяется при сохранении.</p>
+        {filter === "service" && <div className="section-note">
+          <Shapes size={16} aria-hidden="true" /><p>Программа пропустила логотипы, повторяющиеся значки, мелкие фрагменты и закрытые картинки. Возвращённые появятся в «Без подписи» после сохранения.</p>
         </div>}
-        {filter === "removed" && <div className="removed-explanation">
-          <RotateCcw size={18} /><p>Здесь видны убранные изображения, включая сохранённые. Верните нужные карточки и сохраните результат.</p>
+        {filter === "removed" && <div className="section-note">
+          <RotateCcw size={16} aria-hidden="true" /><p>Убранные изображения, в том числе уже сохранённые. Верните нужные карточки и сохраните результат.</p>
         </div>}
         {visible.length ? (
           <div className="asset-grid">
@@ -1239,16 +1263,15 @@ export function Viewer({
                       <span />
                     </label>
                   )}
-                  <span className={`status-badge ${removedSet.has(row.id) ? "removed" : row.status}`}>
-                    {removedSet.has(row.id) ? isService(row.id) ? <Shapes size={12} /> : <Trash2 size={12} /> : row.status === "named" ? (
-                      <Check size={12} />
-                    ) : row.status === "review" ? (
+                  {/* A caption found is the usual case: only the cards that need attention carry a badge. */}
+                  {(removedSet.has(row.id) || row.status !== "named") && <span className={`status-badge ${removedSet.has(row.id) ? "removed" : row.status}`}>
+                    {removedSet.has(row.id) ? isService(row.id) ? <Shapes size={12} /> : <Trash2 size={12} /> : row.status === "review" ? (
                       <Clock3 size={12} />
                     ) : (
                       <Tag size={12} />
                     )}
                     {removedSet.has(row.id) ? isService(row.id) ? "Служебный" : "Убрано" : STATUS[row.status as keyof typeof STATUS]}
-                  </span>
+                  </span>}
                   {(() => {
                     const collage = removedSet.has(row.id) ? undefined : collageOf(row.id);
                     if (!collage) return null;
@@ -1351,15 +1374,15 @@ export function Viewer({
         )}
         </>}
       </div>
-      {cutting && <CutEditor view={cutting} resultId={result.id} variants={variants} dotOf={dotOf}
+      <Presence>{cutting && <CutEditor view={cutting} resultId={result.id} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
         onApply={(boxes, targets, trim) => applyCut(cutting, boxes, targets, trim)}
-        onClose={() => setCutting(null)} />}
-      {cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
+        onClose={() => setCutting(null)} />}</Presence>
+      <Presence>{cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
         pictureInfo={pictureInfo} isLive={liveCard} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
-        onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}
-      {previewRow && (
+        onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}</Presence>
+      <Presence>{previewRow && (
         <Dialog
           wide
           className="viewer-preview-dialog"
@@ -1498,8 +1521,8 @@ export function Viewer({
             </span>
           </div>
         </Dialog>
-      )}
-      {copying && <Dialog title={copying.whole ? "Создать копию PDF варианта" : "Создать копии выбранных"}
+      )}</Presence>
+      <Presence>{copying && <Dialog title={copying.whole ? "Создать копию PDF варианта" : "Создать копии выбранных"}
         onClose={() => setCopying(null)}>
         <form onSubmit={createCopies}>
           <p>{copying.whole ? "Страниц в PDF" : "Выбрано карточек"}: {copying.ids.length}. Оригиналы останутся на месте.</p>
@@ -1512,7 +1535,7 @@ export function Viewer({
             ]} />
           {copyTarget === "new" && <div className="copy-variant-number">
             <label htmlFor="copy-variant-number" className="form-label">Номер нового варианта</label>
-            <input id="copy-variant-number" autoFocus className="form-input" type="text" inputMode="decimal"
+            <input id="copy-variant-number" data-autofocus className="form-input" type="text" inputMode="decimal"
               autoComplete="off" required value={number} onChange={(event) => setNumber(event.target.value)} />
             <VariantSuggestions variants={variants} current={number} onPick={setNumber}
               preferred={copying.ids.map((id) => draftVariant(draft, id)).find((key) => key !== null) ?? null} />
@@ -1525,8 +1548,8 @@ export function Viewer({
             </div>
           </div>
         </form>
-      </Dialog>}
-      {rename && (
+      </Dialog>}</Presence>
+      <Presence>{rename && (
         <Dialog
           title="Переименовать"
           className="rename-dialog"
@@ -1539,7 +1562,7 @@ export function Viewer({
             </label>
             <textarea
               ref={renameField}
-              autoFocus
+              data-autofocus
               id="rename-input"
               className="form-input rename-input"
               rows={3}
@@ -1571,8 +1594,8 @@ export function Viewer({
             </div>
           </form>
         </Dialog>
-      )}
-      {newVariant && (
+      )}</Presence>
+      <Presence>{newVariant && (
         <Dialog
           title="Перенести в новый вариант"
           onClose={() => setNewVariant(false)}
@@ -1602,7 +1625,7 @@ export function Viewer({
               Номер варианта или подварианта
             </label>
             <input
-              autoFocus
+              data-autofocus
               id="variant-number"
               className="form-input"
               type="text"
@@ -1636,8 +1659,8 @@ export function Viewer({
             </div>
           </form>
         </Dialog>
-      )}
-      {reset && (
+      )}</Presence>
+      <Presence>{reset && (
         <Dialog
           title={
             conflict
@@ -1698,7 +1721,7 @@ export function Viewer({
             </div>;
           })()}
         </Dialog>
-      )}
+      )}</Presence>
     </Shell>
   );
 }

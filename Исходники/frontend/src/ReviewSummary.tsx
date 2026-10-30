@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from "react";
 import { ArrowRight, Check, ChevronDown, Layers, ScanEye, ScanSearch, Scissors, TriangleAlert } from "lucide-react";
+import { Collapsible } from "./motion";
 import "./review-summary.css";
 
 function issueFrom(value: unknown, error: boolean) {
@@ -53,8 +54,10 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
         <p className="review-summary-help">{reviewCount ? `${parts}. Проверьте подписи и перенесите изображения в нужный вариант.`
           : "Изображений для распределения нет. Можно просмотреть готовые варианты."}</p>
       </div>
-      {!!reviewCount && <button className="btn primary review-summary-start" onClick={onReview}>
-        Начать проверку<ArrowRight size={14} />
+      {/* A shortcut into editing, not a separate mode: «Редактировать» stays the main button of the page. */}
+      {!!reviewCount && <button className="btn secondary review-summary-start" onClick={onReview}
+        title="Открыть спорные изображения в режиме правки">
+        Разобрать<ArrowRight size={14} />
       </button>}
     </div>
     {diagnostics && <div className="review-summary-diagnostics">
@@ -75,7 +78,7 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
         {canRestoreService && <button className="text-btn" onClick={onService}>Посмотреть и вернуть</button>}
       </span>}
     </div>}
-    <div id={`${id}-issues`} hidden={!open}>
+    <Collapsible id={`${id}-issues`} open={open}>
       {!!warnings.length && <p className="review-summary-recommendation">{warnings.length === 1
         ? "Проверьте это изображение вручную." : `Для всех ${warnings.length} предупреждений: проверьте изображения вручную.`}</p>}
       <ul className="review-issue-list">
@@ -94,11 +97,11 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
               </button>}
             </div>
           </div>
-          {issue.detail && <div id={`${id}-detail-${index}`} className="review-issue-detail" hidden={!expanded.has(index)}>
+          {issue.detail && <Collapsible id={`${id}-detail-${index}`} className="review-issue-detail" open={expanded.has(index)}>
             <p>{issue.detail}</p>
-          </div>}
+          </Collapsible>}
         </li>)}
       </ul>
-    </div>
+    </Collapsible>
   </section>;
 }

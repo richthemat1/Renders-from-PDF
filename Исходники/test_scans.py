@@ -197,6 +197,28 @@ class CollageEdits(unittest.TestCase):
                 with exported_image(saved, frame) as image:
                     self.assertEqual(image.convert('RGB').getpixel((100, 700)), original.getpixel((left+100, 700)))
 
+    def test_tower_edge_and_drawing_lines_are_not_offered_as_seams(self):
+        from photo_scan import equal_split_hint
+        width, height = 1600, 1000
+        # A render: the sky runs on across the middle, the tower edge only along the lower half.
+        render = Image.new('L', (width, height))
+        for y in range(height):
+            ImageDraw.Draw(render).line((0, y, width-1, y), fill=80+y*100//height)
+        ImageDraw.Draw(render).rectangle((width//2, height//2, width*4//5, height-1), fill=20)
+        # A plan on white paper: one of its walls happens to cross the middle from top to bottom.
+        plan = Image.new('L', (width, height), 'white')
+        draw = ImageDraw.Draw(plan)
+        draw.line((width//2, 0, width//2, height-1), fill=0, width=3)
+        for x in range(100, width, 260):
+            draw.rectangle((x, 120, x+120, 860), outline=0, width=2)
+        for image, setting, value in ((render, 'photo_scan.SPLIT_SEAM_COVERAGE', 0),
+                                      (plan, 'photo_scan.SPLIT_LIGHT_SHARE', 1)):
+            with self.subTest(setting=setting):
+                self.assertEqual(equal_split_hint(image.convert('RGB')), [])
+                # Without that one rule the even split would be offered: the rule is what turns it down.
+                with patch(setting, value):
+                    self.assertEqual(len(equal_split_hint(image.convert('RGB'))), 2)
+
     def test_one_photo_dismisses_the_hint_and_any_picture_can_be_cut_by_hand(self):
         from photo_edit import EditError, apply_edits
         with tempfile.TemporaryDirectory() as root:

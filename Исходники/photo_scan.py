@@ -91,6 +91,37 @@ def blank_layer_ink(obj):
     return sum(histogram[:235])/max(1, sum(histogram))
 
 
+# A raster this compact per pixel may be blank and is measured; anything denser has visible detail.
+BLANK_BYTES_PER_PIXEL = .05
+# Below this share of drawn pixels a picture is a plain title strip or a white box (as blank_layer: 0.5 %).
+BLANK_DRAWN_SHARE = .005
+# Only a light ground counts: a flat dark or coloured raster may still be a deliberate fill.
+BLANK_LIGHT_GROUND = 230
+
+
+def drawn_share(path):
+    """Share of pixels that differ visibly from the light ground of a saved raster, or None when
+    the file is too detailed to be blank or its ground is not light. Only the rare compact files
+    are decoded, at 1024 px."""
+    path = Path(path)
+    with Image.open(path) as image:
+        if path.stat().st_size > image.width*image.height*BLANK_BYTES_PER_PIXEL:
+            return None
+        if image.format == 'JPEG':
+            image.draft('RGB', (1024, 1024))
+        with image.convert('RGBA') as rgba:
+            rgba.thumbnail((1024, 1024))
+            # Transparent pixels show the white page beneath them, as in the result PDF.
+            with Image.new('RGBA', rgba.size, 'white') as paper, Image.alpha_composite(paper, rgba) as flat, \
+                    flat.convert('L') as gray:
+                histogram = gray.histogram()
+    background = max(range(256), key=histogram.__getitem__)
+    if background < BLANK_LIGHT_GROUND:
+        return None
+    drawn = sum(count for value, count in enumerate(histogram) if abs(value-background) > 24)
+    return drawn/max(1, sum(histogram))
+
+
 @contextmanager
 def scan_image(reader, pdf_page, path, original):
     """Yield a decoded raster and the factor from its pixels to the native resource pixels."""
@@ -520,11 +551,16 @@ def equal_split_hint(image):
     """Boxes of renders placed edge to edge with no separator, or [] when there is no such evidence.
 
     Only a hint for a person: a hard jump between neighbouring pixel columns (or rows) at every
-    position of an even split. A tower edge rarely lines up with all of them, but it can, so the
-    result is offered as «Возможно, склейка» and never cut automatically."""
+    position of an even split, standing out along nearly the whole line. A tower edge or a column
+    meets an even split over part of the height only; drawings, plans, tables and legends stand on
+    white paper and their lines meet any split, so they get no hint. The result is offered as
+    «Возможно, склейка» and never cut automatically."""
     with image.convert('L') as gray:
         gray.thumbnail((1600, 1600))
         width, height = gray.size
+        # Renders edge to edge fill the raster; on 52 real hints, every page of white paper was a drawing.
+        if sum(gray.histogram()[236:]) > width*height*SPLIT_LIGHT_SHARE:
+            return []
         best = None
         for rows in (False, True):
             size, other = (height, width) if rows else (width, height)
@@ -535,22 +571,7 @@ def equal_split_hint(image):
             with first, second, ImageChops.difference(first, second) as jump:
                 with jump.resize((1, height-1) if rows else (width-1, 1), Image.BOX) as line:
                     profile = list(line.tobytes())
-            for count in range(6, 1, -1):
-                if not .25 <= size/count/other <= 1.6:
-                    continue
-                ratios, peaks = [], []
-                for index in range(1, count):
-                    position = round(index*size/count)
-                    near = range(max(0, position-round(size*.004)), min(len(profile), position+round(size*.004)+1))
-                    peak = max(near, key=lambda x: profile[x])
-                    ring = [profile[x] for x in range(max(0, position-round(size*.06)), min(len(profile), position+round(size*.06)))
-                            if abs(x-position) > size*.012]
-                    ratios.append(profile[peak]/max(1, median(ring)))
-                    peaks.append(peak+1)
-                strong = (all(r >= 3 for r in ratios) and min(profile[p-1] for p in peaks) >= 18 if count > 2
-                          else ratios[0] >= 4.5 and profile[peaks[0]-1] >= 25)
-                if strong and (best is None or count > len(best[1])+1):
-                    best = rows, peaks
+                best = _even_split(jump, profile, rows, size, other, best)
         if best is None:
             return []
         rows, peaks = best
@@ -559,6 +580,51 @@ def equal_split_hint(image):
         boxes = [[0, round(edges[i]*sy), image.width, round(edges[i+1]*sy)] if rows
                  else [round(edges[i]*sx), 0, round(edges[i+1]*sx), image.height] for i in range(len(edges)-1)]
         return boxes
+
+
+# A hint needs a light share below this and a seam standing out along this share of its length.
+SPLIT_LIGHT_SHARE = .3
+SPLIT_SEAM_COVERAGE = .8
+
+
+def _seam_coverage(jump, index, rows):
+    """Share of the line where the jump at index stands out from its own neighbourhood (±12 px)."""
+    span = jump.height if rows else jump.width
+    length = jump.width if rows else jump.height
+    low, high = max(0, index-12), min(span, index+13)
+    with jump.crop((0, low, jump.width, high) if rows else (low, 0, high, jump.height)) as band:
+        data, band_width = band.tobytes(), band.width
+    hits = 0
+    for step in range(length):
+        values = ([data[(q-low)*band_width+step] for q in range(low, high)] if rows
+                  else data[step*band_width:(step+1)*band_width])
+        near = max(values[max(0, index-2-low):index+3-low])
+        ring = [value for q, value in enumerate(values, low) if abs(q-index) >= 4]
+        hits += near >= max(8, 3*median(ring)) if ring else near >= 8
+    return hits/max(1, length)
+
+
+def _even_split(jump, profile, rows, size, other, best):
+    """The strongest even split of one direction that beats best, or best itself."""
+    for count in range(6, 1, -1):
+        if not .25 <= size/count/other <= 1.6:
+            continue
+        ratios, peaks = [], []
+        for index in range(1, count):
+            position = round(index*size/count)
+            near = range(max(0, position-round(size*.004)), min(len(profile), position+round(size*.004)+1))
+            peak = max(near, key=lambda x: profile[x])
+            ring = [profile[x] for x in range(max(0, position-round(size*.06)), min(len(profile), position+round(size*.06)))
+                    if abs(x-position) > size*.012]
+            ratios.append(profile[peak]/max(1, median(ring)))
+            peaks.append(peak+1)
+        strong = (all(r >= 3 for r in ratios) and min(profile[p-1] for p in peaks) >= 18 if count > 2
+                  else ratios[0] >= 4.5 and profile[peaks[0]-1] >= 25)
+        # The average jump can come from a tower edge over part of the line; a seam runs it all.
+        if (strong and (best is None or count > len(best[1])+1)
+                and all(_seam_coverage(jump, peak-1, rows) >= SPLIT_SEAM_COVERAGE for peak in peaks)):
+            best = rows, peaks
+    return best
 
 
 def _area(box):

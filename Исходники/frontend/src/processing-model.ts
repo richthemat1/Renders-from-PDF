@@ -1,5 +1,5 @@
 import { plural } from "./api";
-import type { ProcessingFailure, Snapshot } from "./types";
+import type { HistoryItem, ProcessingFailure, Snapshot } from "./types";
 
 export function failureMessage(item: Pick<ProcessingFailure, "reason" | "action">): string {
   // Cyrillic inside a quoted filename is not a localized explanation.
@@ -33,6 +33,11 @@ export function processingView(state: Snapshot) {
   const currentRecord = state.current_output
     ? state.history.find((item) => canonicalPath(item.output) === canonicalPath(state.current_output!)) ?? null
     : null;
+  // A finished queue of several PDFs lists each result: the totals above are sums, «Открыть результат» opens the last.
+  const batch = outcome !== "processing" && (state.job?.outputs?.length ?? 0) > 1
+    ? state.job!.outputs!.map((output) => state.history.find((item) => canonicalPath(item.output) === canonicalPath(output)))
+      .filter((item): item is HistoryItem => Boolean(item))
+    : [];
   const activeFile = outcome === "processing" ? state.job?.active_file ?? null : null;
   const fileName = outcome === "processing" ? activeFile?.name ?? null : currentRecord?.name ?? null;
   const phase = activeFile && state.detail === activeFile.name
@@ -59,9 +64,11 @@ export function processingView(state: Snapshot) {
     subtitle: outcome === "processing"
       ? "Обработка на вашем компьютере"
       : outcome === "complete"
-        ? `Сохранено ${state.totals.documents} PDF из ${state.totals.images} ${plural(state.totals.images, ["изображения", "изображений", "изображений"])}`
+        // Not «N PDF из M изображений»: a variant joins many images, so fewer PDFs is no loss.
+        ? `${state.totals.images} ${plural(state.totals.images, ["изображение разложено", "изображения разложены", "изображений разложены"])} по ${state.totals.documents} PDF`
         : state.detail,
     currentRecord,
+    batch,
     activeFile,
     fileName,
     phase,

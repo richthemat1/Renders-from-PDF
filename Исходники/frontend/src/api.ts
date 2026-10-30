@@ -75,3 +75,17 @@ export function plural(count: number, forms: [string, string, string]): string {
   const last = value % 10;
   return last === 1 ? forms[0] : last >= 2 && last <= 4 ? forms[1] : forms[2];
 }
+
+/** A notice as its title and detail: the first sentence, and the rest. A dot inside «quotes» (a file name) never splits it. */
+export function noticeParts(text: string): { title: string; detail: string } {
+  let depth = 0;
+  for (let index = 0; index < text.length - 1; index += 1) {
+    const char = text[index];
+    if (char === "«") depth += 1;
+    else if (char === "»") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && ".!?".includes(char) && text[index + 1] === " ") {
+      return { title: text.slice(0, index + 1), detail: text.slice(index + 2).trim() };
+    }
+  }
+  return { title: text, detail: "" };
+}

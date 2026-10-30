@@ -2,7 +2,7 @@
 .app-shell .content.work-content,
 .app-shell .content.history-content {
   max-width: 1440px;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - var(--topbar-height));
   padding: 40px var(--content-gutter) 44px;
   background: #f5f6fa;
 }
@@ -184,11 +184,16 @@
   padding: 2px 5px;
   border: 0;
   border-radius: 4px;
-  background: #ffffff24;
+  background: #1a227026;
   color: #fff;
   font-size: 12px;
   font-weight: 400;
   line-height: 1.35;
+}
+
+.processing-page .processing-upload .btn.secondary kbd {
+  background: var(--processing-tint);
+  color: var(--processing-muted);
 }
 
 .processing-page .processing-upload.is-drag-over {
@@ -347,6 +352,17 @@
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+
+/* A finished queue: the result rows sit inside the panel, a step tighter than «Последние результаты». */
+.processing-page .processing-batch .processing-history-row {
+  min-height: 60px;
+  padding: 10px 14px;
+}
+
+.processing-batch .processing-history-row > .file-icon {
+  width: 34px;
+  height: 38px;
 }
 
 .processing-file-context {
@@ -778,7 +794,7 @@
   .processing-page .has-next-pdf .job-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 }
 @media (max-height: 800px) {
-  .processing-next-panel { height: clamp(360px, calc(100dvh - 232px), 506px); }
+  .processing-next-panel { height: clamp(360px, calc(100dvh - 160px - var(--topbar-height)), 506px); }
   .processing-page .processing-next-panel .processing-upload { gap: 14px; padding: 18px 14px; }
   .processing-next-panel .processing-upload-icon { width: 48px; height: 48px; }
 }

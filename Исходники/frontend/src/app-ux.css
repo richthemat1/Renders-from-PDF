@@ -108,16 +108,6 @@
   background: #fff1f2;
   color: #963b49;
 }
-.toast .toast-action {
-  display: inline-flex;
-  flex-shrink: 0;
-  min-height: 32px;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid #ffffff61;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-small);
-  font-weight: 650;
-}
 .app-shell .sidebar-scrim {
   display: none;
 }
@@ -138,15 +128,18 @@
   .app-shell .workspace-main {
     grid-column: 1;
   }
+  /* The drawer slides in and out; it stays visible until it has left, then hides from focus and clicks. */
   .app-shell .sidebar {
     transform: translateX(-100%);
     visibility: hidden;
     width: 270px;
     box-shadow: 12px 0 40px #10182733;
+    transition: transform 0.2s cubic-bezier(0.55, 0.055, 0.675, 0.19), visibility 0s linear 0.2s;
   }
   .app-shell .sidebar.is-open {
     transform: none;
     visibility: visible;
+    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), visibility 0s;
   }
   .app-shell .mobile-only {
     display: inline-flex;
@@ -155,13 +148,21 @@
   .app-shell .brand {
     gap: var(--space-2);
   }
-  .app-shell:has(.sidebar.is-open) .sidebar-scrim {
+  .app-shell .sidebar-scrim {
     display: block;
     position: fixed;
     inset: 0;
     z-index: 29;
     border: 0;
     background: #10182766;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease-in, visibility 0s linear 0.2s;
+  }
+  .app-shell:has(.sidebar.is-open) .sidebar-scrim {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.3s ease-out, visibility 0s;
   }
   .app-shell .edit-panel.is-floating {
     left: 16px;
@@ -172,7 +173,7 @@
     left: 0;
   }
   body:has(.edit-panel.is-floating) .toast {
-    left: 50%;
+    left: 0;
     max-width: calc(100vw - 32px);
   }
 }
@@ -185,8 +186,5 @@
   }
   .history-actions {
     padding-left: 0;
-  }
-  .toast {
-    flex-wrap: wrap;
   }
 }

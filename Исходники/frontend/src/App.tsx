@@ -20,8 +20,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { dateLabel, errorText, native, request } from "./api";
-import { Dialog, Empty, Shell, StatusNote } from "./components";
-import type { HistoryItem, NoticeAction, ProcessingFailure, Result, Snapshot } from "./types";
+import { Dialog, Empty, Shell, Toast } from "./components";
+import { BANNER_MOTION, MotionDiv, Presence } from "./motion";
+import type { HistoryItem, Notice, ProcessingFailure, Result, Snapshot } from "./types";
 import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import { ProcessingPage } from "./ProcessingPage";
@@ -35,7 +36,7 @@ export function App() {
   const [connection, setConnection] = useState("");
   const [page, setPage] = useState<Page>("work");
   const [result, setResult] = useState<Result | null>(null);
-  const [notice, setNotice] = useState<{ text: string; error: boolean; action?: NoticeAction } | null>(
+  const [notice, setNotice] = useState<Notice | null>(
     null,
   );
   const [waiting, setWaiting] = useState(false);
@@ -112,7 +113,7 @@ export function App() {
     return () => clearTimeout(timer);
   }, [notice]);
   const notify = useCallback(
-    (text: string, error = false, action?: NoticeAction) => setNotice({ text, error, action }),
+    (text: string, error = false, action?: Notice["action"]) => setNotice({ text, error, action }),
     [],
   );
   useEffect(() => {
@@ -336,32 +337,20 @@ export function App() {
   const footer = <>{workNavigation}{appUtilities}</>;
   const chrome = (
     <>
-      {connection && (
-        <div className="connection" role="alert">
+      <Presence>{connection && (
+        <MotionDiv motion={BANNER_MOTION} className="connection" role="alert">
           <AlertTriangle size={16} />
           Связь с приложением потеряна. Восстанавливаю… {connection}
-        </div>
-      )}
-      {notice && (
-        <div
-          className={`toast ${notice.error ? "error" : ""}`}
-          role={notice.error ? "alert" : "status"}
-        >
-          {notice.error ? <AlertTriangle size={18} /> : <Check size={18} />}
-          <span>{notice.text}</span>
-          {notice.action && <button className="toast-action" onClick={() => {
-            const action = notice.action;
-            if (action) void run(async () => {
-              await action.run();
-              setNotice((current) => current === notice ? null : current);
-            });
-          }} disabled={waiting}>{notice.action.label}</button>}
-          <button aria-label="Скрыть сообщение" onClick={() => setNotice(null)}>
-            <X size={17} />
-          </button>
-        </div>
-      )}
-      {pending && (
+        </MotionDiv>
+      )}</Presence>
+      <Presence>{notice && <Toast notice={notice} busy={waiting} onClose={() => setNotice(null)} onAction={() => {
+        const action = notice.action;
+        if (action) void run(async () => {
+          await action.run();
+          setNotice((current) => current === notice ? null : current);
+        });
+      }} />}</Presence>
+      <Presence>{pending && (
         <Dialog
           title="Есть несохранённые изменения"
           busy={leaving}
@@ -394,8 +383,8 @@ export function App() {
             </div>
           </div>
         </Dialog>
-      )}
-      {state?.pending_repeat && <Dialog title={state.pending_repeat.files.length === 1 ? "Этот PDF уже обработан" : "Эти PDF уже обработаны"}
+      )}</Presence>
+      <Presence>{state?.pending_repeat && <Dialog title={state.pending_repeat.files.length === 1 ? "Этот PDF уже обработан" : "Эти PDF уже обработаны"}
         busy={waiting} onClose={() => {
           const token = state.pending_repeat!.token;
           void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
@@ -423,30 +412,21 @@ export function App() {
             }}>Отмена</button>
           </div>
         </div>
-      </Dialog>}
-      {help && (
+      </Dialog>}</Presence>
+      <Presence>{help && (
         <Dialog title="Как пользоваться" className="help-dialog" onClose={() => setHelp(false)}>
           <ol className="help-list">
-            <li>
-              Выберите PDF или перетащите файлы и папки из Проводника. Обработка
-              начнётся сразу.
-            </li>
-            <li>
-              Откройте результат в этом окне. Проверьте материалы без подписи и
-              на проверку.
-            </li>
-            <li>
-              Включите «Редактировать», выберите изображения и перенесите в
-              нужный вариант. Сохраните правки.
-            </li>
-            <li>Выбор сохраняется между разделами. Флажки и Ctrl+щелчок добавляют карточки; счётчик «Скрыто» учитывает выбранное в других разделах.</li>
-            <li>«Вернуть в папку подписи» убирает картинку из варианта. В разделе «Убранные» можно восстановить карточки, в том числе после сохранения.</li>
-            <li>В крупном просмотре стрелки ←/→ листают изображения, колесо меняет масштаб, двойной щелчок приближает изображение.</li>
+            <li>Выберите PDF или перетащите файлы и папки из Проводника. Обработка начнётся сразу.</li>
+            <li>Откройте результат в этом окне. «Разобрать» на панели проверки сразу покажет изображения без подписи и на проверку — в режиме правки.</li>
+            <li>Отметьте карточки флажками (Ctrl или Shift — несколько), перенесите их в нужный вариант или уберите. Файлы меняются только по «Сохранить».</li>
+            <li>«Склейки» — картинки из нескольких рендеров: проверьте, как программа их разрезала, или разрежьте вручную.</li>
+            <li>«Вырезки» — если поверх рендера лежит схема, обведите на странице PDF только нужную часть.</li>
+            <li>В крупном просмотре ←/→ листают изображения, колесо меняет масштаб, «Исходная страница» показывает слайд целиком.</li>
           </ol>
           <p>
-            Исходные PDF не меняются. Предыдущие версии файлов результата
-            сохраняются в резервных копиях. Переносимый «Просмотр.html»
-            находится в папке результата.
+            Исходные PDF не меняются. Прежние версии файлов результата
+            сохраняются в резервных копиях, а убранные изображения можно вернуть
+            из раздела «Убранные».
           </p>
           <p className="muted">
             Ctrl+O — выбрать PDF · Ctrl+K — поиск · Ctrl+A — выделить видимые ·
@@ -459,7 +439,7 @@ export function App() {
             </div>
           </div>
         </Dialog>
-      )}
+      )}</Presence>
     </>
   );
   if (page === "viewer" && result)
@@ -478,24 +458,13 @@ export function App() {
         {chrome}
       </>
     );
-  const title =
-    page === "history"
-      ? "История обработки"
-      : page === "settings"
-        ? "Настройки"
-        : "Обработка PDF";
+  // No top bar here: each page names itself in its heading, and the menu item «Обработка PDF» spins while a PDF is read.
   return (
     <>
       <Shell
         footer={appUtilities}
         version={state?.version}
         navigation={workNavigation}
-        header={
-          <>
-            <span className="topbar-title">{title}</span>
-            {state?.busy && <StatusNote busy>Обработка PDF</StatusNote>}
-          </>
-        }
       >
         <div className={`content${page === "settings" ? " settings-content" : page === "work" ? " work-content" : " history-content"}`}>
           {!state ? (
@@ -533,7 +502,7 @@ export function App() {
                     const record = state.history.find((item) => item.output.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase() === output);
                     if (record) void openHistory(record.id);
                     else notify("Результат не найден в истории. Откройте его папку вручную.", true,
-                      { label: "Выбрать папку результата", run: previous });
+                      { label: "Выбрать папку результата", icon: <FolderOpen size={16} strokeWidth={2} absoluteStrokeWidth />, run: previous });
                   }}
                   onHistory={() => navigate("history")}
                   onOpenHistory={(item) => void openHistory(item.id)}

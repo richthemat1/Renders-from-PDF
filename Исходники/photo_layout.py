@@ -18,6 +18,13 @@ SELECTION_REFERENCE = re.compile(
     rf'(?:(?:вариант\s*№?\s*({VARIANT_NUMBER}))|(?:№?\s*({VARIANT_NUMBER})\s*(?:вариант)?))$', re.I)
 PLAN_CAPTION = re.compile(r'\b(?:схем\w*|ситуационн\w*|генплан\w*|карт[аыуе]\w*|ПОЗУ|планировочн\w*)\b', re.I)
 OVERPRINT_NUMBER = re.compile(r'№?\d+[.)]?')
+# Marks drawn on plans and sections: «на отм. +3,200», «150.6 М 38 ЭТ». They label a level, not the picture.
+ELEVATION_MARK = re.compile(r'^\s*(?:на\s+)?отм\.?\s*[.,]?\s*[+\-−]?\s*\d'
+                            r'|^\s*[+\-−]?\d+(?:[.,]\d+)?\s*м\s+\d+\s*эт\.?\s*$', re.I)
+# Axis marks of a drawing: «1а - 2/А - Б», «К1 - К2» — every part one or two characters long.
+GRID_AXES = re.compile(r'^\s*\w{1,2}(?:\s*[-–—/]\s*\w{1,2})+\s*$')
+# Real captions reach ~140 characters; a longer line is a paragraph of the slide text.
+CAPTION_MAX_LENGTH = 200
 OVERPRINT_BAND = 2
 
 
@@ -354,6 +361,45 @@ def bounds(images):
             'top': min(im['top'] for im in images), 'bottom': max(im['bottom'] for im in images)}
 
 
+def caption_text(text):
+    """A line that may name a picture: some letters, not a paragraph, not a level or axis mark."""
+    return (len(re.findall(r'[^\W\d_]', text, re.UNICODE)) >= 3
+            and len(text) <= CAPTION_MAX_LENGTH and not ELEVATION_MARK.search(text) and not GRID_AXES.match(text))
+
+
+def row_heading(page, region):
+    """The heading at the left margin over a row of pictures of one height, such as two tower
+    plans under «ПЛАН 7-ГО ЭТАЖА»: it names a picture of the row that has no caption of its own."""
+    # Pictures compared side by side are different alternatives: a label over one names that one only.
+    if any(COMPARISON_HEADING.search(line['text']) for line in page['captions']):
+        return None
+    height = region['bottom']-region['top']
+    row = [box for box in page.get('regions', [])
+           if box['x1'] <= region['x0']+1
+           and abs(box['top']-region['top']) < page['height']*.06
+           and .75 <= (box['bottom']-box['top'])/max(height, 1) <= 1.33]
+    if not row:
+        return None
+    # «Вариант 1» or «Перспективное изображение №2» names one picture; a row heading names a subject.
+    headings = [line for line in page['captions']
+                if caption_text(line['text']) and line['x0'] < page['width']*.12
+                and not VARIANT_LABEL.search(line.get('source_text', line['text']))
+                and not re.search(r'№\s*\d', line['text'])
+                and 0 <= min(box['top'] for box in row)-line['bottom'] <= page['height']*.20
+                and line['bottom'] <= region['top']
+                and any(max(0, min(box['x1'], line['x1'])-max(box['x0'], line['x0']))
+                        >= .45*min(box['x1']-box['x0'], line['x1']-line['x0']) for box in row)]
+    heading = max(headings, key=lambda line: line['bottom'], default=None)
+    if heading is None:
+        return None
+    # Only the line the neighbour on the left is itself named by: a caption under a picture of an
+    # earlier row also stands at the margin. Each step looks further left, so this ends.
+    neighbour = caption_for(page, max(row, key=lambda box: box['x1']))
+    if neighbour.get('caption_bbox') != [round(heading[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]:
+        return None
+    return heading
+
+
 def caption_for(page, region):
     width, height = region['x1']-region['x0'], region['bottom']-region['top']
     if (width < page['width']*.025 or height < page['height']*.035
@@ -362,7 +408,7 @@ def caption_for(page, region):
                 'reason': 'Мелкий или узкий элемент: отдельная подпись не определена.'}
     choices = []
     for line in page['captions']:
-        if len(re.findall(r'[^\W\d_]', line['text'], re.UNICODE)) < 3:
+        if not caption_text(line['text']):
             continue
         overlap = max(0, min(region['x1'], line['x1'])-max(region['x0'], line['x0']))
         selected_marker = SELECTED_MARKER.fullmatch(line['text'])
@@ -408,6 +454,12 @@ def caption_for(page, region):
         choices.append((score, side, line))
     choices.sort(key=lambda choice: choice[0])
     if not choices:
+        heading = row_heading(page, region)
+        if heading is not None:
+            return {'status': 'named', 'title': heading['text'], 'candidates': [heading['text']],
+                    'source_caption': heading.get('source_text', heading['text']),
+                    'reason': 'Общий заголовок над рядом изображений одного размера.',
+                    'caption_bbox': [round(heading[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
         return {'status': 'unsigned', 'title': None, 'candidates': [],
                 'reason': 'Рядом с изображением не найдена читаемая подпись.'}
     score, side, best = choices[0]

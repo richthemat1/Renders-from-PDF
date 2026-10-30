@@ -59,7 +59,7 @@
   .viewer-content .selection-summary { gap: 8px; }
   .viewer-content .selection-summary .clear-selection { padding-inline: 4px; }
 }
-.variant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.variant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
 .variant-suggestion { min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
 .variant-suggestion:hover { border-color: #b2bbed; background: #f6f7ff; }
 .variant-suggestion.is-chosen { border-color: var(--accent); background: #eef1ff; color: var(--accent-dark); font-weight: 600; }

@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, Crop, Image as ImageIcon, LocateFixed, Maximize, Minus, Pencil, Plus, Scan, Trash2,
-  TriangleAlert, Undo2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan,
+  SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
+import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
 import type { SelectOption } from "./components";
+import { Presence } from "./motion";
 import { CroppedImage } from "./Collages";
 import { compareVariants, nextSubvariant, rectBox } from "./editor";
 import type { PagesInfo, Rect } from "./types";
@@ -118,20 +120,24 @@ function SourcePicture({ view, maxHeight }: { view: CutoutSource; maxHeight: num
   );
 }
 
-export function CutoutsPage({ views, saving, onOpen, onReturn }: {
+export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
   views: CutoutSource[];
+  /** All cutouts, as in the menu. */
+  count: number;
   saving: boolean;
   onOpen(page?: number): void;
   onReturn(view: CutoutSource): void;
 }) {
   return (
     <section className="collages-page cutouts-page" aria-label="Вырезки">
-      <div className="collages-heading">
-        <p>Части страниц PDF, вырезанные вручную. Вырезка встаёт в вариант вместо исходной картинки, а сама картинка
-          хранится здесь: вырезки можно изменить или вернуть картинку целиком.</p>
-        {/* An empty section offers the same button in its middle. */}
-        {!!views.length && <button className="btn primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>}
+      <div className="library-header">
+        <div><h2>Вырезки</h2><span>{count}</span></div>
+        {/* An empty section offers the same button in its middle and explains itself there. */}
+        {!!views.length && <button className="btn compact primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>}
       </div>
+      {!!views.length && <div className="section-note"><Crop size={16} aria-hidden="true" />
+        <p>Части страниц PDF, вырезанные вручную. Вырезка встаёт в вариант вместо картинки, а саму картинку можно вернуть целиком.</p>
+      </div>}
       {views.length ? (
         <div className="collages-grid">
           {views.map((view) => {
@@ -192,6 +198,9 @@ type Drag =
   | { mode: "move"; pointer: number; uid: number; start: [number, number]; rect: Rect; before: Frame[] | null }
   | { mode: "resize"; pointer: number; uid: number; handle: Handle; rect: Rect; before: Frame[] | null };
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+// The page editor draws its 16 px icons with a 2 px line, as in its Figma design.
+const LINE: LucideProps = { size: 16, strokeWidth: 2, absoluteStrokeWidth: true };
 
 export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, dotOf, onApply, onClose }: {
   resultId: string;
@@ -530,12 +539,13 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     }
     setFrames(frames.map((frame) => next.has(frame.uid) ? { ...frame, target: next.get(frame.uid)! } : frame));
   }
+  // The panel lists the cutouts page by page, each with the picture or the page it is cut from.
   const groups = useMemo(() => {
-    const list: { source: CutoutSource; frames: Frame[] }[] = [];
+    const list: { page: number; items: { source: CutoutSource; frame: Frame }[] }[] = [];
     for (const frame of ordered) {
-      const source = sourceOf(frame);
-      const group = list.find((value) => value.source.key === source.key);
-      if (group) group.frames.push(frame); else list.push({ source, frames: [frame] });
+      const item = { source: sourceOf(frame), frame };
+      const group = list.find((value) => value.page === frame.page);
+      if (group) group.items.push(item); else list.push({ page: frame.page, items: [item] });
     }
     return list;
     // sourceOf depends on the pictures and the pages only.
@@ -546,12 +556,16 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const fromPictures = count - snapshots;
   const snapshotText = `${snapshots} ${plural(snapshots, ["снимок", "снимка", "снимков"])} страницы`;
   const summary = !count
-    ? hadPieces ? "Рамок не осталось: картинки вернутся на место своих вырезок, снимки страниц будут удалены. На диск всё запишется по «Сохранить»."
-      : "Обведите нужную часть страницы — перетащите по ней мышью или дважды щёлкните по картинке."
-    : (fromPictures ? `${fromPictures} ${plural(fromPictures, ["вырезка встанет", "вырезки встанут", "вырезок встанут"])} на место своих картинок` +
-        (snapshots ? `, ещё ${snapshotText}` : "") + ". Исходные картинки сохранятся в разделе «Вырезки» — их можно вернуть."
-      : `${snapshotText[0].toUpperCase()}${snapshotText.slice(1)}: на этом месте нет отдельной картинки.`) +
-      " На диск всё запишется по «Сохранить».";
+    ? hadPieces ? { title: "Рамок не осталось",
+        detail: "Картинки вернутся на место своих вырезок, снимки страниц будут удалены. На диск всё запишется по «Сохранить»." }
+      : { title: "Рамок пока нет", detail: "Обведите нужную часть страницы — перетащите по ней мышью или дважды щёлкните по картинке." }
+    : fromPictures ? {
+        title: `${fromPictures} ${plural(fromPictures, ["вырезка встанет", "вырезки встанут", "вырезок встанут"])} на место своих картинок` +
+          (snapshots ? `, ещё ${snapshotText}` : ""),
+        detail: "Исходные картинки сохранятся в разделе «Вырезки» — их можно вернуть. Файлы появятся на диске после «Сохранить»." }
+    : { title: `${count} ${plural(count, ["вырезка", "вырезки", "вырезок"])} — ${count === 1 ? "снимок" : "снимки"} страницы`,
+        detail: count === 1 ? "В этой области нет отдельной картинки. Файл появится на диске после «Сохранить»."
+          : "В этих областях нет отдельных картинок. Файлы появятся на диске после «Сохранить»." };
   const chosen = frames.find((frame) => frame.uid === selected && frame.page === page);
   const chosenSize = chosen ? pixels(chosen) : null;
   const pages = info?.pages ?? [];
@@ -567,7 +581,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
 
   return (
     <Dialog title="Вырезать из страниц PDF" wide className="cut-editor cutout-editor" onClose={onClose}
-      subtitle={<p className="cut-editor-subtitle">{title}{pages.length ? ` · ${pages.length} ${plural(pages.length, ["страница", "страницы", "страниц"])}` : ""}</p>}>
+      icon={<Crop size={22} strokeWidth={2.75} absoluteStrokeWidth />}
+      subtitle={<p className="cut-editor-subtitle"><span>{title}</span>
+        {!!pages.length && <><i aria-hidden="true" /><span>{pages.length} {plural(pages.length, ["страница", "страницы", "страниц"])}</span></>}</p>}>
       {!info ? (
         <div className="cutout-loading" role="status">
           {failure ? <><TriangleAlert size={32} /><strong>Страницы PDF недоступны</strong><p>{failure}</p>
@@ -577,32 +593,33 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       ) : (
       <div className="cut-editor-body" onKeyDown={keyDown}>
         <div className="cut-tools" role="toolbar" aria-label="Инструменты вырезки">
-          <span className="cut-tools-label">Страница</span>
-          <div className="cut-stepper cutout-pager" role="group" aria-label="Страница">
-            <button aria-label="Предыдущая страница" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft size={16} /></button>
-            <b>{page} из {pages.length}</b>
-            <button aria-label="Следующая страница" disabled={page >= pages.length} onClick={() => setPage(page + 1)}><ChevronRight size={16} /></button>
+          <div className="cutout-pager" role="group" aria-label="Страница">
+            <button aria-label="Предыдущая страница" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft {...LINE} /></button>
+            <b>{page}</b><span>из {pages.length}</span>
+            <button aria-label="Следующая страница" disabled={page >= pages.length} onClick={() => setPage(page + 1)}><ChevronRight {...LINE} /></button>
           </div>
           <span className="cut-divider" />
-          <span className="cut-tools-label">Масштаб</span>
-          <div className="cut-stepper cutout-pager" role="group" aria-label="Масштаб">
-            <button aria-label="Уменьшить" disabled={zoom <= ZOOMS[0]} onClick={() => setZoom([...ZOOMS].reverse().find((value) => value < zoom - 0.01) ?? ZOOMS[0])}><Minus size={16} /></button>
+          <div className="cutout-zoom" role="group" aria-label="Масштаб">
+            <button aria-label="Уменьшить" disabled={zoom <= ZOOMS[0]} onClick={() => setZoom([...ZOOMS].reverse().find((value) => value < zoom - 0.01) ?? ZOOMS[0])}><Minus {...LINE} /></button>
             <b>{Math.round(zoom * 100)}%</b>
-            <button aria-label="Увеличить" disabled={zoom >= ZOOMS.at(-1)!} onClick={() => setZoom(ZOOMS.find((value) => value > zoom + 0.01) ?? ZOOMS.at(-1)!)}><Plus size={16} /></button>
+            <button aria-label="Увеличить" disabled={zoom >= ZOOMS.at(-1)!} onClick={() => setZoom(ZOOMS.find((value) => value > zoom + 0.01) ?? ZOOMS.at(-1)!)}><Plus {...LINE} /></button>
           </div>
-          <button className="btn text-action" onClick={() => { setZoom(1); scroller.current?.scrollTo(0, 0); }}><Maximize size={16} />Вместить</button>
+          <button className="btn text-action" onClick={() => { setZoom(1); scroller.current?.scrollTo(0, 0); }}><Maximize {...LINE} />Вместить</button>
           <span className="cut-divider" />
           <label className="cut-toggle">
+            <Images {...LINE} />Найденные картинки
             <input type="checkbox" checked={showPictures} onChange={(event) => setShowPictures(event.target.checked)} />
-            <span aria-hidden="true" />Найденные картинки
+            <span aria-hidden="true" />
           </label>
+          <span className="cut-divider" />
           <label className="cut-toggle">
+            <Magnet {...LINE} />Прилипать к краям
             <input type="checkbox" checked={snapping} onChange={(event) => setSnapping(event.target.checked)} />
-            <span aria-hidden="true" />Прилипать к краям
+            <span aria-hidden="true" />
           </label>
           <span className="cut-spacer" />
           <button className="btn text-action" disabled={!onPage.length} onClick={() => remove(onPage.map((frame) => frame.uid))}>
-            <Trash2 size={16} />Убрать рамки</button>
+            <SquareDashed {...LINE} />Убрать рамки</button>
         </div>
         <div className="cut-workspace">
           <nav className="cutout-pages" aria-label="Страницы">
@@ -661,21 +678,15 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                       ...(chosen.rect[0] > 0.55 ? { right: `${(1 - chosen.rect[2]) * 100}%` } : { left: `${chosen.rect[0] * 100}%` }) }}>
                     <b>{chosenSize[0]} × {chosenSize[1]} px</b>
                     <span>{sourceOf(chosen).kind === "page" ? "снимок страницы" : snapped ? "край прилип" : "из картинки"}</span>
-                    <button aria-label="Удалить вырезку" onPointerDown={(event) => event.stopPropagation()}
-                      onClick={() => remove([chosen.uid])}>×</button>
                   </div>
                 )}
               </div>
             </div>
-            <div className="cut-hints">
-              <span><kbd>Перетаскивание</kbd>новая рамка</span>
-              <span><kbd>Двойной щелчок по картинке</kbd>рамка по её краям</span>
-              <span><kbd>Delete</kbd>удалить выбранную</span>
-              <span><kbd>← → ↑ ↓</kbd>сдвиг на 1 px, с Shift — на 10 px</span>
-              <span><kbd>Ctrl+колесо</kbd>масштаб</span>
-              <span><kbd>Ctrl+Z</kbd>отменить шаг</span>
+            <div className="cut-hints" style={{ maxWidth: stageWidth }}>
+              <p>Потяните мышью — новая рамка · Двойной щелчок по картинке — рамка по её краям · Delete — удалить выбранную</p>
+              <p>← ↑ → ↓ — сдвиг на 1 px, Shift — на 10 px · Ctrl + колесо — масштаб · Ctrl+Z — отменить шаг</p>
+              <p className="cut-note" role="status">{note}</p>
             </div>
-            <p className="cut-note" role="status">{note}</p>
           </div>
           <aside className="cut-panel cutout-panel" aria-label="Вырезки">
             <div className="cut-panel-head">
@@ -692,16 +703,19 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
             </div>
             <div className="cutout-list">
               {!count && <p className="cutout-list-empty">Рамок пока нет. Обведите часть страницы или дважды щёлкните по картинке.</p>}
-              {groups.map(({ source, frames: own }) => (
-                <section key={source.key} className="cutout-group" aria-label={`Стр. ${source.page}: ${source.title}`}>
-                  <h4>Стр. {source.page} · {source.kind === "image" ? `вместо картинки «${source.title}»` : "снимок страницы"}</h4>
-                  {own.map((frame) => {
+              {groups.map(({ page: sheet, items }) => (
+                <section key={sheet} className="cutout-group" aria-label={`Страница ${sheet}`}>
+                  <h4><b>Страница {sheet}</b><span>{items.length} {plural(items.length, ["вырезка", "вырезки", "вырезок"])}</span></h4>
+                  {items.map(({ source, frame }) => {
                     const box = rectBox(frame.rect, source.area, source.size);
                     const number = numberOf.get(frame.uid);
                     const small = box[2] - box[0] < MIN_PIXELS || box[3] - box[1] < MIN_PIXELS;
                     return (
-                      <div key={frame.uid} className={`cutout-row${frame.uid === selected ? " is-selected" : ""}`}>
-                        {source.preview && <CroppedImage src={source.preview} size={source.size} box={box} alt="" className="cut-thumb" />}
+                      <div key={frame.uid} className={`cutout-row${frame.uid === selected ? " is-selected" : ""}`}
+                        title={source.kind === "image" ? `Из картинки «${source.title}»` : undefined}>
+                        <span className={`cut-thumb${(box[2] - box[0]) / Math.max(1, box[3] - box[1]) < 0.56 ? " is-tall" : ""}`}>
+                          {source.preview && <CroppedImage src={source.preview} size={source.size} box={box} alt="" />}
+                        </span>
                         <div>
                           <strong>Вырезка {number} <span>стр. {frame.page}</span></strong>
                           <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "image" ? "из картинки" : "снимок страницы"}</span>
@@ -709,8 +723,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                           <Select label={`Куда поместить вырезку ${number}`} value={valueOf(targetOf(frame, source))}
                             options={choices(source.kind === "image")} onChange={(value) => choose([frame.uid], value)} />
                           <div className="cutout-row-actions">
-                            <button className="text-action" onClick={() => show(frame)}><LocateFixed size={15} />Показать</button>
-                            <button className="text-action" onClick={() => remove([frame.uid])}><Trash2 size={15} />Удалить</button>
+                            <button className="text-action" onClick={() => show(frame)}><LocateFixed {...LINE} />Показать</button>
+                            <button className="text-action" onClick={() => remove([frame.uid])}><Trash {...LINE} />Удалить</button>
                           </div>
                         </div>
                       </div>
@@ -718,21 +732,27 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                   })}
                 </section>
               ))}
+              {!!snapshots && <div className="cutout-kind-note"><ImageIcon {...LINE} />
+                <p><b>Снимки страницы PDF</b>Здесь нет отдельных картинок — будут добавлены выбранные области страницы.</p></div>}
+              {!!fromPictures && <div className="cutout-kind-note"><Crop {...LINE} />
+                <p><b>Вырезки из картинок</b>Встанут на место своих картинок в исходных пикселях; сами картинки сохранятся в разделе «Вырезки».</p></div>}
             </div>
           </aside>
         </div>
         <div className="cut-footer">
-          <p><Crop size={18} />{summary}</p>
+          <ImageIcon {...LINE} />
+          <p><b>{summary.title}</b><span>{summary.detail}</span></p>
           <button className="btn secondary" onClick={onClose}>Отмена</button>
-          <button className="btn primary" onClick={apply}>
-            <Crop size={16} />{hadPieces || !count ? "Применить" : `Добавить ${count} ${plural(count, ["вырезку", "вырезки", "вырезок"])}`}
+          {/* Without frames and earlier pieces there is nothing to apply. */}
+          <button className="btn primary" disabled={!count && !hadPieces} onClick={apply}>
+            <Crop {...LINE} />{hadPieces || !count ? "Применить" : `Добавить ${count} ${plural(count, ["вырезку", "вырезки", "вырезок"])}`}
           </button>
         </div>
       </div>
       )}
-      {naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+      <Presence>{naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
         subject={naming.length === 1 ? `Вырезка ${numberOf.get(naming[0])} встанет в новый вариант.` : "Все вырезки встанут в новый вариант."}
-        onCreate={(key) => { setTarget(naming, key); setNaming(null); }} />}
+        onCreate={(key) => { setTarget(naming, key); setNaming(null); }} />}</Presence>
     </Dialog>
   );
 }

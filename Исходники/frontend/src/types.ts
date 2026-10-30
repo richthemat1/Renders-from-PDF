@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 export interface ImageEntry {
   page: number;
   sequence: number;
@@ -10,6 +12,8 @@ export interface ImageEntry {
   status: "named" | "review" | "unsigned";
   size: [number, number];
   reason?: string;
+  /** Captions the parser could not choose between («На проверку»). */
+  candidates?: string[];
   removed?: boolean;
   /** Saved by the automatic filter as a service element; restorable like a removed card. */
   suppressed?: boolean;
@@ -142,7 +146,14 @@ export interface PendingRepeat {
 }
 export interface NoticeAction {
   label: string;
+  /** Drawn before the label, as the undo arrow of «Отменить сохранение». */
+  icon?: ReactNode;
   run(): void | Promise<void>;
+}
+export interface Notice {
+  text: string;
+  error: boolean;
+  action?: NoticeAction;
 }
 export interface Snapshot {
   version: string;
@@ -156,6 +167,8 @@ export interface Snapshot {
     warnings: number;
     errors: number;
     active_file: { name: string; index: number; total: number } | null;
+    /** Result folders of this queue in order; absent from older servers. */
+    outputs?: string[];
   };
   cancelling: boolean;
   closing: boolean;
