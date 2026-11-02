@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPlace, contains, cutoutNumbers, snapTo, sourceFor, touches } from "./Cutouts";
+import { byPlace, contains, cutoutNumbers, pickFrames, snapTo, sourceFor, touches } from "./Cutouts";
 import type { CutoutSource } from "./Cutouts";
 import { boxRect, createDraft, draftImage, editDraft, isDirty, payload, rectBox } from "./editor";
 import type { CutoutChange } from "./editor";
@@ -112,5 +112,24 @@ describe("cutout numbers", () => {
     const numbers = cutoutNumbers([source(3, "image", [[7, [0.1, 0.5, 0.4, 0.9]]]), source(3, "page", [[9, [0.5, 0.1, 0.9, 0.3]]]),
       source(5, "image", [[2, [0, 0, 1, 1]]])]);
     expect([...numbers.entries()]).toEqual([[9, 1], [7, 2], [2, 3]]);
+  });
+});
+
+describe("picking cutouts", () => {
+  const order = [4, 1, 7, 2, 9];
+  it("takes one frame on a plain click", () => {
+    expect(pickFrames([1, 7], 1, 2, order, "only")).toEqual({ picked: [2], anchor: 2 });
+  });
+  it("adds a frame with Ctrl and takes it away again; the last one left is in hand", () => {
+    const two = pickFrames([1], 1, 9, order, "toggle");
+    expect(two).toEqual({ picked: [1, 9], anchor: 9 });
+    expect(pickFrames(two.picked, two.anchor, 9, order, "toggle")).toEqual({ picked: [1], anchor: 1 });
+    expect(pickFrames([1], 1, 1, order, "toggle")).toEqual({ picked: [], anchor: null });
+  });
+  it("picks a run in list order with Shift, either way from the anchor, with the clicked frame in hand", () => {
+    expect(pickFrames([1], 1, 2, order, "range")).toEqual({ picked: [1, 7, 2], anchor: 1 });
+    expect(pickFrames([1, 7, 2], 1, 4, order, "range")).toEqual({ picked: [1, 4], anchor: 1 });
+    // Without an anchor Shift takes just the frame.
+    expect(pickFrames([], null, 7, order, "range")).toEqual({ picked: [7], anchor: 7 });
   });
 });

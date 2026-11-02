@@ -173,6 +173,8 @@ export interface Snapshot {
     warnings: number;
     errors: number;
     active_file: { name: string; index: number; total: number } | null;
+    /** Every file in work, in queue order: several PDFs of a queue run at once since 3.42. */
+    active_files?: { name: string; index: number; total: number; phase: string; progress: number }[];
     /** Result folders of this queue in order; absent from older servers. */
     outputs?: string[];
     /** Files a stopped queue did not finish, which «Продолжить оставшиеся» processes. */

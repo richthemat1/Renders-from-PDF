@@ -16,6 +16,12 @@ from pypdf import PdfReader
 
 from photo_layout import clean_text, variant_numbers
 
+try:
+    # What page.images[…] calls in pypdf 6.10 (pinned in requirements.txt) once it has parsed the page.
+    from pypdf.generic._image_xobject import _xobj_to_image
+except ImportError:  # another pypdf: its public path, with the page parse
+    _xobj_to_image = None
+
 # Poster layers reach 200 Mpx (about 600 MB per decode) and trip Pillow's bomb guard.
 # Such JPEGs are opened at a reduced JPEG scale that stays within this pixel budget.
 LARGE_RASTER_PIXELS = 50_000_000
@@ -90,6 +96,90 @@ def native_jpeg(obj):
     return data if plain else None
 
 
+def _plain_mode(obj):
+    """'RGB' or 'L' for an 8-bit picture that pypdf reads without converting its colours, else None."""
+    if obj.get('/ImageMask') or '/Mask' in obj or '/Decode' in obj or obj.get('/BitsPerComponent') != 8:
+        return None
+    space = obj.get('/ColorSpace')
+    space = space.get_object() if hasattr(space, 'get_object') else space
+    if isinstance(space, list) and len(space) == 1:
+        space = space[0].get_object()
+    if isinstance(space, list) and len(space) == 2 and str(space[0]) == '/ICCBased':
+        space = {1: '/DeviceGray', 3: '/DeviceRGB'}.get(space[1].get_object().get('/N'))
+    return {'/DeviceRGB': 'RGB', '/DeviceGray': 'L'}.get(str(space))
+
+
+def last_filter(obj):
+    """The filter that encodes the image itself; pypdf removes the outer ones such as ASCII85."""
+    filters = obj.get('/Filter')
+    return str(filters[-1] if isinstance(filters, list) and filters else filters)
+
+
+def _plain_pixels(obj, jpeg):
+    """The pixels pypdf decodes before it encodes them a second time, or None when it does more than decode.
+
+    A JPEG is taken only with `jpeg`: without a mask pypdf re-encodes it lossily, and those are its pixels."""
+    mode, coding = _plain_mode(obj), last_filter(obj)
+    size = (obj['/Width'], obj['/Height'])
+    if mode is None:
+        return None
+    if coding == '/FlateDecode':
+        data = obj.get_data()
+        return Image.frombytes(mode, size, data) if len(data) == size[0]*size[1]*len(mode) else None
+    if coding not in ('/JPXDecode', '/DCTDecode') or (coding == '/DCTDecode' and not jpeg):
+        return None
+    try:
+        image = Image.open(BytesIO(obj.get_data()), formats=('JPEG',) if coding == '/DCTDecode' else ('JPEG2000',))
+    except Exception:
+        return None
+    if image.mode != mode or image.size != size:
+        image.close()
+        return None
+    image.load()
+    # pypdf hands on a decoded copy of its own encoding, which keeps no colour profile or other file details.
+    image.info = {}
+    return image
+
+
+def direct_image(obj):
+    """The picture pypdf extracts from an image XObject, pixel for pixel, or None for pypdf's own path.
+
+    For a soft-masked JPEG or JPEG 2000 and for a plain JPEG 2000 or uncompressed picture, pypdf encodes the
+    decoded pixels once more (a masked JPEG as lossless JPEG 2000, seconds per photo) only to decode them
+    straight back: on presentations with masked photos that was most of the processing time."""
+    masked = '/SMask' in obj
+    image = _plain_pixels(obj, jpeg=masked)
+    if image is None or not masked:
+        return image
+    alpha = _plain_pixels(obj['/SMask'], jpeg=False)
+    if alpha is None or alpha.mode != 'L':
+        image.close()
+        if alpha is not None:
+            alpha.close()
+        return None
+    with alpha:
+        # pypdf leaves a picture whose mask has another size without the mask.
+        if alpha.size == image.size:
+            image.putalpha(alpha)
+    return image
+
+
+def pypdf_extract(page, path, obj):
+    """(suffix, bytes, picture) of page.images[path], without the parse of the whole page for inline images
+    that pypdf runs before it returns any image of the page."""
+    if _xobj_to_image is None:
+        found = page.images[path]
+        return Path(found.name).suffix.lower(), found.data, found.image
+    suffix, data, picture = _xobj_to_image(obj)
+    return suffix.lower(), data, picture
+
+
+def pypdf_image(page, path, obj):
+    """page.images[path].image, pixel for pixel: directly where that is exact, else through pypdf."""
+    image = direct_image(obj)
+    return image if image is not None else pypdf_extract(page, path, obj)[2]
+
+
 def blank_layer_ink(obj):
     """Share of visibly drawn pixels in a stacked JPEG layer, measured on a small decode."""
     image, _ = open_large_raster(obj, budget=4_000_000)
@@ -151,7 +241,7 @@ def scan_image(reader, pdf_page, path, original):
     else:
         # Not native_jpeg: OCR and the panel rules were tuned on these decoded pixels. Crops taken
         # with the boxes found here are cut from the original JPEG, which has the same size.
-        image, factor = pdf_page.images[path].image, 1
+        image, factor = pypdf_image(pdf_page, path, reader.get_object(original['object_id'])), 1
     try:
         yield image, factor
     finally:

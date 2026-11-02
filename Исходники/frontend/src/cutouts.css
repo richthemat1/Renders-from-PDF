@@ -89,6 +89,12 @@
 /* The number stands beside the frame, so it never covers what the frame cuts out. */
 .cutout-frame > b { position: absolute; top: 6px; left: -30px; display: grid; place-items: center; box-sizing: border-box; width: 24px; height: 24px;
   border: 2px solid #fff; border-radius: 12px; background: #5969db; color: #fff; font-size: 12px; font-weight: 700; pointer-events: none; }
+/* Where the frame goes, once chosen: inside its bottom left corner, clear of the handle and of the labels of found
+   pictures, which stand over their top edges. */
+.cutout-frame-target { position: absolute; bottom: 7px; left: 7px; display: inline-flex; align-items: center; gap: 5px; box-sizing: border-box;
+  max-width: calc(100% - 14px); height: 20px; padding: 0 6px; border: 1px solid #dfe3ea; border-radius: 5px; background: #ffffffeb;
+  color: #17202b; font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.cutout-frame-target > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cutout-handle { position: absolute; box-sizing: border-box; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 2px solid #5969db;
   border-radius: 2px; background: #fff; }
 .cutout-handle.nw { left: 0; top: 0; cursor: nwse-resize; }
@@ -121,20 +127,44 @@
 .cutout-editor .cut-subvariants { color: #4946bd; font-size: 12px; font-weight: 600; }
 .cutout-list { display: flex; flex-direction: column; gap: 10px; padding: 18px; overflow: auto; overscroll-behavior: contain; }
 .cutout-list-empty { margin: 0; color: var(--muted); font-size: 12px; line-height: 18px; }
-.cutout-group { display: flex; flex-direction: column; gap: 10px; }
-.cutout-group + .cutout-group { margin-top: 8px; }
-.cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; color: #647184; }
+.cutout-group { display: flex; flex-direction: column; gap: 6px; }
+.cutout-group + .cutout-group { margin-top: 10px; }
+.cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 2px; color: #647184; }
 .cutout-group h4 b { font-size: 12px; font-weight: 700; }
 .cutout-group h4 span { font-size: 11px; font-weight: 400; }
-.cutout-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px; border: 1px solid #e4e8ed; border-radius: 10px; background: #fff; }
-.cutout-row.is-selected { padding: 9.5px; border: 1.5px solid #6260da; background: #f4f3ff; }
-.cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
+/* A short row — thumbnail, number and where the cutout goes — so a dozen fit in sight; the frame in hand opens its row
+   with the controls. The whole row is a button under its content; only the controls of an open row take the pointer. */
+.cutout-row { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #e4e8ed;
+  border-radius: 10px; background: #fff; }
+.cutout-row.is-open { align-items: flex-start; gap: 12px; padding: 10px; }
+.cutout-row:not(.is-selected):hover { border-color: #cdd4ee; background: #fbfcff; }
+.cutout-row.is-selected { border-color: #6260da; background: #f4f3ff; box-shadow: inset 0 0 0 .5px #6260da; }
+.cutout-row:has(> .cutout-row-hit:focus-visible) { outline: 2px solid #8190f0; outline-offset: 1px; }
+.cutout-row-hit { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: inherit;
+  background: transparent; cursor: pointer; }
+.cutout-row-hit:focus-visible { outline: none; }
+.cutout-row > .cut-thumb, .cutout-row > div { position: relative; pointer-events: none; }
+.cutout-row .select-field, .cutout-row .cut-toggle, .cutout-row .text-action { pointer-events: auto; }
+.cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.cutout-row.is-open > div { gap: 6px; }
 .cutout-row strong { display: flex; align-items: baseline; gap: 8px; color: #17202b; font-size: 13px; font-weight: 700; }
 .cutout-row strong span, .cutout-row > div > span { color: #647184; font-size: 12px; font-weight: 400; }
+.cutout-row strong > svg.cutout-warning { align-self: center; margin-left: auto; }
 .cutout-row .select-field { width: 100%; }
-/* A crop of any shape sits whole in the 56 × 100 slot. */
-.cutout-editor .cut-thumb { display: flex; flex: 0 0 56px; align-items: center; justify-content: center; width: 56px; height: 100px; max-height: none;
-  overflow: hidden; border-radius: 4px; background: #f1f2f5; }
+/* Where a cutout goes: the dot of its variant, or a ring while it keeps the place of its picture. */
+.cutout-row > div > .cutout-target { display: flex; align-items: center; gap: 6px; min-width: 0; color: #17202b; font-weight: 600; }
+.cutout-row > div > .cutout-target.is-keep { color: #647184; font-weight: 400; }
+.cutout-target > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cutout-editor .variant-dot { margin: 0; }
+.cutout-editor .variant-dot.is-keep { box-sizing: border-box; border: 1.5px solid #a4aabd; background: transparent; }
+.cutout-editor .variant-dot.is-misc { background: #a4aabd; }
+.cutout-pick-hint { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: -4px 0 -4px !important; color: #647184 !important;
+  font-size: 12px; line-height: normal; }
+.cutout-pick-hint .cut-subvariants { margin: 0 0 0 auto; }
+/* A crop of any shape sits whole in its slot: 36 × 36 in a short row, 56 × 100 in the open one. */
+.cutout-editor .cut-thumb { display: flex; flex: 0 0 36px; align-items: center; justify-content: center; align-self: center; width: 36px;
+  height: 36px; max-height: none; overflow: hidden; border-radius: 4px; background: #f1f2f5; }
+.cutout-editor .cutout-row.is-open .cut-thumb { flex-basis: 56px; align-self: flex-start; width: 56px; height: 100px; }
 .cutout-editor .cut-thumb .cropped-image { width: 100%; }
 .cutout-editor .cut-thumb.is-tall .cropped-image { width: auto; height: 100%; }
 .cutout-row-actions { display: flex; gap: 2px; }
@@ -174,6 +204,8 @@
   .cutout-editor .cut-tools { gap: 10px; padding-inline: 16px; }
   .cutout-editor .cut-tools .cut-divider { display: none; }
   .cutout-scroller { padding-inline: 32px; }
+  /* The tip on Ctrl and Shift is in the help; the narrow list keeps its room for rows. */
+  .cutout-pick-hint.is-tip { display: none; }
 }
 /* A low window gives its height to the page: smaller header and footer, only the note under the page
    (the mouse and keys are in the help). */
@@ -184,6 +216,7 @@
   .cutout-editor .cut-footer { height: 60px; }
   .cutout-editor .cut-footer p span { display: none; }
   .cutout-editor .cut-hints p:not(.cut-note) { display: none; }
+  .cutout-pick-hint.is-tip { display: none; }
   .cutout-scroller { padding-top: 12px; }
   .cutout-center { gap: 8px; padding-bottom: 8px; }
 }

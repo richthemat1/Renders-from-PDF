@@ -235,7 +235,8 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
     if not webview2_available():
         runtime_error('Microsoft Edge WebView2 Runtime не найден на этом компьютере.')
         return 1
-    jobs = JobService(state_path)
+    # Several PDFs of a queue at once, each in a process of its own: the window keeps its own core.
+    jobs = JobService(state_path, processes=True)
     server = DesktopServer(jobs, assets).start()
     bridge = NativeBridge(jobs, server, log_path)
     closed = Event()

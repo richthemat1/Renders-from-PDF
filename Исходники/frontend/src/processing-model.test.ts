@@ -56,6 +56,18 @@ describe("processing page state", () => {
     expect(view).toMatchObject({ fileName: "Новый файл.pdf", phase: "Чтение заголовков · страница 2 из 4" });
   });
 
+  it("lists each file of a parallel queue with its own stage, and keeps one file on one line", () => {
+    const files = [
+      { name: "Первый.pdf", index: 1, total: 3, phase: "Сохранение изображений · страница 4 из 25", progress: 41 },
+      { name: "Третий.pdf", index: 3, total: 3, phase: "Чтение заголовков · страница 2 из 117", progress: 0 },
+    ];
+    const several = processingView(snapshot({ busy: true, job: job("processing", { total: 3, active_files: files, active_file: { name: "Первый.pdf", index: 1, total: 3 } }) }));
+    expect(several.activeFiles).toEqual(files);
+    const single = processingView(snapshot({ busy: true, detail: "Первый.pdf · Чтение заголовков", job: job("processing", { active_files: files.slice(0, 1), active_file: { name: "Первый.pdf", index: 1, total: 1 } }) }));
+    expect(single).toMatchObject({ activeFiles: [], fileName: "Первый.pdf", phase: "Чтение заголовков" });
+    expect(processingView(snapshot({ job: job("complete", { active_files: files }) })).activeFiles).toEqual([]);
+  });
+
   it("does not guess legacy filenames or queue sizes from localized logs and detail", () => {
     const view = processingView(snapshot({ busy: true, detail: "Новый файл.pdf · Чтение страниц", logs: [{ id: 1, level: "head", text: "Файл 1 из 1: Новый файл.pdf" }] }));
     expect(view).toMatchObject({ fileName: null, phase: "Новый файл.pdf · Чтение страниц" });

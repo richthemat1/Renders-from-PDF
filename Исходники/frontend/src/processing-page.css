@@ -354,6 +354,36 @@
   overflow-wrap: anywhere;
 }
 
+/* Several PDFs at once: one row for each file in work, with its own stage and share done. */
+.processing-file-list {
+  gap: 0;
+  margin: 0;
+  padding: 4px 16px;
+  list-style: none;
+}
+
+.processing-active-file {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+  padding: 11px 0;
+}
+
+.processing-active-file + .processing-active-file {
+  border-top: 1px solid var(--processing-line);
+}
+
+.processing-file-percent {
+  flex: none;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--processing-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
 /* A finished queue: the result rows sit inside the panel, a step tighter than «Последние результаты». */
 .processing-page .processing-batch .processing-history-row {
   min-height: 60px;

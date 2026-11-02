@@ -1,19 +1,77 @@
 """Thread-safe desktop workspace and cancellable PDF queue, without a GUI dependency."""
+from collections import deque
 import copy
 import hashlib
 import logging
+import multiprocessing
 import os
 from pathlib import Path
+import pickle
+from queue import Empty, Queue
 import secrets
 from threading import Event, RLock, Thread, current_thread
 from time import monotonic
+import traceback
 
 from photo_edit import can_undo_last_save, load_report
 from photo_export import VERSION, OutputPathError, extract, planned_output
-from photo_native import Cancelled, dropped_pdfs
+from photo_native import Cancelled, available_memory, dropped_pdfs, lower_priority, process_memory
 from photo_state import WorkspaceState
 
 LOGGER = logging.getLogger('pdf-photos')
+# Most PDFs of a queue that run at once: each takes a core and up to 2 GB at its peak.
+MAX_PARALLEL = 4
+# Memory one more PDF is given room for: at their peak seven presentations of 17–117 pages took 0.3–1.8 GB.
+FILE_MEMORY = 1_500_000_000
+
+
+def parallel_limit():
+    """PDFs of a queue that run at once: one for every two logical processors, at most MAX_PARALLEL."""
+    return max(1, min(MAX_PARALLEL, (os.cpu_count() or 2) // 2))
+
+
+def stage_progress(info):
+    """The share of one PDF done, 0–100, and the words for its current stage."""
+    current, total, stage = info['current'], max(info['total'], 1), info['stage']
+    if stage == 'labels':
+        return 12 * current / total, f'Чтение заголовков · страница {current} из {total}'
+    if stage == 'ocr':
+        return 12 + 13 * current / total, f'Распознавание скана · страница {current} из {total}'
+    if stage == 'images':
+        return 25 + 55 * (current - 1) / total, f'Сохранение изображений · страница {current} из {total}'
+    if stage == 'merge':
+        return 80 + 10 * current / total, f'Объединение PDF по вариантам · {current} из {total}'
+    return 90 + 9.7 * current / total, f'Создание просмотра · {current} из {total}'
+
+
+def _portable(error):
+    """The error itself when it reaches the window's process intact, else an error with its text."""
+    try:
+        pickle.loads(pickle.dumps(error))
+        return error
+    except Exception:
+        return RuntimeError(str(error))
+
+
+def _finish(slot, events, run):
+    """Send the outcome of one PDF: its report, the stop, or the error with its traceback."""
+    try:
+        events.put(('done', slot, run()))
+    except Cancelled:
+        events.put(('cancelled', slot, None))
+    except BaseException as error:
+        events.put(('failed', slot, (_portable(error), traceback.format_exc())))
+
+
+def process_file(slot, source, output, events, stop):
+    """One PDF of a queue in a process of its own: its own core, and all its memory back when it ends."""
+    lower_priority()
+
+    def progress(info):
+        if stop.is_set():
+            raise Cancelled()
+        events.put(('progress', slot, info))
+    _finish(slot, events, lambda: extract(source, output=output, progress=progress))
 
 
 def history_id(output):
@@ -51,9 +109,12 @@ def read_result(folder):
 
 
 class JobService:
-    def __init__(self, state_path=None, extractor=None):
+    def __init__(self, state_path=None, extractor=None, workers=None, processes=False):
+        """`processes`: the real extractor runs each PDF in a process of its own, parallel_limit() at once;
+        otherwise PDFs run in threads of this process, one at a time. `workers` sets how many run at once."""
         self.workspace = WorkspaceState(state_path)
         self.extractor = extractor if extractor is not None else extract
+        self.workers, self.processes = workers, processes
         self._lock, self._cancel = RLock(), Event()
         self._thread, self._busy, self._closing = None, False, False
         self._has_job = False
@@ -62,7 +123,9 @@ class JobService:
         self._progress, self._found, self._next_log = 0, 0, 0
         self._totals = dict.fromkeys(('images', 'documents', 'unsigned', 'review'), 0)
         self._job = {'outcome': 'idle', 'total': 0, 'completed': 0, 'failed': 0,
-                     'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
+                     'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': []}
+        # Files in work by queue slot; result folders they will take; files of the queue done with.
+        self._active, self._reserved, self._handled, self._queue_size = {}, set(), 0, 0
         self._logs = []
         self._pending_paths, self._pending_repeat = (), None
         # Files a stopped queue did not reach, so «Продолжить оставшиеся» needs no new selection.
@@ -206,10 +269,12 @@ class JobService:
             self._cancel.clear()
             # outputs: result folders of this queue in order, so a batch lists each of its files.
             self._job = {'outcome': 'processing', 'total': len(paths), 'completed': 0, 'failed': 0,
-                         'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0}
+                         'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': [],
+                         'remaining': 0}
             self._current_output = None
             self._totals = dict.fromkeys(self._totals, 0)
             self._progress, self._found = 0, 0
+            self._active, self._reserved = {}, set()
             settings = self.workspace.output_mode, self.workspace.output_folder
             valid = []
             for source in paths:
@@ -228,9 +293,12 @@ class JobService:
             paths = tuple(valid)
             self._busy = True
             self._has_job = True
+            self._handled, self._queue_size = 0, len(paths)
             self._status, self._detail = 'Подготовка к обработке…', f'В очереди файлов: {len(paths)}'
+            limit = self.workers or (parallel_limit() if self.processes else 1)
             # Freeze queue settings; later files still get a fresh unused destination.
-            self._thread = Thread(target=self._worker, args=(paths, settings, failed), daemon=True, name='pdf-photos-jobs')
+            self._thread = Thread(target=self._worker, args=(paths, settings, failed, limit),
+                                  daemon=True, name='pdf-photos-jobs')
             self._thread.start()
             return self.snapshot()
 
@@ -239,7 +307,9 @@ class JobService:
             if self._busy and not self._cancel.is_set():
                 self._cancel.set()
                 self._status = 'Останавливаю обработку…'
-                self._detail = 'Дождитесь завершения текущего изображения — незавершённая выгрузка будет удалена.'
+                self._detail = ('Дождитесь завершения текущих изображений — незавершённые выгрузки будут удалены.'
+                                if len(self._active) > 1 else
+                                'Дождитесь завершения текущего изображения — незавершённая выгрузка будет удалена.')
                 self._append('Запрошена отмена обработки.', 'warn')
             return self.snapshot()
 
@@ -362,101 +432,216 @@ class JobService:
             self.workspace.forget_failure(id)
             return self.snapshot()
 
-    @staticmethod
-    def _destination(source, settings):
+    def _destination(self, source, settings):
         mode, folder = settings
         parent = (source.parent if mode == 'nearby' else
                   source.parent / 'Результаты' if mode == 'results' else Path(folder))
-        return planned_output(source, parent)
+        # Two PDFs of one name processed at once must not plan the same folder before either exists.
+        return planned_output(source, parent, reserved=self._reserved)
 
-    def _on_progress(self, info, source, index, total_files):
+    def _show_active(self):
+        """Progress, status line and the list of files in work, from the stage of each file."""
+        files = sorted(self._active.values(), key=lambda item: item['index'])
+        self._found = sum(item['found'] for item in files)
+        done = self._handled + sum(item['progress'] for item in files) / 100
+        self._progress = max(self._progress, 100 * done / max(self._queue_size, 1))
+        self._job['active_files'] = [{'name': item['name'], 'index': item['index'], 'total': item['total'],
+                                      'phase': item['phase'], 'progress': round(item['progress'])} for item in files]
+        if files:
+            self._job['active_file'] = {key: files[0][key] for key in ('name', 'index', 'total')}
+        lines = [f'{item["name"]} · {item["phase"]}' if item['phase'] else item['name'] for item in files]
+        if len(files) == 1:
+            self._status, self._detail = f'Обработка PDF · {files[0]["index"]} из {files[0]["total"]}', lines[0]
+        elif files:
+            self._status = f'Обработка PDF · одновременно {len(files)} из {self._queue_size}'
+            self._detail = '; '.join(lines)
+
+    def _apply_progress(self, slot, info):
+        value, text = stage_progress(info)
+        item = self._active[slot]
+        item['progress'], item['phase'] = max(item['progress'], value), text
+        if info['stage'] in ('images', 'merge', 'export'):
+            item['found'] = max(item['found'], max(0, int(info.get('found', 0))))
+        self._show_active()
+
+    def _thread_progress(self, slot, info):
         with self._lock:
             if self._cancel.is_set():
                 raise Cancelled()
-            current, total, stage = info['current'], max(info['total'], 1), info['stage']
-            if stage == 'labels':
-                value, text = 12 * current / total, f'Чтение заголовков · страница {current} из {total}'
-            elif stage == 'ocr':
-                value, text = 12 + 13 * current / total, f'Распознавание скана · страница {current} из {total}'
-            elif stage == 'images':
-                value, text = 25 + 55 * (current - 1) / total, f'Сохранение изображений · страница {current} из {total}'
-            elif stage == 'merge':
-                value, text = 80 + 10 * current / total, f'Объединение PDF по вариантам · {current} из {total}'
-            else:
-                value, text = 90 + 9.7 * current / total, f'Создание просмотра · {current} из {total}'
-            if stage in ('images', 'merge', 'export'):
-                self._found = max(self._found, max(0, int(info.get('found', 0))))
-            self._progress = max(self._progress, 100 * (index - 1 + value / 100) / total_files)
-            self._status = f'Обработка PDF · {index} из {total_files}'
-            self._detail = f'{source.name} · {text}'
+            self._apply_progress(slot, info)
 
-    def _worker(self, paths, settings, preflight_failed=0):
+    @staticmethod
+    def _memory_allows(running):
+        """Another PDF starts only if memory stays for it once the running ones reach their peak."""
+        free = available_memory()
+        if free is None:
+            return True
+        for handle in running.values():
+            used = process_memory(handle.pid) if getattr(handle, 'pid', None) else None
+            free -= max(0, FILE_MEMORY - (used or 0))
+        return free >= FILE_MEMORY
+
+    def _launch(self, slot, paths, settings, events, stop, parallel):
+        """Start one PDF of the queue; a folder that cannot be planned now fails only this file."""
+        source = paths[slot]
+        with self._lock:
+            try:
+                output = self._destination(source, settings)
+            except Exception as error:
+                LOGGER.exception('Failed: %s', source)
+                self._job['failed'] += 1
+                self._handled += 1
+                self._record_failure(source, error)
+                self._show_active()
+                return None
+            self._reserved.add(os.path.normcase(str(output)))
+            self._active[slot] = {'name': source.name, 'index': slot + 1, 'total': len(paths), 'phase': '',
+                                  'progress': 0, 'found': 0, 'output': output}
+            if parallel:
+                self._append(f'Начата обработка: {source.name}', 'muted')
+            else:
+                self._append(f'Файл {slot + 1} из {len(paths)}: {source.name}', 'head')
+            self._show_active()
+        LOGGER.info('Processing %s', source)
+        if stop is not None:
+            handle = multiprocessing.get_context('spawn').Process(
+                target=process_file, args=(slot, source, output, events, stop),
+                daemon=True, name=f'pdf-photos-{slot + 1}')
+        else:
+            def run():
+                return self.extractor(source, output=output, progress=lambda info: self._thread_progress(slot, info))
+            handle = Thread(target=_finish, args=(slot, events, run), daemon=True, name=f'pdf-photos-{slot + 1}')
+        handle.start()
+        return handle
+
+    def _saved(self, slot, paths, report, parallel, outputs):
+        """Record a finished PDF and return whether it lost images; an unusable report raises."""
+        source = paths[slot]
+        report = normalized_report(report)
+        with self._lock:
+            self.remember(report, processed=True)
+            counts = report['counts_by_status']
+            self._totals['images'] += sum(not image.get('removed') for image in report['images'])
+            self._totals['documents'] += len(report['documents'])
+            self._totals['unsigned'] += counts.get('unsigned', 0)
+            self._totals['review'] += counts.get('review', 0)
+            self._job['completed'] += 1
+            outputs[slot] = report['output']
+            self._job['outputs'] = [outputs[key] for key in sorted(outputs)]
+            self._job['warnings'] += len(report['warnings'])
+            self._job['errors'] += len(report['errors'])
+            if parallel:
+                # Files of one queue finish in any order: each block of results names its file.
+                self._append(f'Файл {slot + 1} из {len(paths)}: {source.name}', 'head')
+            # Not «N PDF из M изображений»: a variant joins many images into one PDF.
+            self._append(f'Сохранено: изображений — {sum(not image.get("removed") for image in report["images"])}, '
+                         f'готовых PDF — {len(report["documents"])}.', 'ok')
+            for key, title in (('unsigned', 'без подписи'), ('review', 'на проверку')):
+                if counts.get(key):
+                    self._append(f'Проверьте вручную: {title} — {counts[key]}.', 'warn')
+            if report['warnings']:
+                self._append(f'Предупреждений: {len(report["warnings"])}. Подробности — в отчёте.', 'warn')
+            if report['errors']:
+                self._append(f'Не сохранено изображений: {len(report["errors"])}. Причины — в «Отчёт.json».', 'error')
+            if report.get('preview_errors'):
+                self._append(f'Не создано миниатюр: {len(report["preview_errors"])}. Сами PDF сохранены.', 'warn')
+            self._append(report['output'], 'muted')
+        return bool(report['errors'])
+
+    def _worker(self, paths, settings, preflight_failed=0, limit=1):
+        """Run the queue: up to `limit` PDFs at once, the real extractor each in a process of its own."""
         successes, partial, started = 0, preflight_failed, monotonic()
-        # Files done with, saved or failed; a file stopped halfway is not.
-        handled = 0
+        processes, parallel = self.processes and self.extractor is extract, limit > 1 and len(paths) > 1
+
+        def size(path):
+            try:
+                return path.stat().st_size
+            except OSError:
+                return 0
+        # The largest PDF first: a queue ends sooner when its longest file does not start last.
+        slots = sorted(range(len(paths)), key=lambda slot: -size(paths[slot])) if parallel else range(len(paths))
+        waiting = deque(slots)
+        context = multiprocessing.get_context('spawn')
+        events = context.Queue() if processes else Queue()
+        stop = context.Event() if processes else None
+        running, finished, outputs, silent = {}, set(), {}, {}
         try:
-            for index, source in enumerate(paths, 1):
+            while waiting or running:
                 if self._cancel.is_set():
-                    break
-                with self._lock:
-                    self._found = 0
-                    self._job['active_file'] = {'name': source.name, 'index': index, 'total': len(paths)}
-                    self._status, self._detail = f'Обработка PDF · {index} из {len(paths)}', source.name
-                    self._append(f'Файл {index} из {len(paths)}: {source.name}', 'head')
-                try:
-                    LOGGER.info('Processing %s', source)
-                    report = self.extractor(source, output=self._destination(source, settings),
-                                            progress=lambda info: self._on_progress(info, source, index, len(paths)))
-                    report = normalized_report(report)
+                    waiting.clear()
+                    if stop is not None:
+                        stop.set()
+                while waiting and len(running) < limit and (not running or self._memory_allows(running)):
+                    slot = waiting.popleft()
+                    handle = self._launch(slot, paths, settings, events, stop, parallel)
+                    if handle is None:
+                        finished.add(slot)
+                    else:
+                        running[slot] = handle
+                if not running:
+                    continue
+                # A process that ends without a word was stopped by Windows, as when memory ran out. Its last
+                # message, if it sent one, arrives well within the grace time while the others keep reporting.
+                for slot, handle in running.items():
+                    if stop is not None and handle.exitcode is not None:
+                        silent.setdefault(slot, monotonic())
+                lost = next((slot for slot, since in silent.items() if slot in running and monotonic() - since > 2), None)
+                if lost is not None:
+                    kind, slot, value = 'failed', lost, (RuntimeError(
+                        f'Обработка прервалась: процесс завершился с кодом {running[lost].exitcode}. '
+                        'Возможно, не хватило памяти — обработайте этот PDF отдельно.'), '')
+                else:
+                    try:
+                        kind, slot, value = events.get(timeout=.25)
+                    except Empty:
+                        continue
+                if kind == 'progress':
                     with self._lock:
-                        self.remember(report, processed=True)
-                        counts = report['counts_by_status']
-                        self._totals['images'] += sum(not image.get('removed') for image in report['images'])
-                        self._totals['documents'] += len(report['documents'])
-                        self._totals['unsigned'] += counts.get('unsigned', 0)
-                        self._totals['review'] += counts.get('review', 0)
-                        self._found = 0
+                        if slot in self._active:
+                            self._apply_progress(slot, value)
+                    continue
+                running.pop(slot).join(5)
+                if kind == 'done':
+                    try:
+                        partial += self._saved(slot, paths, value, parallel, outputs)
                         successes += 1
-                        self._job['completed'] += 1
-                        self._job['outputs'].append(report['output'])
-                        self._job['warnings'] += len(report['warnings'])
-                        self._job['errors'] += len(report['errors'])
-                        partial += bool(report['errors'])
-                        # Not «N PDF из M изображений»: a variant joins many images into one PDF.
-                        self._append(f'Сохранено: изображений — {sum(not image.get("removed") for image in report["images"])}, '
-                                     f'готовых PDF — {len(report["documents"])}.', 'ok')
-                        for key, title in (('unsigned', 'без подписи'), ('review', 'на проверку')):
-                            if counts.get(key):
-                                self._append(f'Проверьте вручную: {title} — {counts[key]}.', 'warn')
-                        if report['warnings']:
-                            self._append(f'Предупреждений: {len(report["warnings"])}. Подробности — в отчёте.', 'warn')
-                        if report['errors']:
-                            self._append(f'Не сохранено изображений: {len(report["errors"])}. Причины — в «Отчёт.json».', 'error')
-                        if report.get('preview_errors'):
-                            self._append(f'Не создано миниатюр: {len(report["preview_errors"])}. Сами PDF сохранены.', 'warn')
-                        self._append(report['output'], 'muted')
-                except Cancelled:
-                    self._cancel.set()
-                    break
-                except Exception as error:
-                    LOGGER.exception('Failed: %s', source)
+                    except Exception as error:
+                        kind, value = 'failed', (error, traceback.format_exc())
+                if kind == 'failed':
+                    error, trace = value
+                    LOGGER.error('Failed: %s\n%s', paths[slot], trace or error)
                     with self._lock:
                         self._job['failed'] += 1
-                        self._record_failure(source, error)
-                finally:
-                    with self._lock:
-                        self._found = 0
-                        if not self._cancel.is_set():
-                            self._progress = 100 * index / len(paths)
-                handled = index
+                        self._record_failure(paths[slot], error)
+                with self._lock:
+                    item = self._active.pop(slot, None)
+                    if item is not None:
+                        self._reserved.discard(os.path.normcase(str(item['output'])))
+                    if kind != 'cancelled':
+                        finished.add(slot)
+                        self._handled += 1
+                    self._show_active()
         finally:
+            if running:
+                # Only a fault here leaves PDFs running: they stop at their next step and remove their work.
+                if stop is not None:
+                    stop.set()
+                for handle in running.values():
+                    handle.join(30)
+                    if stop is not None and handle.is_alive():
+                        handle.terminate()
             with self._lock:
                 self._busy, self._found = False, 0
+                self._active.clear()
+                self._job['active_files'] = []
                 cancelled = self._cancel.is_set()
+                if outputs:
+                    # «Открыть результат» opens the last file of the queue, in whatever order the files finished.
+                    self._current_output = outputs[max(outputs)]
                 # A stopped queue shows the share of files it saved, as its status line counts them.
                 self._progress = (100 * successes / len(paths) if cancelled else 100 if successes else 0)
                 if cancelled:
-                    self._remaining = tuple(paths[handled:])
+                    self._remaining = tuple(path for slot, path in enumerate(paths) if slot not in finished)
                     self._job['remaining'] = len(self._remaining)
                     self._job['outcome'] = 'cancelled'
                     self._status = f'Остановлено. Готово файлов: {successes} из {len(paths)}'

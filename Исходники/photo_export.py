@@ -5,6 +5,7 @@ import hashlib
 import html
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -28,9 +29,10 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
                           split_joined_words, text_lines, tile_groups, found_variant, variant_numbers,
                           variant_sort_key)
-from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, drawn_share, is_large_raster,
-                        LARGE_RASTER_PIXELS, light_ground_share, native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
-                        prepare_scan_continuations, seam_caption, turned, whole_scan_caption)
+from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, direct_image, drawn_share,
+                        is_large_raster, LARGE_RASTER_PIXELS, last_filter, light_ground_share, native_jpeg,
+                        open_large_raster, prepare_scan_continuations, pypdf_extract, pypdf_image, SCRATCH_PNG_LEVEL,
+                        seam_caption, turned, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
 # make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
@@ -43,7 +45,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.41'
+VERSION = '3.42'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -296,8 +298,10 @@ def check_output_path(destination):
     return destination
 
 
-def planned_output(source, parent=None):
-    """Pick a readable unused folder within the path budget, without reading the PDF."""
+def planned_output(source, parent=None, reserved=()):
+    """Pick a readable unused folder within the path budget, without reading the PDF.
+
+    `reserved`: normcased folders other PDFs of a running queue will create; they count as taken."""
     source = Path(source).resolve()
     parent = Path(parent).resolve() if parent is not None else source.parent
     root_budget = 214 - 16 - len(OTHER_DIR) - 1
@@ -315,7 +319,7 @@ def planned_output(source, parent=None):
             name = (safe_name(source.stem, available-6, keep_end=True)+' — PDF' if available >= 10
                     else safe_name('Результат', available))
         destination = check_output_path(parent / (name + suffix))
-        if not destination.exists():
+        if not destination.exists() and os.path.normcase(str(destination)) not in reserved:
             return destination
     raise OutputPathError('Не удалось подобрать короткое свободное имя результата. Выберите другую папку.')
 
@@ -600,7 +604,7 @@ def mark_cover_graphics(reader, page):
         try:
             if paths is None:
                 paths = image_paths(reader.pages[0])
-            with reader.pages[0].images[paths[image['object_id']]].image as picture:
+            with pypdf_image(reader.pages[0], paths[image['object_id']], reader.get_object(image['object_id'])) as picture:
                 light, drawn = light_ground_share(picture)
         except Exception:
             # A picture that cannot be measured stays a picture.
@@ -702,16 +706,27 @@ def inspect(source, progress=None):
 
 
 def _decode(page, paths, image):
+    """(suffix, bytes) of a picture as stored or as pypdf encodes it, or (None, the decoded picture)."""
     key = paths.get(image['object_id'])
     if key is None:
         raise ValueError('Встроенное или inline-изображение не имеет отдельного ресурса.')
-    data = native_jpeg(page.pdf.get_object(image['object_id']))
+    obj = page.pdf.get_object(image['object_id'])
+    data = native_jpeg(obj)
     if data is not None:
-        return 'native.jpg', data
-    original = page.images[key]
-    data, name = original.data, original.name
-    original.image.close()
-    return name, data
+        return '.jpg', data
+    picture = direct_image(obj)
+    if picture is not None:
+        if last_filter(obj) == '/FlateDecode':
+            # pypdf gives these pixels as a PNG at Pillow's default level: the same file, made directly.
+            with picture:
+                stream = BytesIO()
+                picture.save(stream, 'PNG')
+                return '.png', stream.getvalue()
+        return None, picture
+    suffix, data, picture = pypdf_extract(page, key, obj)
+    if picture is not None:
+        picture.close()
+    return suffix, data
 
 
 def _large_raster(page, image, budget):
@@ -745,8 +760,8 @@ def save_group(page, paths, group, base):
         image.convert('RGB').save(target, 'JPEG', quality=92)
         return target, list(image.size), 'reduced_original'
     if len(group) == 1:
-        name, data = _decode(page, paths, group[0])
-        with Image.open(BytesIO(data)) as image:
+        suffix, data = _decode(page, paths, group[0])
+        with Image.open(BytesIO(data)) if suffix else data as image:
             if 'scan_crop_px' in group[0]:
                 target = base.with_suffix('.png')
                 with image.crop(group[0]['scan_crop_px']) as crop:
@@ -754,7 +769,6 @@ def save_group(page, paths, group, base):
                     crop.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                 return target, size, 'native_scan_crop'
             size = list(image.size)
-            suffix = Path(name).suffix.lower()
             if suffix in ('.jpg', '.jpeg', '.png'):
                 target = base.with_suffix(suffix)
                 target.write_bytes(data)
@@ -783,8 +797,8 @@ def save_group(page, paths, group, base):
     with Image.new('RGBA', size, (255, 255, 255, 0)) as merged:
         offset = 0
         for image in group:
-            _, data = _decode(page, paths, image)
-            with Image.open(BytesIO(data)) as piece:
+            suffix, data = _decode(page, paths, image)
+            with Image.open(BytesIO(data)) if suffix else data as piece:
                 if vertical:
                     x, y, expected = 0, offset, (size[0], image['srcsize'][1])
                     offset += image['srcsize'][1]

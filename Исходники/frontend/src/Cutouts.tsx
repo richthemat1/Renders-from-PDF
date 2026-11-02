@@ -8,7 +8,7 @@ import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
 import type { ActionMenuItem, SelectOption } from "./components";
 import { useContextMenu } from "./contextMenu";
-import { Presence } from "./motion";
+import { Presence, reducedMotion } from "./motion";
 import { CroppedImage } from "./Collages";
 import { compareVariants, nextSubvariant, rectBox } from "./editor";
 import type { PagesInfo, Rect } from "./types";
@@ -108,8 +108,36 @@ export function cutoutNumbers(views: CutoutSource[]): Map<number, number> {
   return new Map(pieces.map(({ piece }, index) => [piece.id, index + 1]));
 }
 
+/** The frames picked after a click on one: it alone, added or taken away with Ctrl, a run in list order with Shift
+ * (from the anchor, the last frame clicked without Shift). The last frame picked is the one in hand. */
+export function pickFrames(picked: number[], anchor: number | null, uid: number, order: number[],
+  mode: "only" | "toggle" | "range"): { picked: number[]; anchor: number | null } {
+  if (mode === "range" && anchor !== null) {
+    const from = order.indexOf(anchor), to = order.indexOf(uid);
+    if (from >= 0 && to >= 0) {
+      const run = order.slice(Math.min(from, to), Math.max(from, to) + 1).filter((value) => value !== uid);
+      return { picked: [...run, uid], anchor };
+    }
+  }
+  if (mode === "toggle") {
+    if (!picked.includes(uid)) return { picked: [...picked, uid], anchor: uid };
+    const rest = picked.filter((value) => value !== uid);
+    return { picked: rest, anchor: rest.at(-1) ?? null };
+  }
+  return { picked: [uid], anchor: uid };
+}
+
 function sameRect(a: Rect, b: Rect): boolean {
   return a.every((value, index) => Math.abs(value - b[index]) < 1e-6);
+}
+
+/** Scrolls the list just enough to show an item, never past its top: a group taller than the list starts at its head. */
+function reveal(container: HTMLElement, item: HTMLElement) {
+  const room = 12;
+  const box = container.getBoundingClientRect(), own = item.getBoundingClientRect();
+  const above = own.top - box.top - room, below = own.bottom - box.bottom + room;
+  const shift = above < 0 ? above : below > 0 ? Math.min(above, below) : 0;
+  if (Math.abs(shift) >= 1) container.scrollBy({ top: shift, behavior: reducedMotion() ? "auto" : "smooth" });
 }
 
 function clampRect([left, top, right, bottom]: Rect): Rect {
@@ -261,7 +289,11 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       marks: piece.marks })));
   });
   const [history, setHistory] = useState<Frame[][]>([]);
-  const [selected, setSelected] = useState<number | null>(null);
+  // Frames picked in the list or on the page, for «Куда выбранные»; the last one is in hand: its handles,
+  // its open row, its size over it.
+  const [picked, setPicked] = useState<number[]>([]);
+  const selected = picked.at(-1) ?? null;
+  const anchor = useRef<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const [showPictures, setShowPictures] = useState(true);
   const [snapping, setSnapping] = useState(true);
@@ -277,6 +309,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const nextUid = useRef(frames.length);
   const scroller = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const pieceOf = useMemo(() => new Map(views.flatMap((view) => view.pieces.map((piece) => [piece.id, { view, piece }] as const))), [views]);
 
@@ -356,17 +389,30 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     return () => observer.disconnect();
   }, [info]);
   useEffect(() => {
-    if (!info || start.picture === undefined) return;
-    const picture = pictures.find((value) => value.source === start.picture);
-    if (!picture || frames.some((frame) => sourceOf(frame).key === picture.key)) return;
+    if (!info) return;
+    const picture = start.picture === undefined ? undefined : pictures.find((value) => value.source === start.picture);
+    const held = picture ? ordered.find((frame) => sourceOf(frame).key === picture.key) : ordered.find((frame) => frame.page === start.page);
+    if (held || !picture) {
+      // Opened on cutouts made before: the first of them is in hand, its row open in the list.
+      if (held) select(held.uid);
+      return;
+    }
     // Opened from a picture: the frame starts at its edges, one edge in is enough to leave a plan out.
     const frame = { uid: ++nextUid.current, page: picture.page, rect: picture.area };
     setFrames((current) => [...current, frame]);
-    setSelected(frame.uid);
+    select(frame.uid);
     setNote("Рамка поставлена по краям картинки — сдвиньте край, чтобы отрезать лишнее.");
     // Only once, when the pages arrive.
   }, [info]);
   useEffect(() => { stage.current?.focus({ preventScroll: true }); }, [info]);
+  // The list follows the page: the row of the frame in hand comes into sight, however it was picked, and a page
+  // turned without it shows its own group.
+  const handPage = frames.find((frame) => frame.uid === selected)?.page;
+  useEffect(() => {
+    const element = list.current;
+    const item = element?.querySelector<HTMLElement>(handPage === page ? `[data-uid="${selected}"]` : `[data-page="${page}"]`);
+    if (element && item) reveal(element, item);
+  }, [selected, handPage, page, info]);
   const latestUndo = useRef(() => {});
   useEffect(() => { latestUndo.current = undo; });
   useEffect(() => {
@@ -401,8 +447,21 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     if (!last) return;
     setHistory(history.slice(0, -1));
     setFrames(last);
-    setSelected(null);
+    select(null);
     setNote("");
+  }
+  function select(uid: number | null) {
+    setPicked(uid === null ? [] : [uid]);
+    anchor.current = uid;
+  }
+  /** A click on a row or a frame: Ctrl adds the frame or takes it away, Shift picks a run, a plain click picks it
+   * alone. The page turns to the frame picked. */
+  function pick(frame: Frame, event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) {
+    const mode = event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "only";
+    const next = pickFrames(picked, anchor.current, frame.uid, ordered.map((value) => value.uid), mode);
+    setPicked(next.picked);
+    anchor.current = next.anchor;
+    if (next.picked.includes(frame.uid)) setPage(frame.page);
   }
   function point(event: { clientX: number; clientY: number }): [number, number] {
     const rect = stage.current!.getBoundingClientRect();
@@ -430,13 +489,19 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     const start: [number, number] = [snapEdge(x, "x", candidates).value, snapEdge(y, "y", candidates).value];
     drag.current = { mode: "draw", pointer: event.pointerId, start };
     event.currentTarget.setPointerCapture(event.pointerId);
-    setSelected(null);
+    select(null);
   }
   function startMove(event: ReactPointerEvent, frame: Frame, handle?: Handle) {
     event.stopPropagation();
     if (event.button !== 0) return;
+    // With Ctrl or Shift a frame is picked, as in the list; only a plain press takes it in hand to move.
+    if (!handle && (event.ctrlKey || event.metaKey || event.shiftKey)) {
+      pick(frame, event);
+      stage.current?.focus({ preventScroll: true });
+      return;
+    }
     stage.current?.setPointerCapture(event.pointerId);
-    setSelected(frame.uid);
+    select(frame.uid);
     drag.current = handle
       ? { mode: "resize", pointer: event.pointerId, uid: frame.uid, handle, rect: frame.rect, before: frames }
       : { mode: "move", pointer: event.pointerId, uid: frame.uid, start: point(event), rect: frame.rect, before: frames };
@@ -499,7 +564,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       return;
     }
     commit([...frames, frame]);
-    setSelected(frame.uid);
+    select(frame.uid);
   }
   function wholePicture(event: ReactMouseEvent<HTMLDivElement>) {
     if ((event.target as Element).closest(".cutout-frame, .cut-callout")) return;
@@ -507,15 +572,17 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     const picture = sourceFor([x, y, x, y], pagePictures);
     if (!picture) return;
     const existing = onPage.find((frame) => sameRect(frame.rect, picture.area));
-    if (existing) { setSelected(existing.uid); return; }
+    if (existing) { select(existing.uid); return; }
     const frame = { uid: ++nextUid.current, page, rect: picture.area };
     commit([...frames, frame]);
-    setSelected(frame.uid);
+    select(frame.uid);
   }
   function remove(uids: number[]) {
     if (!uids.length) return;
     commit(frames.filter((frame) => !uids.includes(frame.uid)));
-    if (selected !== null && uids.includes(selected)) setSelected(null);
+    const rest = picked.filter((uid) => !uids.includes(uid));
+    setPicked(rest);
+    if (anchor.current !== null && uids.includes(anchor.current)) anchor.current = rest.at(-1) ?? null;
   }
   function setTarget(uids: number[], target: Target) {
     setFrames(frames.map((frame) => uids.includes(frame.uid) ? { ...frame, target } : frame));
@@ -525,16 +592,25 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   }
   function show(frame: Frame) {
     setPage(frame.page);
-    setSelected(frame.uid);
+    select(frame.uid);
     stage.current?.focus({ preventScroll: true });
   }
   function keyDown(event: ReactKeyboardEvent) {
     const target = event.target as Element;
+    const erase = event.key === "Delete" || event.key === "Backspace";
+    // Delete on a row in focus: the frames picked with it, or just its own.
+    const row = target.classList.contains("cutout-row-hit") ? target.closest<HTMLElement>(".cutout-row") : null;
+    if (row && erase) {
+      const uid = Number(row.dataset.uid);
+      event.preventDefault();
+      remove(picked.includes(uid) ? picked : [uid]);
+      return;
+    }
     if (target.closest("select, input") || !target.closest(".cutout-stage") || target.closest("button")) return;
     if (event.key === "Enter") { event.preventDefault(); apply(); return; }
     const frame = frames.find((value) => value.uid === selected);
     if (!frame) return;
-    if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); remove([frame.uid]); return; }
+    if (erase) { event.preventDefault(); remove(picked); return; }
     const step = event.shiftKey ? 10 : 1;
     const shift = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
     if (!shift) return;
@@ -581,10 +657,13 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     .filter((value): value is string => typeof value === "string" && value !== "keep" && !variants.includes(value));
   const options = [...new Set([...variants, ...extra])].sort(compareVariants);
   const base = pictures.find((picture) => frames.some((frame) => sourceOf(frame).key === picture.key))?.variant ?? variants[0] ?? "1";
+  // Several frames picked: the bulk choices of the panel act on them instead of on all.
+  const several = picked.length > 1;
+  const bulk = several ? picked : frames.map((frame) => frame.uid);
   function eachToSubvariant() {
     const used = [...options];
     const next = new Map<number, string>();
-    for (const frame of ordered) {
+    for (const frame of ordered.filter((value) => bulk.includes(value.uid))) {
       const key = nextSubvariant(used, base);
       used.push(key);
       next.set(frame.uid, key);
@@ -630,12 +709,37 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     if (value === "__new") setNaming(uids); else setTarget(uids, parse(value));
   }
   const valueOf = (target: Target) => target === "keep" ? "__keep" : target === null ? "__misc" : target;
+  const targetName = (target: Target) => target === "keep" ? "На место картинки" : target === null ? "Без варианта" : label(target);
+  /** Where a cutout goes, as its row and its frame show it: a variant with its dot, or a plain word for the rest. */
+  const targetTag = (target: Target, className: string) => (
+    <span className={`${className}${target === "keep" ? " is-keep" : ""}`}>
+      <span className={`variant-dot ${target === "keep" ? "is-keep" : target === null ? "is-misc" : dotOf(target)}`} aria-hidden="true" />
+      <span>{targetName(target)}</span>
+    </span>
+  );
   const context = useContextMenu();
   /** A frame on the page or its row in the list: the row's own controls. */
   function openFrameMenu(event: ReactMouseEvent, frame: Frame) {
+    if (several && picked.includes(frame.uid)) {
+      // One of the frames picked: the menu acts on all of them, as «Куда выбранные» does.
+      const uids = picked;
+      context.open(event, {
+        heading: `Выбрано: ${uids.length}`,
+        items: [
+          { value: "to", label: "Куда поместить", icon: <Images size={16} />,
+            children: choices(true).map((choice) => ({ value: `to:${choice.value}`, label: choice.label, separator: choice.separator })) },
+          { value: "remove", label: "Удалить", icon: <Trash size={16} />, danger: true, separator: true },
+        ],
+        onAction(value) {
+          if (value.startsWith("to:")) choose(uids, value.slice(3));
+          else if (value === "remove") remove(uids);
+        },
+      });
+      return;
+    }
     const source = sourceOf(frame);
     const current = valueOf(targetOf(frame, source));
-    setSelected(frame.uid);
+    select(frame.uid);
     const items: ActionMenuItem[] = [
       { value: "show", label: "Показать", icon: <LocateFixed size={16} /> },
       { value: "to", label: "Куда поместить", icon: <Images size={16} />,
@@ -744,11 +848,18 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                 })}
                 {onPage.map((frame) => {
                   const active = frame.uid === selected;
+                  const source = sourceOf(frame);
+                  const target = targetOf(frame, source);
+                  // A frame sent somewhere other than where it goes by itself says where, if it has room for a word.
+                  const chosenTarget = target !== (source.kind === "image" ? "keep" : null);
+                  const roomy = (frame.rect[2] - frame.rect[0]) * stageWidth >= 56 && (frame.rect[3] - frame.rect[1]) * stageHeight >= 32;
                   return (
-                    <div key={frame.uid} className={`cutout-frame${active ? " is-selected" : ""}`} style={relative(frame.rect, [0, 0, 1, 1])}
-                      role="button" tabIndex={-1} aria-label={`Вырезка ${numberOf.get(frame.uid)}`} aria-pressed={active}
+                    <div key={frame.uid} className={`cutout-frame${picked.includes(frame.uid) ? " is-selected" : ""}`}
+                      style={relative(frame.rect, [0, 0, 1, 1])} role="button" tabIndex={-1}
+                      aria-label={`Вырезка ${numberOf.get(frame.uid)} — ${targetName(target)}`} aria-pressed={picked.includes(frame.uid)}
                       onPointerDown={(event) => startMove(event, frame)} onContextMenu={(event) => openFrameMenu(event, frame)}>
                       <b>{numberOf.get(frame.uid)}</b>
+                      {chosenTarget && roomy && targetTag(target, "cutout-frame-target")}
                       {active && HANDLES.map((handle) => (
                         <span key={handle} className={`cutout-handle ${handle}`} aria-hidden="true"
                           onPointerDown={(event) => startMove(event, frame, handle)} />
@@ -772,7 +883,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
             {/* As wide as the page, but never narrower than a line of hints: hints squeezed to a small page
                 grew tall and took the height the page needed, down to a page of one pixel. */}
             <div className="cut-hints" style={{ maxWidth: Math.max(stageWidth, Math.min(bounds.width, 560)) }}>
-              <p>Потяните мышью — новая рамка · Двойной щелчок по картинке — рамка по её краям · Delete — удалить выбранную</p>
+              <p>Потяните мышью — новая рамка · Двойной щелчок по картинке — рамка по её краям · Delete — удалить выбранные</p>
               <p>← ↑ → ↓ — сдвиг на 1 px, Shift — на 10 px · Ctrl + колесо — масштаб · Ctrl+Z — отменить шаг</p>
               <p className="cut-note" role="status">{note}</p>
             </div>
@@ -781,48 +892,64 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
             <div className="cut-panel-head">
               <h3>Вырезки <b>{count}</b></h3>
               {!!count && <>
-                <div className="cut-bulk"><span>Куда все:</span>
-                  <Select label="Куда поместить все вырезки" value="" options={choices(true)}
-                    onChange={(value) => choose(frames.map((frame) => frame.uid), value)} />
+                <div className="cut-bulk"><span>{several ? `Куда выбранные (${picked.length}):` : "Куда все:"}</span>
+                  <Select label={several ? "Куда поместить выбранные вырезки" : "Куда поместить все вырезки"} value=""
+                    options={choices(true)} onChange={(value) => choose(bulk, value)} />
                 </div>
                 <button className="cut-subvariants" onClick={eachToSubvariant}>
-                  Или: каждую — в свой подвариант {nextSubvariant(options, base)}…
+                  Или: каждую{several ? " выбранную" : ""} — в свой подвариант {nextSubvariant(options, base)}…
                 </button>
               </>}
+              {/* Keeps its line either way, so the list under it does not jump. */}
+              {count > 1 && <p className={`cutout-pick-hint${several ? "" : " is-tip"}`}>{several
+                ? <>Выбрано {picked.length} {plural(picked.length, ["вырезка", "вырезки", "вырезок"])}
+                    <button className="cut-subvariants" onClick={() => select(null)}>Снять выбор</button></>
+                : "Ctrl или Shift + щелчок — выбрать несколько"}</p>}
             </div>
-            <div className="cutout-list">
+            <div className="cutout-list" ref={list}>
               {!count && <p className="cutout-list-empty">Рамок пока нет. Обведите часть страницы или дважды щёлкните по картинке.</p>}
               {groups.map(({ page: sheet, items }) => (
-                <section key={sheet} className="cutout-group" aria-label={`Страница ${sheet}`}>
+                <section key={sheet} className="cutout-group" aria-label={`Страница ${sheet}`} data-page={sheet}>
                   <h4><b>Страница {sheet}</b><span>{items.length} {plural(items.length, ["вырезка", "вырезки", "вырезок"])}</span></h4>
                   {items.map(({ source, frame }) => {
                     const box = rectBox(frame.rect, source.area, source.size);
                     const number = numberOf.get(frame.uid);
                     const small = box[2] - box[0] < MIN_PIXELS || box[3] - box[1] < MIN_PIXELS;
+                    const target = targetOf(frame, source);
+                    const isPicked = picked.includes(frame.uid);
+                    // Only the frame in hand picked alone opens its row; picked with others, rows stay short.
+                    const open = frame.uid === selected && !several;
+                    const tall = (box[2] - box[0]) / Math.max(1, box[3] - box[1]) < (open ? 0.56 : 1);
                     return (
-                      <div key={frame.uid} className={`cutout-row${frame.uid === selected ? " is-selected" : ""}`}
-                        onContextMenu={(event) => openFrameMenu(event, frame)}
-                        title={source.kind === "image" ? `Из картинки «${source.title}»` : undefined}>
-                        <span className={`cut-thumb${(box[2] - box[0]) / Math.max(1, box[3] - box[1]) < 0.56 ? " is-tall" : ""}`}>
+                      <div key={frame.uid} className={`cutout-row${isPicked ? " is-selected" : ""}${open ? " is-open" : ""}`}
+                        data-uid={frame.uid} onContextMenu={(event) => openFrameMenu(event, frame)}>
+                        {/* The whole row shows its cutout on the page; the controls of an open row lie over it. */}
+                        <button type="button" className="cutout-row-hit" aria-pressed={isPicked}
+                          aria-label={`Вырезка ${number}, стр. ${frame.page} — ${targetName(target)}`}
+                          title={source.kind === "image" ? `Из картинки «${source.title}»` : undefined}
+                          onClick={(event) => pick(frame, event)} />
+                        <span className={`cut-thumb${tall ? " is-tall" : ""}`}>
                           {source.preview && <CroppedImage src={source.preview} size={source.size} box={box} alt="" />}
                         </span>
                         <div>
-                          <strong>Вырезка {number} <span>стр. {frame.page}</span></strong>
-                          <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "page" ? "снимок страницы"
-                            : marked(frame, source) ? "с пометками" : "из картинки"}</span>
-                          {small && <span className="cutout-warning"><TriangleAlert size={13} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
-                          {hasMarks(frame, source) && <label className="cut-toggle cutout-marks">
-                            <Shapes {...LINE} />С пометками
-                            <input type="checkbox" checked={marked(frame, source)} aria-label={`Вырезка ${number} с пометками поверх картинки`}
-                              onChange={(event) => setMarks(frame.uid, event.target.checked)} />
-                            <span aria-hidden="true" />
-                          </label>}
-                          <Select label={`Куда поместить вырезку ${number}`} value={valueOf(targetOf(frame, source))}
-                            options={choices(source.kind === "image")} onChange={(value) => choose([frame.uid], value)} />
-                          <div className="cutout-row-actions">
-                            <button className="text-action" onClick={() => show(frame)}><LocateFixed {...LINE} />Показать</button>
-                            <button className="text-action" onClick={() => remove([frame.uid])}><Trash {...LINE} />Удалить</button>
-                          </div>
+                          <strong>Вырезка {number} <span>стр. {frame.page}</span>
+                            {small && !open && <TriangleAlert className="cutout-warning" size={13} aria-label={`Меньше ${MIN_PIXELS} px`} />}</strong>
+                          {open ? <>
+                            <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "page" ? "снимок страницы"
+                              : marked(frame, source) ? "с пометками" : "из картинки"}</span>
+                            {small && <span className="cutout-warning"><TriangleAlert size={13} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
+                            {hasMarks(frame, source) && <label className="cut-toggle cutout-marks">
+                              <Shapes {...LINE} />С пометками
+                              <input type="checkbox" checked={marked(frame, source)} aria-label={`Вырезка ${number} с пометками поверх картинки`}
+                                onChange={(event) => setMarks(frame.uid, event.target.checked)} />
+                              <span aria-hidden="true" />
+                            </label>}
+                            <Select label={`Куда поместить вырезку ${number}`} value={valueOf(target)}
+                              options={choices(source.kind === "image")} onChange={(value) => choose([frame.uid], value)} />
+                            <div className="cutout-row-actions">
+                              <button className="text-action" onClick={() => remove([frame.uid])}><Trash {...LINE} />Удалить</button>
+                            </div>
+                          </> : targetTag(target, "cutout-target")}
                         </div>
                       </div>
                     );
@@ -850,7 +977,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       </div>
       )}
       <Presence>{naming && <NewVariantDialog variants={options} labelOf={label} preferred={base} onClose={() => setNaming(null)}
-        subject={naming.length === 1 ? `Вырезка ${numberOf.get(naming[0])} встанет в новый вариант.` : "Все вырезки встанут в новый вариант."}
+        subject={naming.length === 1 ? `Вырезка ${numberOf.get(naming[0])} встанет в новый вариант.`
+          : naming.length === frames.length ? "Все вырезки встанут в новый вариант."
+          : `${naming.length} ${plural(naming.length, ["вырезка встанет", "вырезки встанут", "вырезок встанут"])} в новый вариант.`}
         onCreate={(key, name) => { if (name) setNames({ ...names, [key]: name }); setTarget(naming, key); setNaming(null); }} />}</Presence>
     </Dialog>
   );

@@ -39,6 +39,8 @@ export function processingView(state: Snapshot) {
       .filter((item): item is HistoryItem => Boolean(item))
     : [];
   const activeFile = outcome === "processing" ? state.job?.active_file ?? null : null;
+  // Several PDFs at once each show their own stage; a single file keeps the one line of name and stage.
+  const activeFiles = outcome === "processing" ? state.job?.active_files ?? [] : [];
   const fileName = outcome === "processing" ? activeFile?.name ?? null : currentRecord?.name ?? null;
   const phase = activeFile && state.detail === activeFile.name
     ? ""
@@ -70,6 +72,7 @@ export function processingView(state: Snapshot) {
     currentRecord,
     batch,
     activeFile,
+    activeFiles: activeFiles.length > 1 ? activeFiles : [],
     fileName,
     phase,
     canOpenResult: Boolean(state.current_output),

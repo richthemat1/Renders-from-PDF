@@ -76,6 +76,65 @@ def clipboard_text():
         user32.CloseClipboard()
 
 
+def available_memory():
+    """Bytes of physical memory Windows can give at once without paging, or None when it does not say."""
+    if sys.platform != 'win32':
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [('dwLength', wintypes.DWORD), ('dwMemoryLoad', wintypes.DWORD),
+                    *((name, ctypes.c_ulonglong) for name in ('ullTotalPhys', 'ullAvailPhys', 'ullTotalPageFile',
+                                                               'ullAvailPageFile', 'ullTotalVirtual', 'ullAvailVirtual',
+                                                               'ullAvailExtendedVirtual'))]
+    status = MemoryStatus(dwLength=ctypes.sizeof(MemoryStatus))
+    return status.ullAvailPhys if ctypes.WinDLL('kernel32').GlobalMemoryStatusEx(ctypes.byref(status)) else None
+
+
+def process_memory(pid):
+    """Bytes of physical memory a process of this user holds now, or None when it cannot be read."""
+    if sys.platform != 'win32':
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+                    *((name, ctypes.c_size_t) for name in ('PeakWorkingSetSize', 'WorkingSetSize',
+                                                            'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage',
+                                                            'QuotaPeakNonPagedPoolUsage', 'QuotaNonPagedPoolUsage',
+                                                            'PagefileUsage', 'PeakPagefileUsage'))]
+    kernel32 = ctypes.WinDLL('kernel32')
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    # PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ
+    handle = kernel32.OpenProcess(0x1000 | 0x0010, False, pid)
+    if not handle:
+        return None
+    try:
+        counters = Counters(cb=ctypes.sizeof(Counters))
+        if not kernel32.K32GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+            return None
+        return counters.WorkingSetSize
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def lower_priority():
+    """Run this process below normal priority: processing gives way to the window and to other programs.
+
+    Child processes started from here, such as the OCR host, inherit the class."""
+    if sys.platform == 'win32':
+        import ctypes
+        kernel32 = ctypes.WinDLL('kernel32')
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        # BELOW_NORMAL_PRIORITY_CLASS
+        kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), 0x4000)
+
+
 def app_icon_path():
     base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
     icon = base / 'assets' / 'app-icon.ico'

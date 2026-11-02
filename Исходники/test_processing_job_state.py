@@ -55,7 +55,7 @@ class ProcessingJobStateTests(unittest.TestCase):
 
     def test_initial_and_empty_selection_have_idle_metadata(self):
         expected = {'outcome': 'idle', 'total': 0, 'completed': 0, 'failed': 0,
-                    'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
+                    'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': []}
         self.assertEqual(self.job(), expected)
         self.assertEqual(self.job(self.jobs.start([])), expected)
         self.assertEqual(self.job(self.jobs.prepare([])), expected)
@@ -73,6 +73,8 @@ class ProcessingJobStateTests(unittest.TestCase):
             'outcome': 'processing', 'total': 2, 'completed': 1, 'failed': 0,
             'warnings': 0, 'errors': 0,
             'active_file': {'name': second.name, 'index': 2, 'total': 2}, 'remaining': 0,
+            'active_files': [{'name': second.name, 'index': 2, 'total': 2,
+                              'phase': 'Чтение заголовков · страница 1 из 2', 'progress': 6}],
         })
         self.assertEqual(len(job['outputs']), 1)
         self.assertGreater(snapshot['progress'], 50)
@@ -101,6 +103,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         job = self.job(snapshot)
         self.assertEqual({key: value for key, value in job.items() if key not in ('active_file', 'outputs')}, {
             'outcome': 'complete', 'total': 2, 'completed': 2, 'failed': 0, 'warnings': 0, 'errors': 0, 'remaining': 0,
+            'active_files': [],
         })
         # Each file of the batch keeps its own result folder, in queue order; the last one is current.
         sources = {item['output']: item['source'] for item in snapshot['history']}
@@ -136,6 +139,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertEqual({key: value for key, value in current.items() if key != 'active_file'}, {
             'outcome': 'processing', 'total': 1, 'completed': 0, 'failed': 0, 'warnings': 0, 'errors': 0,
             'outputs': [], 'remaining': 0,
+            'active_files': [{'name': second.name, 'index': 1, 'total': 1, 'phase': '', 'progress': 0}],
         })
         release.set()
         self.assertEqual(self.job(self.finish())['outcome'], 'complete')
@@ -213,6 +217,7 @@ class ProcessingJobStateTests(unittest.TestCase):
                 'outcome': 'processing', 'total': 2, 'completed': 0, 'failed': 1,
                 'warnings': 0, 'errors': 0,
                 'active_file': {'name': valid.name, 'index': 1, 'total': 1}, 'outputs': [], 'remaining': 0,
+                'active_files': [{'name': valid.name, 'index': 1, 'total': 1, 'phase': '', 'progress': 0}],
             })
             release.set()
             snapshot = self.finish()
@@ -227,7 +232,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertFalse(snapshot['has_job'])
         self.assertEqual(self.job(snapshot), {
             'outcome': 'failed', 'total': 1, 'completed': 0, 'failed': 1,
-            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0,
+            'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': [], 'remaining': 0,
         })
 
     def test_preflight_failure_after_success_resets_stale_result_and_totals(self):
@@ -243,7 +248,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertTrue(failed['has_job'])
         self.assertEqual(self.job(failed), {
             'outcome': 'failed', 'total': 1, 'completed': 0, 'failed': 1,
-            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0,
+            'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': [], 'remaining': 0,
         })
 
     def test_cancellation_before_first_success_has_cancelled_metadata(self):

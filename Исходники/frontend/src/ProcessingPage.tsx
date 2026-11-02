@@ -126,7 +126,13 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
             </button>}
           </div>
 
-          {processing ? (view.fileName || view.phase) && <div className="processing-file-panel">
+          {processing && view.activeFiles.length > 0 ? <ul className="processing-file-panel processing-file-list" aria-label="Файлы в работе">
+            {view.activeFiles.map((file) => <li className="processing-active-file" key={file.index}>
+              <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{file.name}</span>
+                <span className="processing-file-percent">{file.progress}%</span></p>
+              {file.phase && <p className="processing-phase">{file.phase}</p>}
+            </li>)}
+          </ul> : processing ? (view.fileName || view.phase) && <div className="processing-file-panel">
             {view.fileName && <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>}
             {view.phase && <p className="processing-phase">{view.phase}</p>}
           </div> : view.batch.length > 1 ? <div className="processing-finished-file processing-batch">

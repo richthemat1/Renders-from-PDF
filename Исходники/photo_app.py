@@ -1,4 +1,5 @@
 """Standalone Windows entry point; batch mode and native file-drop compatibility."""
+import multiprocessing
 import sys
 
 from photo_export import main as cli_main
@@ -28,4 +29,6 @@ def main():
 
 
 if __name__ == '__main__':
+    # Each PDF of a queue runs in a process of this same EXE; such a process stops here and does its file.
+    multiprocessing.freeze_support()
     raise SystemExit(main())

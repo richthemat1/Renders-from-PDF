@@ -187,6 +187,57 @@ class CutoutsUI(PageEditorUI):
         self.assertEqual(self.errors, [])
 
 
+    def test_a_row_shows_its_cutout_and_several_picked_go_to_a_variant_at_once(self):
+        self.section().get_by_role('button', name='Вырезать из страниц…').first.click()
+        editor = self.page.locator('dialog.cutout-editor')
+        pager = editor.locator('.cutout-pager b')
+        # Two frames on page 1 (from the picture, over the scheme) and one on page 2.
+        self.drag(self.at(.08, .2), self.at(.25, .35))
+        self.drag(self.at(.72, .24), self.at(.92, .5))
+        editor.get_by_role('button', name='Следующая страница').click()
+        expect(pager).to_have_text('2')
+        self.drag(self.at(.1, .3), self.at(.5, .6))
+        rows = editor.locator('.cutout-row')
+        expect(rows).to_have_count(3)
+        # Only the frame in hand opens its row; the others are short and say where they go.
+        expect(rows.nth(2)).to_have_class('cutout-row is-selected is-open')
+        expect(editor.locator('.cutout-row.is-open')).to_have_count(1)
+        expect(rows.nth(0)).to_contain_text('На место картинки')
+        expect(rows.nth(1)).to_contain_text('Без варианта')
+        expect(editor.get_by_role('button', name='Показать')).to_have_count(0)
+        # A click on a row turns to its page and takes its frame in hand.
+        rows.nth(0).click()
+        expect(pager).to_have_text('1')
+        expect(rows.nth(0)).to_have_class('cutout-row is-selected is-open')
+        expect(editor.locator('.cutout-frame.is-selected')).to_have_attribute('aria-label', 'Вырезка 1 — На место картинки')
+        expect(editor.get_by_label('Куда поместить вырезку 1')).to_have_attribute('data-value', '__keep')
+        # Shift picks a run, Ctrl adds or takes away; picked rows stay short and the panel offers «Куда выбранные».
+        rows.nth(1).click()
+        rows.nth(2).click(modifiers=['Shift'])
+        expect(pager).to_have_text('2')
+        expect(editor.locator('.cutout-row.is-selected')).to_have_count(2)
+        expect(editor.locator('.cutout-row.is-open')).to_have_count(0)
+        rows.nth(0).click(modifiers=['Control'])
+        expect(editor.locator('.cutout-row.is-selected')).to_have_count(3)
+        rows.nth(0).click(modifiers=['Control'])
+        expect(editor.locator('.cut-bulk')).to_contain_text('Куда выбранные (2)')
+        self.choose(editor.get_by_label('Куда поместить выбранные вырезки'), 'Вариант 2')
+        expect(rows.nth(1)).to_contain_text('Вариант 2')
+        expect(rows.nth(2)).to_contain_text('Вариант 2')
+        expect(rows.nth(0)).to_contain_text('На место картинки')
+        # The frame on the page says where it goes too; a frame kept in its picture's place says nothing.
+        expect(editor.locator('.cutout-frame .cutout-frame-target')).to_have_text('Вариант 2')
+        editor.get_by_role('button', name='Снять выбор').click()
+        expect(editor.locator('.cutout-row.is-selected')).to_have_count(0)
+        expect(editor.locator('.cut-bulk')).to_contain_text('Куда все')
+        editor.get_by_role('button', name='Добавить 3 вырезки').click()
+        self.save()
+        pieces = [entry for entry in load_report(self.output)['images'] if entry.get('cutout') and not entry.get('removed')]
+        self.assertEqual(sorted((entry['page'], entry['method'], entry['variant']) for entry in pieces),
+                         [(1, 'manual_crop', 2), (1, 'page_render', 2), (2, 'page_render', 2)])
+        self.assertEqual(self.errors, [])
+
+
 class MarkedCutoutsUI(PageEditorUI):
     source = staticmethod(marked_pdf)
 
