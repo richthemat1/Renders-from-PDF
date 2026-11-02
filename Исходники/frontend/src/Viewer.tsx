@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, MouseEvent, ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -35,7 +35,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
-import { ActionMenu, Dialog, Empty, Select, Shell, StatusNote, VariantSuggestions } from "./components";
+import { ActionMenu, Dialog, Empty, NewVariantDialog, Select, Shell, StatusNote, VariantSuggestions } from "./components";
 import type { HelpTopic } from "./Help";
 import {
   boxRect,
@@ -54,12 +54,15 @@ import {
   sourceId,
   compareVariants,
   nextVariant,
-  variantKey,
+  namedReport,
+  namedSuggestions,
+  variantChoice,
   variantLabel,
   variantParent,
-  VARIANT_KEY_ERROR,
 } from "./editor";
 import type { CutoutChange, Draft } from "./editor";
+import { beforeAt, useCardDrag } from "./cardDrag";
+import type { DropPlace } from "./cardDrag";
 import { EditorToolbar } from "./EditorToolbar";
 import { CollagesPage, CroppedImage, CutEditor, needsCheck } from "./Collages";
 import type { CollageView } from "./Collages";
@@ -78,7 +81,6 @@ type Rename = {
   target: string | number;
   name: string;
 };
-type DropTarget = { kind: "variant"; key: string } | { kind: "card"; key: number };
 const STATUS = {
   named: "С подписью",
   review: "На проверку",
@@ -145,14 +147,11 @@ export function Viewer({
   const [previewNatural, setPreviewNatural] = useState<{ key: string; width: number; height: number } | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [reset, setReset] = useState(false);
-  const [dragged, setDragged] = useState<number[]>([]);
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const finishEditing = useRef(false);
   const anchor = useRef<number | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const renameField = useRef<HTMLTextAreaElement>(null);
-  const dragging = useRef<number[]>([]);
-  const dragImage = useRef<HTMLDivElement | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
   const previewViewport = useRef<HTMLDivElement>(null);
   const previewPan = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const savingRef = useRef(false);
@@ -163,6 +162,8 @@ export function Viewer({
   const savingState = useRef(saving);
   savingState.current = saving;
   const { report } = result;
+  // Labels read with the names of variants made in the draft.
+  const labelled = useMemo(() => namedReport(report, draft), [report, draft]);
   useEffect(() => {
     if (filter.startsWith("variant:")) setVariantsOpen(true);
     if (filter.startsWith("folder:")) setFoldersOpen(true);
@@ -172,7 +173,7 @@ export function Viewer({
   }, [filter, variantsOpen, foldersOpen]);
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; dragImage.current?.remove(); };
+    return () => { mounted.current = false; };
   }, []);
   useLayoutEffect(() => {
     const field = renameField.current;
@@ -235,7 +236,7 @@ export function Viewer({
         const location = draftLocation(draft, report, id);
         const label = location.variant === null
           ? folderLabel(report, location.folder)
-          : variantLabel(report, location.variant);
+          : variantLabel(labelled, location.variant);
         return {
           id,
           image,
@@ -286,7 +287,7 @@ export function Viewer({
         checked: record.checked || (collage !== null && draft.collageChecked.includes(collage)) || !!cut,
         pending: !!cut, boxes: whole ? [] : boxes, suggestion: record.suggestion ?? [], members, frames, trim: cut?.trim,
         variant: location?.variant ?? null,
-        variantLabel: location === null ? null : location.variant !== null ? variantLabel(report, location.variant)
+        variantLabel: location === null ? null : location.variant !== null ? variantLabel(labelled, location.variant)
           : folderLabel(report, location.folder),
         reason: cut ? undefined : record.reason,
       };
@@ -337,11 +338,12 @@ export function Viewer({
       title: image.title || allRows[id]?.title || `Страница ${image.page}`,
       preview: image.preview ? fileUrl(result.base_url, image.preview) : null, state: "manual", checked: true,
       pending: false, boxes: [], suggestion: [], members: [id], frames: [], variant: location.variant,
-      variantLabel: location.variant !== null ? variantLabel(report, location.variant) : folderLabel(report, location.folder) });
+      variantLabel: location.variant !== null ? variantLabel(labelled, location.variant) : folderLabel(report, location.folder) });
   }
-  function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean) {
+  function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean,
+    names: Record<string, string> = {}) {
     const replace = view.members.filter((id) => !(id in draft.frames));
-    change({ type: "cut", key: view.key, collage: view.collage, source: view.source, replace, boxes, targets, trim });
+    change({ type: "cut", key: view.key, collage: view.collage, source: view.source, replace, boxes, targets, trim, names });
     setCutting(null);
   }
   const liveCard = useCallback((id: number) => draft.order.includes(id) && !isRemoved(draft, id), [draft]);
@@ -351,7 +353,8 @@ export function Viewer({
     const view = (key: string, record: string | null, from: { kind: "image" | "page"; page: number; area: Rect;
       size: [number, number]; image?: number | null; title?: string | null }, ids: number[]): CutoutSource => {
       const pieces = ids.map((id) => ({ id, rect: draft.frames[id]?.rect ?? boxRect(report.images[id].crop_px!, from.area, from.size),
-        variant: draftLocation(draft, report, id).variant })).sort((a, b) => byPlace(a.rect, b.rect));
+        variant: draftLocation(draft, report, id).variant, marks: !!(draft.frames[id] ?? report.images[id]).marks }))
+        .sort((a, b) => byPlace(a.rect, b.rect));
       const picture = from.kind === "image" && from.image != null ? from.image : null;
       const first = pieces[0]?.id ?? picture;
       const location = first === null ? null : draftLocation(draft, report, first);
@@ -361,7 +364,7 @@ export function Viewer({
           : (picture === null ? null : allRows[picture]?.title) || from.title || `Страница ${from.page}`,
         preview: from.kind === "page" ? pageUrl(result.id, from.page) : picture === null ? null : url(report.images[picture]?.preview),
         pending: key in draft.cuts, pieces, variant: location?.variant ?? null,
-        variantLabel: location === null ? null : location.variant !== null ? variantLabel(report, location.variant)
+        variantLabel: location === null ? null : location.variant !== null ? variantLabel(labelled, location.variant)
           : folderLabel(report, location.folder),
       };
     };
@@ -391,7 +394,7 @@ export function Viewer({
     return { title: allRows[index]?.title || `Страница ${report.images[index]?.page}`,
       preview: report.images[index]?.preview ? fileUrl(result.base_url, report.images[index].preview!) : null,
       variant: location.variant,
-      variantLabel: location.variant !== null ? variantLabel(report, location.variant) : folderLabel(report, location.folder) };
+      variantLabel: location.variant !== null ? variantLabel(labelled, location.variant) : folderLabel(report, location.folder) };
   }, [draft, report, allRows, result.base_url]);
   /** Open the page editor on a card's page; a picture of its own starts with a frame at its edges. */
   function startCutout(id?: number, page?: number) {
@@ -407,16 +410,18 @@ export function Viewer({
     const own = !frame && image && !image.cutout && image.copy_of === undefined;
     setCutoutEditor({ page: from ?? image?.page ?? 1, picture: own ? id : undefined });
   }
-  function applyCutouts(results: CutoutResult[]) {
-    const changes = results.map(({ source, rects, targets }): CutoutChange => {
+  function applyCutouts(results: CutoutResult[], names: Record<string, string> = {}) {
+    const changes = results.map(({ source, rects, targets, marks }): CutoutChange => {
       const saved = source.pieces.map((piece) => piece.id).filter((id) => !(id in draft.frames));
       const replace = [...saved, ...(rects.length && source.source !== null && liveCard(source.source) ? [source.source] : [])];
       return { key: source.key, record: source.record, kind: source.kind, page: source.page, source: source.source,
-        area: source.area, size: source.size, replace, rects, targets };
+        area: source.area, size: source.size, replace, rects, targets, marks };
     });
-    change({ type: "cutouts", changes });
+    change({ type: "cutouts", changes, names });
     setCutoutEditor(null);
   }
+  const variantLabels = useMemo(() => Object.fromEntries(Object.keys(draft.variants)
+    .map((key) => [key, variantLabel(labelled, key)])), [draft, labelled]);
   const variants = useMemo(
     () => Object.keys(draft.variants).sort(compareVariants),
     [draft],
@@ -467,7 +472,7 @@ export function Viewer({
   };
   const reviewComplete = filter === "needs-review" && !query.trim() && counts.review + counts.unsigned === 0;
   const activeTitle = filter.startsWith("variant:")
-    ? variantLabel(report, filter.slice(8))
+    ? variantLabel(labelled, filter.slice(8))
     : filter.startsWith("folder:")
       ? folderLabel(report, filter.slice(7))
       : filter === "needs-review"
@@ -618,59 +623,31 @@ export function Viewer({
       notify(errorText(error), true),
     );
   }
-  function startDrag(event: DragEvent, id: number) {
-    const ids = selected.includes(id) ? selected : [id];
-    dragging.current = ids;
-    setDragged(ids);
-    setDropTarget(null);
-    setSelected(ids);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-pdf-photos", ids.join(","));
-    dragImage.current?.remove();
-    const badge = document.createElement("div");
-    badge.className = "editor-drag-preview";
-    badge.textContent = `${ids.length} ${plural(ids.length, ["изображение", "изображения", "изображений"])}`;
-    badge.setAttribute("aria-hidden", "true");
-    document.body.appendChild(badge);
-    dragImage.current = badge;
-    event.dataTransfer.setDragImage(badge, 18, 18);
+  const reordering = filter.startsWith("variant:");
+  const { drag, startDrag } = useCardDrag({
+    enabled: editing && !saving,
+    grid,
+    reorder: reordering,
+    pick: (id) => removedSet.has(id) ? [] : selected.includes(id) ? selected.filter((value) => !removedSet.has(value)) : [id],
+    takes: (id) => draftVariant(draft, id) !== null,
+    onStart: (ids) => { setSelected(ids); setVariantsOpen(true); },
+    onDrop: dropCards,
+  });
+  /** The cards of the grid with the gap the dragged cards would fill. */
+  function withSlot(cards: ReactNode[]): ReactNode[] {
+    if (drag?.slot == null) return cards;
+    const slot = <div key="drag-slot" className="asset-card drag-slot" style={{ minHeight: drag.height }} aria-hidden="true" />;
+    return [...cards.slice(0, drag.slot), slot, ...cards.slice(drag.slot)];
   }
-  function endDrag() {
-    dragging.current = [];
-    setDragged([]);
-    setDropTarget(null);
-    dragImage.current?.remove();
-    dragImage.current = null;
-  }
-  function allowDrop(event: DragEvent, target?: DropTarget) {
-    if (
-      editing &&
-      !saving &&
-      event.dataTransfer.types.includes("application/x-pdf-photos")
-    ) {
-      if (target?.kind === "card" && dragging.current.includes(target.key)) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      if (target) setDropTarget((previous) => previous?.kind === target.kind && previous.key === target.key ? previous : target);
-    }
-  }
-  function leaveDrop(event: DragEvent, target: DropTarget) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    if (event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) return;
-    setDropTarget((previous) => previous?.kind === target.kind && previous.key === target.key ? null : previous);
-  }
-  function drop(event: DragEvent, target: string, before?: number) {
-    if (
-      !editing ||
-      saving ||
-      !event.dataTransfer.types.includes("application/x-pdf-photos")
-    )
-      return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (before !== undefined && dragging.current.includes(before)) { endDrag(); return; }
-    move(target, dragging.current, before);
-    endDrag();
+  /** Cards put down at a place among the cards shown, beside a card of a variant or on a variant in the menu. */
+  function dropCards(ids: number[], place: DropPlace) {
+    if (place.kind === "variant") { move(place.key, ids); return; }
+    const key = place.kind === "card" ? String(draftVariant(draft, place.id)) : filter.slice("variant:".length);
+    const members = draft.variants[key] ?? [];
+    const dragged = new Set(ids);
+    const shown = (place.kind === "card" ? members : visibleIds).filter((id) => !dragged.has(id));
+    const index = place.kind === "card" ? shown.indexOf(place.id) + (place.after ? 1 : 0) : place.index;
+    move(key, ids, beforeAt(members, shown, dragged, index));
   }
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -847,23 +824,28 @@ export function Viewer({
   function createCopies(event: React.FormEvent) {
     event.preventDefault();
     if (!copying) return;
-    const key = copyTarget === "new" ? variantKey(number) : copyTarget;
-    if (key === null) {
-      notify(VARIANT_KEY_ERROR, true);
+    const choice = copyTarget === "new" ? variantChoice(number, variantLabels) : { key: copyTarget };
+    if ("error" in choice) {
+      notify(choice.error, true);
       return;
     }
-    if (copyTarget === "new" && variants.includes(key)) {
-      notify("Такой вариант уже существует. Укажите свободный номер или выберите готовый вариант.", true);
+    if (copyTarget === "new" && variants.includes(choice.key)) {
+      notify("Такой вариант уже есть. Укажите свободный номер, новое название или выберите готовый вариант.", true);
       return;
     }
     try {
-      const target = key;
-      const next = editDraft(draft, { type: "copy", ids: copying.ids, target });
+      const target = choice.key;
+      const next = editDraft(draft, { type: "copy", ids: copying.ids, target, name: choice.name });
       setDraft(next);
       setSelected(next.order.filter((id) => !draft.order.includes(id)));
       setCopying(null);
       if (target !== "same") { setFilter(`variant:${target}`); setStatus("all"); setQuery(""); }
     } catch (error) { notify(errorText(error), true); }
+  }
+  /** The mark on a variant's dot in the folded menu: its number, or the first letter of a name of its own. */
+  function dotMark(key: string) {
+    const label = variantLabel(labelled, key);
+    return /^(под)?вариант\s/i.test(label) ? key : label.charAt(0).toLocaleUpperCase("ru");
   }
   function sidebar(
     key: string,
@@ -875,15 +857,13 @@ export function Viewer({
     return (
       <button
         key={key}
-        className={`project-link ${filter === key ? "active" : ""}${variant?.includes(".") ? " is-subvariant" : ""}${dropTarget?.kind === "variant" && dropTarget.key === variant ? " is-drop-target" : ""}`}
+        className={`project-link ${filter === key ? "active" : ""}${variant?.includes(".") ? " is-subvariant" : ""}${drag?.place?.kind === "variant" && drag.place.key === variant ? " is-drop-target" : ""}`}
         title={title}
         onClick={() => {
           setFilter(key);
           setStatus("all");
         }}
-        onDragOver={variant ? (event) => allowDrop(event, { kind: "variant", key: variant }) : undefined}
-        onDragLeave={variant ? (event) => leaveDrop(event, { kind: "variant", key: variant }) : undefined}
-        onDrop={variant ? (event) => drop(event, variant) : undefined}
+        data-drop-variant={variant}
       >
         <span>
           {icon}
@@ -942,11 +922,11 @@ export function Viewer({
           {variants.map((key) =>
             sidebar(
               `variant:${key}`,
-              variantLabel(report, key),
+              variantLabel(labelled, key),
               draft.variants[key].length,
               // A subvariant shares its variant's colour, so 3 and 3.1 read as one family.
               <span className={`variant-dot ${dotOf(key)}`}
-                aria-hidden="true"><i>{key}</i></span>,
+                aria-hidden="true"><i>{dotMark(key)}</i></span>,
               key,
             ),
           )}
@@ -1087,7 +1067,7 @@ export function Viewer({
             visibleSelected={visibleSelected}
             visible={visible.length}
             variants={variants.map((key) => ({
-              value: key, label: variantLabel(report, key),
+              value: key, label: variantLabel(labelled, key),
             }))}
             dirty={dirty}
             saving={saving}
@@ -1111,7 +1091,6 @@ export function Viewer({
             onClearSelection={() => { setSelected([]); anchor.current = null; }}
             onMove={(target) => move(target)}
             onNewVariant={() => {
-              setNumber(nextVariant(variants));
               setNewVariant(true);
             }}
             onReorder={reorder}
@@ -1141,7 +1120,7 @@ export function Viewer({
             onWhole={(view) => { if (!editing) setEditing(true); applyCut(view, [[0, 0, view.size[0], view.size[1]]], ["keep"], false); }} />
         </> : filter === "cutouts" ? <>
           <CutoutsPage views={shownCutouts} count={cutoutCount} saving={saving} onOpen={(page) => startCutout(undefined, page)}
-            onReturn={(view) => { if (!editing) setEditing(true); applyCutouts([{ source: view, rects: [], targets: [] }]); }} />
+            onReturn={(view) => { if (!editing) setEditing(true); applyCutouts([{ source: view, rects: [], targets: [], marks: [] }]); }} />
         </> : <>
         <div className="library-header">
           <div>
@@ -1202,22 +1181,13 @@ export function Viewer({
           <RotateCcw size={16} aria-hidden="true" /><p>Убранные изображения, в том числе уже сохранённые. Верните нужные карточки и сохраните результат.</p>
         </div>}
         {visible.length ? (
-          <div className="asset-grid">
-            {visible.map((row) => (
+          <div className="asset-grid" ref={grid}>
+            {withSlot((drag?.slot != null ? visible.filter((row) => !drag.ids.includes(row.id)) : visible).map((row) => (
               <article
                 key={row.id}
                 data-id={row.id}
-                className={`asset-card ${selected.includes(row.id) ? "selected-card" : ""}${removedSet.has(row.id) ? " removed-card" : ""}${dragged.includes(row.id) ? " is-dragging" : ""}${dropTarget?.kind === "card" && dropTarget.key === row.id ? " is-insertion-target" : ""}`}
-                draggable={editing && !saving && !removedSet.has(row.id)}
-                onDragStart={(e) => startDrag(e, row.id)}
-                onDragEnd={endDrag}
-                onDragOver={row.variant !== null ? (event) => allowDrop(event, { kind: "card", key: row.id }) : undefined}
-                onDragLeave={row.variant !== null ? (event) => leaveDrop(event, { kind: "card", key: row.id }) : undefined}
-                onDrop={
-                  row.variant !== null
-                    ? (e) => drop(e, String(row.variant), row.id)
-                    : undefined
-                }
+                className={`asset-card ${selected.includes(row.id) ? "selected-card" : ""}${removedSet.has(row.id) ? " removed-card" : ""}${drag?.ids.includes(row.id) ? " is-dragging" : ""}${drag?.place?.kind === "card" && drag.place.id === row.id ? ` is-insertion-target${drag.place.after ? " is-after" : ""}` : ""}`}
+                onPointerDown={(event) => startDrag(event, row.id)}
               >
                 <div className="asset-image">
                   <button
@@ -1347,7 +1317,7 @@ export function Viewer({
                   </button>}
                 </div>
               </article>
-            ))}
+            )))}
           </div>
         ) : (
           <Empty
@@ -1380,12 +1350,12 @@ export function Viewer({
         </>}
       </div>
       <Presence>{cutting && <CutEditor view={cutting} resultId={result.id} variants={variants} dotOf={dotOf}
-        labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
-        onApply={(boxes, targets, trim) => applyCut(cutting, boxes, targets, trim)}
+        labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
+        onApply={(boxes, targets, trim, names) => applyCut(cutting, boxes, targets, trim, names)}
         onClose={() => setCutting(null)} />}</Presence>
       <Presence>{cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
         pictureInfo={pictureInfo} isLive={liveCard} variants={variants} dotOf={dotOf}
-        labelOf={(key) => variants.includes(key) ? variantLabel(report, key) : `Вариант ${key} (новый)`}
+        labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
         onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}</Presence>
       <Presence>{previewRow && (
         <Dialog
@@ -1416,7 +1386,7 @@ export function Viewer({
             </div>
             {editing && <div className="preview-edit-actions" aria-label="Правки открытого изображения">
               <ActionMenu label="Перенести изображение" disabled={saving}
-                items={[...variants.map((key) => ({ value: key, label: variantLabel(report, key) })),
+                items={[...variants.map((key) => ({ value: key, label: variantLabel(labelled, key) })),
                   { value: "return", label: "Вернуть в папку подписи / Все остальное", separator: true,
                     disabled: previewRow.variant === null || removedSet.has(previewRow.id) }]}
                 onAction={(target) => target === "return"
@@ -1536,13 +1506,14 @@ export function Viewer({
             options={[
               ...(!copying.whole ? [{ value: "same", label: "Рядом с оригиналами" }] : []),
               { value: "new", label: "В новый вариант" },
-              ...variants.map((key) => ({ value: key, label: variantLabel(report, key), dot: dotOf(key) })),
+              ...variants.map((key) => ({ value: key, label: variantLabel(labelled, key), dot: dotOf(key) })),
             ]} />
           {copyTarget === "new" && <div className="copy-variant-number">
-            <label htmlFor="copy-variant-number" className="form-label">Номер нового варианта</label>
-            <input id="copy-variant-number" data-autofocus className="form-input" type="text" inputMode="decimal"
+            <label htmlFor="copy-variant-number" className="form-label">Номер или название нового варианта</label>
+            <input id="copy-variant-number" data-autofocus className="form-input" type="text"
               autoComplete="off" required value={number} onChange={(event) => setNumber(event.target.value)} />
             <VariantSuggestions variants={variants} current={number} onPick={setNumber}
+              names={namedSuggestions(Object.values(variantLabels))} labelOf={(key) => variantLabels[key] ?? `Вариант ${key}`}
               preferred={copying.ids.map((id) => draftVariant(draft, id)).find((key) => key !== null) ?? null} />
           </div>}
           <p>Копии появятся в результате после сохранения. До этого создание можно отменить через Ctrl+Z.</p>
@@ -1600,71 +1571,17 @@ export function Viewer({
           </form>
         </Dialog>
       )}</Presence>
-      <Presence>{newVariant && (
-        <Dialog
-          title="Перенести в новый вариант"
-          onClose={() => setNewVariant(false)}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const key = variantKey(number);
-              if (key === null) {
-                notify(VARIANT_KEY_ERROR, true);
-                return;
-              }
-              if (variants.includes(key)) {
-                notify(
-                  "Такой вариант уже существует. Выберите его в списке переноса.",
-                  true,
-                );
-                return;
-              }
-              move(key);
-              setFilter(`variant:${key}`);
-              setStatus("all");
-              setNewVariant(false);
-            }}
-          >
-            <label htmlFor="variant-number" className="form-label">
-              Номер варианта или подварианта
-            </label>
-            <input
-              data-autofocus
-              id="variant-number"
-              className="form-input"
-              type="text"
-              inputMode="decimal"
-              autoComplete="off"
-              required
-              aria-describedby="variant-number-hint"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-            />
-            <p id="variant-number-hint" className="muted">
-              Целый номер создаёт вариант, номер с точкой — подвариант: 3.1, 3.2.
-            </p>
-            <VariantSuggestions variants={variants} current={number} onPick={setNumber}
-              preferred={selectedActive.map((id) => draftVariant(draft, id)).find((key) => key !== null)
-                ?? (filter.startsWith("variant:") ? filter.slice(8) : null)} />
-            <p className="muted">
-              Выбранных изображений: {selected.length}. PDF будет создан после
-              сохранения.
-            </p>
-            <div className="dialog-choices">
-              <button className="btn primary">
-                <Plus size={16} />
-                Создать и перенести
-              </button>
-              <div className="dialog-alternatives">
-                <button type="button" className="btn secondary" onClick={() => setNewVariant(false)}>
-                  Отмена
-                </button>
-              </div>
-            </div>
-          </form>
-        </Dialog>
-      )}</Presence>
+      <Presence>{newVariant && <NewVariantDialog title="Перенести в новый вариант" action="Создать и перенести"
+        variants={variants} labelOf={(key) => variantLabel(labelled, key)}
+        preferred={selectedActive.map((id) => draftVariant(draft, id)).find((key) => key !== null)
+          ?? (filter.startsWith("variant:") ? filter.slice(8) : null)}
+        subject={`Выбранных изображений: ${selected.length}.`} onClose={() => setNewVariant(false)}
+        onCreate={(key, name) => {
+          change({ type: "move", ids: selected, target: key, name });
+          setFilter(`variant:${key}`);
+          setStatus("all");
+          setNewVariant(false);
+        }} />}</Presence>
       <Presence>{reset && (
         <Dialog
           title={

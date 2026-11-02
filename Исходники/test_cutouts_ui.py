@@ -10,10 +10,12 @@ from photo_export import extract
 from photo_jobs import JobService
 from photo_desktop_server import DesktopServer
 import test_desktop_ui as desktop_ui
-from test_cutouts import cutout_pdf
+from test_cutouts import cutout_pdf, marked_pdf
 
 
-class CutoutsUI(unittest.TestCase):
+class PageEditorUI(unittest.TestCase):
+    """The desktop UI opened on the result of `source`; no tests of its own."""
+    source = staticmethod(cutout_pdf)
     setUpClass = classmethod(desktop_ui.DesktopUI.setUpClass.__func__)
     tearDownClass = classmethod(desktop_ui.DesktopUI.tearDownClass.__func__)
 
@@ -21,7 +23,7 @@ class CutoutsUI(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='pdf-photos-cutouts-ui-')
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
-        self.report = extract(cutout_pdf(root))
+        self.report = extract(self.source(root))
         self.output = Path(self.report['output'])
         self.jobs = JobService(root/'state.json')
         self.addCleanup(self.jobs.close)
@@ -70,6 +72,8 @@ class CutoutsUI(unittest.TestCase):
         self.page.mouse.move(*end, steps=4)
         self.page.mouse.up()
 
+
+class CutoutsUI(PageEditorUI):
     def test_a_render_is_cut_out_from_under_its_plan_kept_with_a_snapshot_and_its_picture_returned(self):
         section = self.section()
         expect(section).to_contain_text('Вырезок пока нет')
@@ -159,7 +163,7 @@ class CutoutsUI(unittest.TestCase):
         # A new variant, even a subvariant of a variant not made yet.
         self.choose(field, 'Новый вариант…')
         naming = self.page.get_by_role('dialog', name='Новый вариант')
-        expect(naming.get_by_label('Номер варианта или подварианта')).to_have_value('3')
+        expect(naming.get_by_label('Номер или название варианта')).to_have_value('3')
         naming.get_by_role('button', name='Подвариант 3.1', exact=True).click()
         naming.get_by_role('button', name='Создать вариант').click()
         expect(naming).to_have_count(0)
@@ -180,6 +184,43 @@ class CutoutsUI(unittest.TestCase):
                 self.page.wait_for_timeout(100)
         self.section().get_by_role('button', name='Вырезать из страниц…').first.click()
         expect(editor.locator('.cutout-loading')).to_contain_text('Исходный PDF недоступен')
+        self.assertEqual(self.errors, [])
+
+
+class MarkedCutoutsUI(PageEditorUI):
+    source = staticmethod(marked_pdf)
+
+    def test_each_cutout_takes_the_marks_over_its_picture_or_leaves_them_out(self):
+        section = self.section()
+        section.get_by_role('button', name='Вырезать из страниц…').first.click()
+        editor = self.page.locator('dialog.cutout-editor')
+        # A frame clear of the sign has no marks to keep.
+        self.drag(self.at(.08, .2), self.at(.25, .35))
+        rows = editor.locator('.cutout-row')
+        expect(rows.first).to_contain_text('из картинки')
+        expect(rows.first.locator('.cutout-marks')).to_have_count(0)
+        # The whole picture covers the blue sign: it is cut as the page shows it, unless switched off.
+        self.page.mouse.dblclick(*self.at(.5, .7))
+        expect(rows).to_have_count(2)
+        expect(rows.first).to_contain_text('800 × 600 px · с пометками')
+        marks = editor.get_by_label('Вырезка 1 с пометками поверх картинки')
+        expect(marks).to_be_checked()
+        rows.first.locator('.cutout-marks').click()
+        expect(marks).not_to_be_checked()
+        expect(rows.first).to_contain_text('800 × 600 px · из картинки')
+        rows.first.locator('.cutout-marks').click()
+        expect(editor.locator('.cutout-callout')).to_contain_text('с пометками')
+        expect(rows.nth(1).locator('.cutout-marks')).to_have_count(0)
+        editor.get_by_role('button', name='Добавить 2 вырезки').click()
+        card = section.locator('.cutout-card')
+        expect(card).to_contain_text('с пометками')
+        self.save()
+        pieces = [entry for entry in load_report(self.output)['images'] if entry.get('cutout') and not entry.get('removed')]
+        self.assertEqual([(entry['method'], entry.get('marks')) for entry in pieces],
+                         [('marked_render', True), ('manual_crop', None)])
+        # Opened again, the switch is where it was saved.
+        card.get_by_role('button', name='Изменить вырезки', exact=True).click()
+        expect(editor.get_by_label('Вырезка 1 с пометками поверх картинки')).to_be_checked()
         self.assertEqual(self.errors, [])
 
 

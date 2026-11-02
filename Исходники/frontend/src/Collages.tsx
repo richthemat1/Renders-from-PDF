@@ -246,7 +246,8 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   labelOf(key: string): string;
   /** The colour class of a variant's dot, as in the sidebar. */
   dotOf(key: string): string;
-  onApply(boxes: Box[], targets: Target[], trim: boolean): void;
+  /** The frames kept, and names given to variants made for them here. */
+  onApply(boxes: Box[], targets: Target[], trim: boolean, names: Record<string, string>): void;
   onClose(): void;
 }) {
   const [width, height] = view.size;
@@ -287,12 +288,15 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   const whole = cells.length === 1;
   const extra = cells.map((_, index) => targetOf(index))
     .filter((value): value is string => typeof value === "string" && value !== "keep" && !variants.includes(value));
-  const options = [...new Set([...variants, ...extra])].sort(compareVariants);
-  const choices: SelectOption[] = [{ value: "__keep", label: "На место склейки" },
-    ...options.map((key) => ({ value: key, label: labelOf(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
-    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
   // Frames waiting for the number of a new variant.
   const [naming, setNaming] = useState<number[] | null>(null);
+  // Variants made here with a name of their own.
+  const [names, setNames] = useState<Record<string, string>>({});
+  const label = (key: string) => names[key] ?? labelOf(key);
+  const options = [...new Set([...variants, ...extra])].sort(compareVariants);
+  const choices: SelectOption[] = [{ value: "__keep", label: "На место склейки" },
+    ...options.map((key) => ({ value: key, label: label(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
+    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
   function choose(indices: number[], value: string) {
     if (value === "__new") { setNaming(indices); return; }
     const target: Target = value === "__keep" ? "keep" : value === "__misc" ? null : value;
@@ -426,7 +430,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   }
   function apply() {
     if (!kept.length || (whole && !view.boxes.length)) return;
-    onApply(kept.map((index) => cells[index]), kept.map(targetOf), trim && !whole);
+    onApply(kept.map((index) => cells[index]), kept.map(targetOf), trim && !whole, names);
   }
   function eachToSubvariant() {
     const used = [...options];
@@ -610,9 +614,9 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
           </button>
         </div>
       </div>
-      <Presence>{naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+      <Presence>{naming && <NewVariantDialog variants={options} labelOf={label} preferred={base} onClose={() => setNaming(null)}
         subject={naming.length === 1 ? `Кадр ${naming[0] + 1} встанет в новый вариант.` : "Все кадры встанут в новый вариант."}
-        onCreate={(key) => { choose(naming, key); setNaming(null); }} />}</Presence>
+        onCreate={(key, name) => { if (name) setNames({ ...names, [key]: name }); choose(naming, key); setNaming(null); }} />}</Presence>
     </Dialog>
   );
 }

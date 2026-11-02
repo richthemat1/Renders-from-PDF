@@ -11,6 +11,8 @@ export interface DraftFrame {
   number: number;
   /** A cutout's frame on its page. */
   rect?: Rect;
+  /** A cutout drawn as the page shows it, with the marks over its picture. */
+  marks?: boolean;
 }
 /** What a cut made by the cutout editor comes from. */
 export interface DraftCutout {
@@ -39,6 +41,8 @@ export interface CutoutChange extends DraftCutout {
   replace: number[];
   rects: Rect[];
   targets: (string | null | "keep")[];
+  /** For each cutout: drawn with the marks over its picture or in the picture's own pixels. */
+  marks: boolean[];
 }
 interface DraftData {
   sourceCount: number;
@@ -56,20 +60,22 @@ interface DraftData {
   misc: number[];
   sourceVariants: Record<string, string | null>;
   removedFrom: Record<string, { variant: string | null; before?: number }>;
+  /** Names given to variants this draft makes; the others keep their saved names or «Вариант N». */
+  variantNames: Record<string, string>;
 }
 export interface Draft extends DraftData {
   past: DraftData[];
 }
 export type Edit =
-  | { type: "copy"; ids: number[]; target: string }
+  | { type: "copy"; ids: number[]; target: string; name?: string }
   | { type: "remove"; ids: number[] }
-  | { type: "move"; ids: number[]; target: string; before?: number }
+  | { type: "move"; ids: number[]; target: string; before?: number; name?: string }
   | { type: "restore"; ids: number[] }
   | { type: "return-to-misc" | "return"; ids: number[] }
   | { type: "move-edge"; ids: number[]; edge: "start" | "end" }
   | { type: "cut"; key: string; collage: string | null; source: number | null; replace: number[];
-      boxes: Box[]; targets: (string | null | "keep")[]; trim: boolean }
-  | { type: "cutouts"; changes: CutoutChange[] }
+      boxes: Box[]; targets: (string | null | "keep")[]; trim: boolean; names?: Record<string, string> }
+  | { type: "cutouts"; changes: CutoutChange[]; names?: Record<string, string> }
   | { type: "collage-check"; id: string }
   | { type: "collage-dismiss"; id: string }
   | { type: "undo" };
@@ -91,7 +97,7 @@ export function createDraft(report: Report): Draft {
   for (const ids of Object.values(variants))
     ids.sort((a, b) => report.images[a].pdf_page - report.images[b].pdf_page);
   return { sourceCount: report.images.length, copies: {}, frames: {}, cuts: {}, collageChecked: [], collageDismissed: [],
-    variants, removed: [], order, savedRemoved, sourceVariants, removedFrom, restored: [], misc: [], past: [] };
+    variants, removed: [], order, savedRemoved, sourceVariants, removedFrom, restored: [], misc: [], variantNames: {}, past: [] };
 }
 
 function remember(previous: Draft, data: DraftData): Draft {
@@ -281,7 +287,8 @@ function applyCutout(draft: DraftData, change: CutoutChange): DraftData {
     const id = start + index;
     order.push(id);
     pieces.push(id);
-    frames[id] = { cut: change.key, box: rectBox(rect, change.area, change.size), template: picture ?? -1, number: index + 1, rect };
+    frames[id] = { cut: change.key, box: rectBox(rect, change.area, change.size), template: picture ?? -1, number: index + 1, rect,
+      ...(change.marks[index] ? { marks: true } : {}) };
     sourceVariants[id] = picture === null ? null : draft.sourceVariants[picture] ?? null;
     const target = change.targets[index];
     const key = target === "keep" ? anchorVariant : target === null ? null : variantKey(target);
@@ -309,6 +316,19 @@ function applyCutout(draft: DraftData, change: CutoutChange): DraftData {
 }
 
 export function editDraft(draft: Draft, edit: Edit): Draft {
+  const next = applyEdit(draft, edit);
+  const made = Object.keys(next.variants).filter((key) => !(key in draft.variants));
+  if (edit.type === "undo" || !made.length) return next;
+  // A variant this edit makes takes the name given to it; one made by its number forgets an older name.
+  const names = edit.type === "move" || edit.type === "copy"
+    ? edit.name ? { [variantKey(edit.target) ?? edit.target]: edit.name } : {}
+    : edit.type === "cut" || edit.type === "cutouts" ? edit.names ?? {} : {};
+  const variantNames = { ...next.variantNames };
+  for (const key of made) if (names[key]) variantNames[key] = names[key]; else delete variantNames[key];
+  return { ...next, variantNames };
+}
+
+function applyEdit(draft: Draft, edit: Edit): Draft {
   if (edit.type === "cut") return cutDraft(draft, edit);
   if (edit.type === "cutouts") {
     let data = dataOf(draft);
@@ -435,18 +455,20 @@ export function payload(draft: Draft, revision: number) {
       boxes: pieces.map((id) => draft.frames[id].box), ...(cut.trim ? { trim: true } : {}) });
   }
   // Cutouts follow the frames of collages; a saved record left without cutouts takes them away.
-  const cutouts: { record?: string; source?: number; page?: number; rects: Rect[] }[] = [];
+  const cutouts: { record?: string; source?: number; page?: number; rects: Rect[]; marks?: boolean[] }[] = [];
   for (const cut of Object.values(draft.cuts)) {
     const pieces = cut.pieces.filter(live);
     const from = cut.cutout;
     if (!from || (!pieces.length && (from.record === null || (cut.source !== null && isRemoved(draft, cut.source))))) continue;
     for (const id of pieces) wireIds.set(id, draft.sourceCount + wireIds.size);
+    const marks = pieces.map((id) => !!draft.frames[id].marks);
     cutouts.push({ ...(from.record !== null ? { record: from.record } : from.kind === "image" ? { source: cut.source! } : { page: from.page }),
-      rects: pieces.map((id) => draft.frames[id].rect!) });
+      rects: pieces.map((id) => draft.frames[id].rect!), ...(marks.some(Boolean) ? { marks } : {}) });
   }
   const wire = (id: number) => wireIds.get(id) ?? id;
   const value: { revision: number; variants: Record<string, number[]>; removed: number[];
     restored?: number[]; misc?: number[]; copies?: number[]; cuts?: typeof cuts; cutouts?: typeof cutouts;
+    variant_names?: Record<string, string>;
     collage_checked?: string[]; collage_dismissed?: string[] } = {
     revision,
     variants: Object.fromEntries(Object.entries(draft.variants).filter(([, ids]) => ids.length)
@@ -460,6 +482,8 @@ export function payload(draft: Draft, revision: number) {
   if (copies.length) value.copies = copies.map((id) => draft.copies[id]);
   if (cuts.length) value.cuts = cuts;
   if (cutouts.length) value.cutouts = cutouts;
+  const names = Object.entries(draft.variantNames).filter(([key]) => value.variants[key]?.length);
+  if (names.length) value.variant_names = Object.fromEntries(names);
   if (draft.collageChecked.length) value.collage_checked = draft.collageChecked;
   if (draft.collageDismissed.length) value.collage_dismissed = draft.collageDismissed;
   return value;
@@ -493,7 +517,8 @@ export function draftImage(draft: Draft, report: Report, id: number): ImageEntry
     const template = frame.template >= 0 ? report.images[frame.template] : snapshotEntry(from?.page ?? 0, frame.number);
     const [left, top, right, bottom] = frame.box;
     const origin = from
-      ? { collage: undefined, cutout: from.record ?? frame.cut, cut: "cutout" as const, method: frame.template >= 0 ? "manual_crop" : "page_render" }
+      ? { collage: undefined, cutout: from.record ?? frame.cut, cut: "cutout" as const, marks: frame.marks,
+          method: frame.template < 0 ? "page_render" : frame.marks ? "marked_render" : "manual_crop" }
       : { collage: frame.cut, cut: "manual" as const };
     return { ...template, size: [right - left, bottom - top], crop_px: frame.box, ...origin,
       removed: undefined, collage_replaced: undefined, cutout_replaced: undefined,
@@ -532,6 +557,43 @@ function variantFolder(report: Report, variant: number | string): string {
 
 export function variantLabel(report: Report, variant: number | string): string {
   return folderLabel(report, variantFolder(report, variant));
+}
+
+/** The report as its labels read with the names of variants the draft makes. */
+export function namedReport(report: Report, draft: Draft): Report {
+  return Object.keys(draft.variantNames).length
+    ? { ...report, variant_names: { ...report.variant_names, ...draft.variantNames } } : report;
+}
+
+// Folders of the result a variant cannot be named after.
+const SERVICE_FOLDERS = ["без подписи", "на проверку", "все остальное", "варианты"];
+
+/** A new variant from what is typed: a number («4», «3.1», «Вариант 4»), the name of a variant there is,
+ * or a name of its own, which gets the next free number. */
+export function variantChoice(value: string, labels: Record<string, string>): { key: string; name?: string } | { error: string } {
+  const text = value.replace(/\s+/g, " ").trim();
+  const written = /^(?:под)?вариант (.+)$/i.exec(text);
+  const key = variantKey(written ? written[1] : text);
+  if (key !== null) return { key };
+  if (!text) return { error: "Введите номер или название варианта." };
+  if (/^[\d.,\s]+$/.test(written ? written[1] : text)) return { error: VARIANT_KEY_ERROR };
+  const folded = text.toLocaleLowerCase("ru");
+  const same = Object.keys(labels).find((variant) => labels[variant].toLocaleLowerCase("ru") === folded);
+  if (same !== undefined) return { key: same };
+  if (/[<>:"/\\|?*\u0000-\u001f]/.test(text)) return { error: "Название не может содержать символы < > : \" / \\ | ? *" };
+  if (text.length > 120) return { error: "Название слишком длинное: не больше 120 символов." };
+  if (text.startsWith("_") || SERVICE_FOLDERS.includes(folded)) return { error: "Так называется служебная папка. Выберите другое название." };
+  return { key: nextVariant(Object.keys(labels)), name: text };
+}
+
+/** The next names of families of named variants: «Благоустройство 3» after «Благоустройство 1» and 2. */
+export function namedSuggestions(labels: string[]): string[] {
+  const families = new Map<string, number[]>();
+  for (const label of labels) {
+    const match = /^(.*\S)\s+(\d+)$/.exec(label.trim());
+    if (match && !/^(под)?вариант$/i.test(match[1])) families.set(match[1], [...families.get(match[1]) ?? [], Number(match[2])]);
+  }
+  return [...families].map(([base, numbers]) => `${base} ${Math.max(...numbers) + 1}`);
 }
 
 export function draftLocation(draft: Draft, report: Report, id: number): {

@@ -16,6 +16,9 @@ import {
   compareVariants,
   nextSubvariant,
   nextVariant,
+  namedReport,
+  namedSuggestions,
+  variantChoice,
 } from "./editor";
 import type { Report } from "./types";
 
@@ -321,5 +324,39 @@ describe("collage cuts in the draft", () => {
     const draft = editDraft(editDraft(createDraft(collageReport), { type: "collage-check", id: "2-h1" }),
       { type: "collage-dismiss", id: "2-h1" });
     expect(payload(draft, 2)).toMatchObject({ collage_checked: ["2-h1"], collage_dismissed: ["2-h1"] });
+  });
+});
+
+describe("variants named in words", () => {
+  const labels = { 1: "Вариант 1", 2: "Вариант 2" };
+  it("reads a number, a variant written out or a name", () => {
+    expect(variantChoice("4", labels)).toEqual({ key: "4" });
+    expect(variantChoice("Подвариант 2,1", labels)).toEqual({ key: "2.1" });
+    expect(variantChoice("  Вариант 5 ", labels)).toEqual({ key: "5" });
+    expect(variantChoice(" Благоустройство   1 ", labels)).toEqual({ key: "3", name: "Благоустройство 1" });
+  });
+  it("picks the variant a name already belongs to", () => {
+    expect(variantChoice("благоустройство 1", { ...labels, 3: "Благоустройство 1" })).toEqual({ key: "3" });
+  });
+  it("refuses a service folder, a number out of range and a name Windows cannot use", () => {
+    expect(variantChoice("Без подписи", labels)).toHaveProperty("error");
+    expect(variantChoice("1000", labels)).toHaveProperty("error");
+    expect(variantChoice("План: 1", labels)).toHaveProperty("error");
+    expect(variantChoice("_Служебное", labels)).toHaveProperty("error");
+    expect(variantChoice("  ", labels)).toHaveProperty("error");
+  });
+  it("suggests the next name of a family of named variants", () => {
+    expect(namedSuggestions(["Вариант 1", "Благоустройство 1", "Благоустройство 2", "Фасады"])).toEqual(["Благоустройство 3"]);
+  });
+  it("keeps the name of a variant made in the draft, sends it with the save and forgets it on undo", () => {
+    const initial = createDraft(report);
+    const named = editDraft(initial, { type: "move", ids: [3], target: "3", name: "Благоустройство 1" });
+    expect(variantLabel(namedReport(report, named), "3")).toBe("Благоустройство 1");
+    expect(payload(named, 4)).toMatchObject({ variants: { "3": [3] }, variant_names: { "3": "Благоустройство 1" } });
+    const undone = editDraft(named, { type: "undo" });
+    expect(undone.variantNames).toEqual({});
+    // A number made later for the same key does not take the old name.
+    const numbered = editDraft(undone, { type: "move", ids: [3], target: "3" });
+    expect(payload(numbered, 4)).not.toHaveProperty("variant_names");
   });
 });

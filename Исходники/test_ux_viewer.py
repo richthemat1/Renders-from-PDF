@@ -186,28 +186,74 @@ class ViewerUX(unittest.TestCase):
         self.assertGreaterEqual(selection['checkbox'], 24)
         expect(self.page.locator('.edit-panel-top strong')).to_have_text('Редактирование результата')
 
+    def point(self, locator, x=.5, y=.5):
+        box = locator.bounding_box()
+        return box['x']+box['width']*x, box['y']+box['height']*y
+
+    def carry(self, card, *points):
+        """Press a card on its picture, away from its buttons, and move the pointer through the points."""
+        self.page.mouse.move(*self.point(card, .5, .2))
+        self.page.mouse.down()
+        for point in points:
+            self.page.mouse.move(*point, steps=6)
+
+    def order(self):
+        return self.page.locator('.asset-grid > .asset-card').evaluate_all(
+            'cards => cards.map(card => card.dataset.id ?? "место")')
+
     def test_local_group_drag_marks_source_sidebar_and_insertion_target(self):
         self.edit()
         self.card(0).get_by_role('checkbox').check()
         self.card(1).get_by_role('checkbox').check()
-        transfer = self.page.evaluate_handle('new DataTransfer()')
-        self.card(0).dispatch_event('dragstart', {'dataTransfer': transfer})
+        self.carry(self.card(0), self.point(self.card(0)))
         expect(self.page.locator('.asset-card.is-dragging')).to_have_count(2)
-        expect(self.page.locator('.editor-drag-preview')).to_have_text('2 изображения')
+        expect(self.page.locator('.card-drag-ghost .card-drag-count')).to_have_text('2')
         target = self.page.locator('nav').get_by_role('button', name='Вариант 2 1', exact=True)
-        target.dispatch_event('dragover', {'dataTransfer': transfer})
+        self.page.mouse.move(*self.point(target), steps=6)
         expect(target).to_have_class(re.compile(r'is-drop-target'))
-        target.dispatch_event('dragleave', {'dataTransfer': transfer, 'clientX': -20, 'clientY': -20})
+        # Over the left half of a card the cards go before it, over the right half after it.
+        self.page.mouse.move(*self.point(self.card(2), .8), steps=6)
         expect(target).not_to_have_class(re.compile(r'is-drop-target'))
-        self.card(2).dispatch_event('dragover', {'dataTransfer': transfer})
-        expect(self.card(2)).to_have_class(re.compile(r'is-insertion-target'))
-        self.card(2).dispatch_event('drop', {'dataTransfer': transfer})
+        expect(self.card(2)).to_have_class(re.compile(r'is-insertion-target is-after'))
+        self.page.mouse.move(*self.point(self.card(2), .25), steps=6)
+        expect(self.card(2)).not_to_have_class(re.compile(r'is-after'))
+        self.page.mouse.up()
         expect(self.page.locator('.asset-card.is-dragging, .is-drop-target, .is-insertion-target')).to_have_count(0)
-        expect(self.page.locator('.editor-drag-preview')).to_have_count(0)
+        expect(self.page.locator('.card-drag-ghost')).to_have_count(0)
         self.save()
         report = load_report(self.output)
         self.assertEqual([image['variant'] for image in report['images'][:3]], [2, 2, 2])
         self.assertEqual([image['pdf_page'] for image in report['images'][:3]], [1, 2, 3])
+
+    def test_in_its_variant_a_card_goes_after_another_or_to_the_end_while_the_others_make_room(self):
+        self.page.locator('nav').get_by_role('button', name='Вариант 1 2', exact=True).click()
+        self.edit()
+        self.assertEqual(self.order(), ['0', '1'])
+        # Over the right half of the last card: the card leaves a gap there and the other card moves up.
+        self.carry(self.card(0), self.point(self.card(1), .8))
+        expect(self.page.locator('.drag-slot')).to_have_count(1)
+        self.assertEqual(self.order(), ['1', 'место'])
+        self.page.mouse.up()
+        expect(self.page.locator('.card-drag-ghost, .drag-slot')).to_have_count(0)
+        self.assertEqual(self.order(), ['1', '0'])
+        # On the empty rest of the row: the end of the variant.
+        grid = self.page.locator('.asset-grid')
+        self.carry(self.card(1), self.point(grid, .85, .3))
+        self.page.mouse.up()
+        expect(self.page.locator('.drag-slot')).to_have_count(0)
+        self.assertEqual(self.order(), ['0', '1'])
+        # A drag taken back with Escape changes nothing.
+        self.carry(self.card(0), self.point(grid, .85, .3))
+        self.page.keyboard.press('Escape')
+        self.page.mouse.up()
+        expect(self.page.locator('.card-drag-ghost, .drag-slot')).to_have_count(0)
+        self.assertEqual(self.order(), ['0', '1'])
+        self.carry(self.card(0), self.point(grid, .85, .3))
+        self.page.mouse.up()
+        self.save()
+        report = load_report(self.output)
+        self.assertEqual([image['pdf_page'] for image in report['images'][:2]], [2, 1])
+        self.assertEqual(self.errors, [])
 
     def test_long_group_titles_natural_caption_sort_and_no_duplicate_caption(self):
         report = load_report(self.output)

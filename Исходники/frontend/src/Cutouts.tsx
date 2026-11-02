@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent } from "react";
 import { ChevronLeft, ChevronRight, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan,
-  SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
+  Shapes, SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
@@ -29,8 +29,9 @@ export interface CutoutSource {
   /** The picture (or the page) the cutouts are drawn over. */
   preview: string | null;
   pending: boolean;
-  /** Live cutouts now, in reading order: card id, frame on the page and where the card sits. */
-  pieces: { id: number; rect: Rect; variant: string | null }[];
+  /** Live cutouts now, in reading order: card id, frame on the page, where the card sits and whether it
+   * is drawn with the marks over its picture. */
+  pieces: { id: number; rect: Rect; variant: string | null; marks: boolean }[];
   /** Where the cutouts are, or the picture was: a variant key, else null. */
   variant: string | null;
   variantLabel: string | null;
@@ -40,6 +41,7 @@ export interface CutoutResult {
   source: CutoutSource;
   rects: Rect[];
   targets: Target[];
+  marks: boolean[];
 }
 /** A picture of the page the editor may offer as a new source. */
 export interface PictureInfo {
@@ -74,6 +76,12 @@ export function sourceFor(rect: Rect, pictures: CutoutSource[]): CutoutSource | 
     if (contains(picture.area, rect) && size < bestArea) { best = picture; bestArea = size; }
   }
   return best;
+}
+
+/** Whether a frame covers any of the marks drawn over its picture, not just touches its edge. */
+export function touches(rect: Rect, marks: Rect[]): boolean {
+  return marks.some((mark) => Math.min(rect[2], mark[2]) - Math.max(rect[0], mark[0]) > 1e-6 &&
+    Math.min(rect[3], mark[3]) - Math.max(rect[1], mark[1]) > 1e-6);
 }
 
 /** The nearest candidate within the limit, if any. */
@@ -154,6 +162,7 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
                     {view.kind === "image"
                       ? <span className="collage-chip blue"><Crop size={14} />{count} {plural(count, ["вырезка", "вырезки", "вырезок"])}</span>
                       : <span className="collage-chip amber"><Scan size={14} />Снимок страницы{count > 1 ? ` · ${count}` : ""}</span>}
+                    {view.pieces.some((piece) => piece.marks) && <span className="collage-chip blue"><Shapes size={14} />с пометками</span>}
                     {view.pending && <span className="collage-chip blue">не сохранено</span>}
                     <span className="collage-chip neutral">Стр. {view.page}{view.variantLabel ? ` · ${view.variantLabel}` : ""}</span>
                   </div>
@@ -191,6 +200,8 @@ interface Frame {
   /** The card this frame shows, while it is not moved to another source. */
   origin?: number;
   target?: Target;
+  /** Drawn with the marks over its picture; unset — with them, as the page shows the picture. */
+  marks?: boolean;
 }
 type Handle = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 type Drag =
@@ -213,7 +224,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   labelOf(key: string): string;
   /** The colour class of a variant's dot, as in the sidebar. */
   dotOf(key: string): string;
-  onApply(results: CutoutResult[]): void;
+  /** The cutouts changed, and names given to variants made for them here. */
+  onApply(results: CutoutResult[], names: Record<string, string>): void;
   onClose(): void;
 }) {
   const [info, setInfo] = useState<PagesInfo | null>(null);
@@ -221,7 +233,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const [page, setPage] = useState(start.page);
   const [frames, setFrames] = useState<Frame[]>(() => {
     let uid = 0;
-    return views.flatMap((view) => view.pieces.map((piece) => ({ uid: ++uid, page: view.page, rect: piece.rect, origin: piece.id })));
+    return views.flatMap((view) => view.pieces.map((piece) => ({ uid: ++uid, page: view.page, rect: piece.rect, origin: piece.id,
+      marks: piece.marks })));
   });
   const [history, setHistory] = useState<Frame[][]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -234,6 +247,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const [bounds, setBounds] = useState({ width: 0, height: 0 });
   // Frames waiting for the number of a new variant.
   const [naming, setNaming] = useState<number[] | null>(null);
+  // Variants made here with a name of their own.
+  const [names, setNames] = useState<Record<string, string>>({});
+  const label = (key: string) => names[key] ?? labelOf(key);
   const nextUid = useRef(frames.length);
   const scroller = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
@@ -282,6 +298,13 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     const held = frame.origin === undefined ? undefined : pieceOf.get(frame.origin);
     if (held && held.view.key === source.key) return held.piece.variant;
     return source.kind === "image" ? "keep" : null;
+  }
+  /** Marks drawn over a frame's picture that the frame covers; a page snapshot shows everything anyway. */
+  function hasMarks(frame: Frame, source = sourceOf(frame)): boolean {
+    return source.kind === "image" && source.source !== null && touches(frame.rect, info?.marks?.[String(source.source)] ?? []);
+  }
+  function marked(frame: Frame, source = sourceOf(frame)): boolean {
+    return hasMarks(frame, source) && (frame.marks ?? true);
   }
 
   // The frames in reading order across pages, numbered as the list shows them.
@@ -473,6 +496,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   function setTarget(uids: number[], target: Target) {
     setFrames(frames.map((frame) => uids.includes(frame.uid) ? { ...frame, target } : frame));
   }
+  function setMarks(uid: number, marks: boolean) {
+    setFrames(frames.map((frame) => frame.uid === uid ? { ...frame, marks } : frame));
+  }
   function show(frame: Frame) {
     setPage(frame.page);
     setSelected(frame.uid);
@@ -508,9 +534,11 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     for (const { source, frames: own } of groups.values()) {
       const list = [...own].sort((a, b) => byPlace(a.rect, b.rect));
       const targets = list.map((frame) => targetOf(frame, source));
+      const marks = list.map((frame) => marked(frame, source));
       const same = list.length === source.pieces.length && list.every((frame, index) =>
-        sameRect(frame.rect, source.pieces[index].rect) && targets[index] === source.pieces[index].variant);
-      if (!same) changed.push({ source, rects: list.map((frame) => frame.rect), targets });
+        sameRect(frame.rect, source.pieces[index].rect) && targets[index] === source.pieces[index].variant &&
+        marks[index] === source.pieces[index].marks);
+      if (!same) changed.push({ source, rects: list.map((frame) => frame.rect), targets, marks });
     }
     return changed;
   }
@@ -522,7 +550,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       return;
     }
     const changed = results();
-    if (changed.length) onApply(changed); else onClose();
+    if (changed.length) onApply(changed, names); else onClose();
   }
 
   const extra = frames.map((frame) => targetOf(frame))
@@ -554,6 +582,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const snapshots = frames.filter((frame) => sourceOf(frame).kind === "page").length;
   const count = frames.length;
   const fromPictures = count - snapshots;
+  const withMarks = frames.filter((frame) => marked(frame)).length;
   const snapshotText = `${snapshots} ${plural(snapshots, ["снимок", "снимка", "снимков"])} страницы`;
   const summary = !count
     ? hadPieces ? { title: "Рамок не осталось",
@@ -571,7 +600,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const pages = info?.pages ?? [];
   // A page snapshot replaces no picture, so it has no place of its own to keep.
   const choices = (keep: boolean): SelectOption[] => [...(keep ? [{ value: "__keep", label: "На место картинки" }] : []),
-    ...options.map((key) => ({ value: key, label: labelOf(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
+    ...options.map((key) => ({ value: key, label: label(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
     { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
   function choose(uids: number[], value: string) {
     if (value === "__new") setNaming(uids); else setTarget(uids, parse(value));
@@ -649,13 +678,16 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                 onPointerDown={startDraw} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
                 onDoubleClick={wholePicture}>
                 <img key={page} src={pageUrl(resultId, page)} alt="" draggable={false} />
-                {showPictures && pagePictures.map((picture) => (
-                  <span key={picture.key} className="cutout-found" style={relative(picture.area, [0, 0, 1, 1])}>
-                    <span className="collage-chip dark"><ImageIcon size={12} />
-                      {picture.source !== null && !isLive(picture.source) ? "Исходная картинка" : "Найденная картинка"}
-                      {picture.variantLabel ? ` · ${picture.variantLabel}` : ""}</span>
-                  </span>
-                ))}
+                {showPictures && pagePictures.map((picture) => {
+                  const chip = (picture.source !== null && !isLive(picture.source) ? "Исходная картинка" : "Найденная картинка") +
+                    (picture.variantLabel ? ` · ${picture.variantLabel}` : "");
+                  // A long caption is cut to the width of its picture; the whole of it shows on hover.
+                  return (
+                    <span key={picture.key} className="cutout-found" style={relative(picture.area, [0, 0, 1, 1])}>
+                      <span className="collage-chip dark" title={chip}><ImageIcon size={12} /><span>{chip}</span></span>
+                    </span>
+                  );
+                })}
                 {onPage.map((frame) => {
                   const active = frame.uid === selected;
                   return (
@@ -677,7 +709,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                     style={{ ...(chosen.rect[1] > 0.1 ? { bottom: `${(1 - chosen.rect[1]) * 100}%` } : { top: `${chosen.rect[3] * 100}%` }),
                       ...(chosen.rect[0] > 0.55 ? { right: `${(1 - chosen.rect[2]) * 100}%` } : { left: `${chosen.rect[0] * 100}%` }) }}>
                     <b>{chosenSize[0]} × {chosenSize[1]} px</b>
-                    <span>{sourceOf(chosen).kind === "page" ? "снимок страницы" : snapped ? "край прилип" : "из картинки"}</span>
+                    <span>{sourceOf(chosen).kind === "page" ? "снимок страницы" : snapped ? "край прилип"
+                      : marked(chosen) ? "с пометками" : "из картинки"}</span>
                   </div>
                 )}
               </div>
@@ -718,8 +751,15 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                         </span>
                         <div>
                           <strong>Вырезка {number} <span>стр. {frame.page}</span></strong>
-                          <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "image" ? "из картинки" : "снимок страницы"}</span>
+                          <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "page" ? "снимок страницы"
+                            : marked(frame, source) ? "с пометками" : "из картинки"}</span>
                           {small && <span className="cutout-warning"><TriangleAlert size={13} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
+                          {hasMarks(frame, source) && <label className="cut-toggle cutout-marks">
+                            <Shapes {...LINE} />С пометками
+                            <input type="checkbox" checked={marked(frame, source)} aria-label={`Вырезка ${number} с пометками поверх картинки`}
+                              onChange={(event) => setMarks(frame.uid, event.target.checked)} />
+                            <span aria-hidden="true" />
+                          </label>}
                           <Select label={`Куда поместить вырезку ${number}`} value={valueOf(targetOf(frame, source))}
                             options={choices(source.kind === "image")} onChange={(value) => choose([frame.uid], value)} />
                           <div className="cutout-row-actions">
@@ -734,8 +774,10 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
               ))}
               {!!snapshots && <div className="cutout-kind-note"><ImageIcon {...LINE} />
                 <p><b>Снимки страницы PDF</b>Здесь нет отдельных картинок — будут добавлены выбранные области страницы.</p></div>}
-              {!!fromPictures && <div className="cutout-kind-note"><Crop {...LINE} />
+              {fromPictures > withMarks && <div className="cutout-kind-note"><Crop {...LINE} />
                 <p><b>Вырезки из картинок</b>Встанут на место своих картинок в исходных пикселях; сами картинки сохранятся в разделе «Вырезки».</p></div>}
+              {!!withMarks && <div className="cutout-kind-note"><Shapes {...LINE} />
+                <p><b>Вырезки с пометками</b>Как на странице: фото вместе с тем, что нарисовано поверх, в разрешении самой картинки. Чтобы взять чистое фото, выключите «С пометками».</p></div>}
             </div>
           </aside>
         </div>
@@ -750,9 +792,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
         </div>
       </div>
       )}
-      <Presence>{naming && <NewVariantDialog variants={options} preferred={base} onClose={() => setNaming(null)}
+      <Presence>{naming && <NewVariantDialog variants={options} labelOf={label} preferred={base} onClose={() => setNaming(null)}
         subject={naming.length === 1 ? `Вырезка ${numberOf.get(naming[0])} встанет в новый вариант.` : "Все вырезки встанут в новый вариант."}
-        onCreate={(key) => { setTarget(naming, key); setNaming(null); }} />}</Presence>
+        onCreate={(key, name) => { if (name) setNames({ ...names, [key]: name }); setTarget(naming, key); setNaming(null); }} />}</Presence>
     </Dialog>
   );
 }

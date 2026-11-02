@@ -185,20 +185,55 @@
   box-shadow: inset 0 0 0 2px #a1acff;
   color: #fff;
 }
-.editor-drag-preview {
+.viewer-content .asset-card.is-insertion-target.is-after {
+  box-shadow: inset -5px 0 0 var(--accent), 0 0 0 2px #5969db45;
+}
+.viewer-content .asset-card.is-insertion-target.is-after .asset-image,
+.viewer-content .asset-card.is-insertion-target.is-after .asset-info {
+  transform: translateX(-5px);
+}
+/* Card places for dragging are measured from the grid. */
+.viewer-content .asset-grid {
+  position: relative;
+}
+/* The place a dragged card would take among the cards of its variant. */
+.viewer-content .asset-card.drag-slot {
+  border: 1.5px dashed #a1acff;
+  background: #f4f5ff;
+}
+/* The card lifted by the pointer: a copy that follows it above everything. */
+.card-drag-ghost {
   position: fixed;
-  top: -10000px;
-  left: 0;
-  z-index: 100;
-  padding: 12px 18px;
-  border: 1px solid #a1acff;
-  border-radius: 10px;
-  color: #fff;
-  background: #414fbc;
-  box-shadow: 0 8px 24px #17202b33;
-  font: 650 13px/1.4 "Manrope Variable", "Segoe UI", sans-serif;
-  white-space: nowrap;
+  z-index: 1000;
+  margin: 0;
   pointer-events: none;
+  will-change: transform;
+}
+.card-drag-count {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 2px 8px #17202b33;
+  font: 700 13px/1 "Manrope Variable", "Segoe UI", sans-serif;
+}
+body.is-card-dragging,
+body.is-card-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+/* While cards are carried, every variant of the menu shows that it takes them. */
+body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.is-drop-target) {
+  box-shadow: inset 0 0 0 1px #a1acff66;
 }
 .viewer-content .asset-group {
   text-transform: none;

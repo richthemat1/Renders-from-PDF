@@ -109,7 +109,7 @@ class CopyPreviewUI(unittest.TestCase):
         self.page.get_by_role('menuitem', name='Создать копии выбранных', exact=True).click()
         self.page.get_by_label('Куда поместить копии').click()
         self.page.get_by_role('option', name='В новый вариант', exact=True).click(timeout=3000)
-        self.page.get_by_label('Номер нового варианта').fill('8')
+        self.page.get_by_label('Номер или название нового варианта').fill('8')
         self.page.get_by_role('button', name='Создать копии', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(1)
         self.save()

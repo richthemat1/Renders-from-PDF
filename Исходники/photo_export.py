@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 from threading import RLock
+import time
 from urllib.parse import quote
 
 import pdfplumber
@@ -28,7 +29,7 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
                           text_lines, tile_groups, found_variant, variant_numbers, variant_sort_key)
 from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, drawn_share, is_large_raster,
                         LARGE_RASTER_PIXELS, native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
-                        prepare_scan_continuations, seam_caption, whole_scan_caption)
+                        prepare_scan_continuations, seam_caption, turned, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
 # make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
@@ -41,7 +42,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.38'
+VERSION = '3.39'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -160,7 +161,7 @@ def image_to_pdf(image_path, target, bbox, title, matrix=None):
     document = canvas.Canvas(str(target), pagesize=(width, height), pageCompression=1)
     document.setTitle(title or 'Изображение из PDF')
     document.setCreator(f'PDF Photos {VERSION}')
-    if matrix is not None and (matrix[1] or matrix[2] or matrix[0] < 0 or matrix[3] < 0):
+    if matrix is not None and turned(matrix):
         a, b, c, d = matrix[:4]
         sx, sy = width/(abs(a)+abs(c)), height/(abs(b)+abs(d))
         document.transform(a*sx, b*sy, c*sx, d*sy,
@@ -174,6 +175,8 @@ def image_to_pdf(image_path, target, bbox, title, matrix=None):
 
 def safe_name(text, limit=80):
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', ' — ', clean_text(text))
+    # A replaced colon beside a dash of the caption itself makes one dash.
+    text = re.sub(r'\s*—(?:\s*—)+', ' —', text)
     text = re.sub(r'\s+', ' ', text).strip(' .') or 'Без подписи'
     if len(text) > limit:
         if limit >= 40:
@@ -202,6 +205,24 @@ def available_folder_name(title, limit, owners, key):
         if folder.casefold() not in owners or owners[folder.casefold()] == key:
             return folder
     raise OutputPathError('Не удалось подобрать свободное имя папки результата.')
+
+
+# Windows Defender and the search indexer hold a file the program has just written for a moment: deleting or
+# moving it then fails with «Отказано в доступе». Such a step is tried again for this long.
+SETTLE_SECONDS = 5
+
+
+def settled(action, *args, **kwargs):
+    """A file operation, tried again while another program briefly holds the file."""
+    deadline, delay = time.monotonic()+SETTLE_SECONDS, .05
+    while True:
+        try:
+            return action(*args, **kwargs)
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay*2, .5)
 
 
 def unused_folder(path):
@@ -645,8 +666,7 @@ def save_group(page, paths, group, base):
                 target = base.with_suffix('.png')
                 image.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
         return target, size, 'original'
-    if any((matrix := image.get('matrix')) and
-           (matrix[1] or matrix[2] or matrix[0] < 0 or matrix[3] < 0) for image in group):
+    if any(turned(image.get('matrix')) for image in group):
         raise ValueError('Поворот или отражение фрагментов: сохранён снимок собранной области страницы.')
     box = bounds(group)
     first = group[0]
@@ -743,7 +763,7 @@ def merge_variant_pdfs(staging, entries, progress=None):
             checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
         for index, (entry, source) in enumerate(zip(images, originals), 1):
             entry.update(file=str(target.relative_to(staging)), pdf_page=index, sha256=checksum)
-            source.unlink()
+            settled(source.unlink)
     documents = {}
     for entry in entries:
         document = documents.setdefault(entry['file'], {
@@ -1546,7 +1566,7 @@ def extract(source, output=None, progress=None):
                 # The measure only refines the result: a raster it cannot read is exported as before.
                 share = None
             if share is not None and share < BLANK_DRAWN_SHARE:
-                raster.unlink(missing_ok=True)
+                settled(raster.unlink, missing_ok=True)
                 return {'blank': round(share, 6)}
         bbox = [box[k] for k in ('x0', 'top', 'x1', 'bottom')]
         try:
@@ -1555,10 +1575,10 @@ def extract(source, output=None, progress=None):
             matrix = group[0].get('matrix') if len(group) == 1 and method == 'original' else None
             image_to_pdf(raster, target, bbox, title, matrix)
         except Exception as error:
-            target.unlink(missing_ok=True)
+            settled(target.unlink, missing_ok=True)
             return {'error': f'Не удалось сохранить PDF: {error}'}
         finally:
-            raster.unlink(missing_ok=True)
+            settled(raster.unlink, missing_ok=True)
         with target.open('rb') as stream:
             checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
         return {'file': str(target.relative_to(staging)), 'size': size, 'method': method,
@@ -1568,7 +1588,7 @@ def extract(source, output=None, progress=None):
 
     try:
         reader = PdfReader(source)
-        raw_workspace = tempfile.TemporaryDirectory(prefix='.raster-', dir=staging)
+        raw_workspace = tempfile.TemporaryDirectory(prefix='.raster-', dir=staging, ignore_cleanup_errors=True)
         raw_folder = Path(raw_workspace.name).resolve()
         if raw_folder.parent != staging or not raw_folder.name.startswith('.raster-'):
             raise ValueError('Некорректный путь временных растров.')
@@ -1708,10 +1728,14 @@ def extract(source, output=None, progress=None):
         render_previews(staging, report, progress)
         write_gallery(staging, report)
         (staging/'Отчёт.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
-        staging.rename(destination)
+        settled(staging.rename, destination)
     except BaseException:
-        if staging.exists():
-            shutil.rmtree(staging)
+        # Cleaning up never hides why the processing stopped.
+        try:
+            if staging.exists():
+                settled(shutil.rmtree, staging)
+        except OSError:
+            pass
         raise
     finally:
         release_large_rasters()

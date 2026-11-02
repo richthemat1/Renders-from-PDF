@@ -24,6 +24,13 @@ LARGE_RASTER_PIXELS = 50_000_000
 SCRATCH_PNG_LEVEL = 1
 
 
+def turned(matrix):
+    """Whether a picture is rotated, sheared or flipped on its page. A skew of a ten-thousandth of its size is
+    rounding left by the program that made the PDF (-0.00005 on a 270 pt photo), not a turn."""
+    a, b, c, d = (matrix or (1, 0, 0, 1))[:4]
+    return abs(b) > 1e-4*abs(a) or abs(c) > 1e-4*abs(d) or a < 0 or d < 0
+
+
 def is_large_raster(image):
     width, height = image['srcsize']
     return width*height > LARGE_RASTER_PIXELS
@@ -695,8 +702,7 @@ def _compound_text(engine, image, original, panels, page_lines=()):
 
 def _cut_problem(page, original, image, full_page):
     """Why a raster must not be cut automatically, or None."""
-    a, b, c, d = original.get('matrix', (1, 0, 0, 1))
-    if b or c or a < 0 or d < 0:
+    if turned(original.get('matrix')):
         return 'Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.'
     ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
     if abs(image.width/image.height/ratio-1) > .025:

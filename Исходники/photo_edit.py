@@ -10,17 +10,19 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+from threading import Lock
 
+import pypdf.filters
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PyPdfError
 
 from PIL import Image
 
 from photo_export import (COLLAGES_DIR, CUTOUTS_DIR, OTHER_DIR, PDFIUM_LOCK, SERVICE_DIR, VARIANTS_DIR, VERSION,
-                          entry_group, group_file, group_title, has_service_dir, image_to_pdf, safe_name,
+                          entry_group, group_file, group_title, has_service_dir, image_to_pdf, safe_name, settled,
                           write_gallery)
 from photo_layout import variant_key, variant_sort_key
-from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL
+from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL, turned
 
 BACKUPS = '_Резервные копии'
 
@@ -400,10 +402,10 @@ def _write_bytes(path, data):
                                          suffix='.tmp', delete=False) as stream:
             temporary = Path(stream.name)
             stream.write(data)
-        os.replace(temporary, _backup_io_path(path))
+        settled(os.replace, temporary, _backup_io_path(path))
     finally:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            settled(temporary.unlink, missing_ok=True)
 
 
 def remove_empty_folders(output, folder):
@@ -568,6 +570,29 @@ def _page_picture(pdf_page):
     return images[0] if len(images) == 1 else None
 
 
+# pypdf stops inflating any zlib stream at 75 MB against decompression bombs. A picture the export
+# wrote may be larger: a 7019×3899 render with a soft mask is kept as an 82 MB RGB stream.
+_INFLATE_LOCK = Lock()
+
+
+def _decoded_picture(picture, pictures):
+    """A copy of the page's only picture, inflated up to the size its own width and height declare.
+
+    pypdf decodes a picture as soon as it is taken from `pdf_page.images`, so the list comes here whole."""
+    declared = 0
+    if picture is not None:
+        bits = int(picture.get('/BitsPerComponent', 8))
+        # At most four channels, and one predictor byte per row.
+        declared = int(picture['/Height'])*(int(picture['/Width'])*4*bits//8+1)
+    with _INFLATE_LOCK:
+        cap = pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH
+        pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH = max(cap, declared)
+        try:
+            return pictures[0].image.copy()
+        finally:
+            pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH = cap
+
+
 def _collage_source(output, report, record):
     """The whole collage picture as a PIL image, its PDF page size in points and that page's bytes."""
     if record.get('file'):
@@ -576,8 +601,7 @@ def _collage_source(output, report, record):
         path, page = entry_pdf_source(output, report, record['image'])
     entry = report['images'][record['image']] if 'image' in record else None
     for component in (entry or {}).get('components') or []:
-        a, b, c, d = (component.get('matrix') or (1, 0, 0, 1))[:4]
-        if b or c or a < 0 or d < 0:
+        if turned(component.get('matrix')):
             raise EditError('Повёрнутую или отражённую картинку разрезать нельзя.')
     try:
         with PdfReader(path) as reader:
@@ -592,7 +616,7 @@ def _collage_source(output, report, record):
                 image = Image.open(BytesIO(data))
                 image.load()
             else:
-                image = pictures[0].image.copy()
+                image = _decoded_picture(picture, pictures)
             size = float(pdf_page.mediabox.width), float(pdf_page.mediabox.height)
             writer = PdfWriter()
             writer.add_page(pdf_page)
@@ -782,8 +806,7 @@ def cutout_sources(report, geometry=None):
                 or not isinstance(entry.get('bbox'), list) or len(entry['bbox']) != 4
                 or type(page) is not int or not 1 <= page <= len(geometry) or geometry[page-1]['rotation']):
             continue
-        if any((matrix := component.get('matrix')) and (matrix[1] or matrix[2] or matrix[0] < 0 or matrix[3] < 0)
-               for component in entry.get('components') or []):
+        if any(turned(component.get('matrix')) for component in entry.get('components') or []):
             continue
         area = picture_area(entry, geometry[page-1])
         if area[2]-area[0] > 0 and area[3]-area[1] > 0:
@@ -791,8 +814,91 @@ def cutout_sources(report, geometry=None):
     return pictures
 
 
+# Something drawn over this much of its picture is a frame or a tint of the whole picture, not a mark.
+MARK_COVER = .9
+
+
+def _drawn_objects(page):
+    """What a pdfium page draws, in drawing order: the object type and its bounds in shares of the page.
+
+    Objects inside forms are placed by the matrices of their forms; unseen text (OCR layers, clips)
+    and unpainted paths are left out."""
+    import ctypes
+    import pypdfium2.raw as pdfium_c
+    left, bottom, right, top = page.get_cropbox()
+    drawn = []
+    for obj in page.get_objects():
+        kind = obj.type
+        if kind == pdfium_c.FPDF_PAGEOBJ_FORM:
+            continue
+        if kind == pdfium_c.FPDF_PAGEOBJ_TEXT and pdfium_c.FPDFTextObj_GetTextRenderMode(obj) in (
+                pdfium_c.FPDF_TEXTRENDERMODE_INVISIBLE, pdfium_c.FPDF_TEXTRENDERMODE_CLIP):
+            continue
+        if kind == pdfium_c.FPDF_PAGEOBJ_PATH:
+            fill, stroke = ctypes.c_long(), ctypes.c_long()
+            if pdfium_c.FPDFPath_GetDrawMode(obj, fill, stroke) and fill.value == pdfium_c.FPDF_FILLMODE_NONE and not stroke.value:
+                continue
+        x0, y0, x1, y1 = obj.get_bounds()
+        corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)]
+        form = obj.container
+        while form is not None:
+            a, b, c, d, e, f = form.get_matrix().get()
+            corners = [(a*x+c*y+e, b*x+d*y+f) for x, y in corners]
+            form = form.container
+        xs, ys = [x for x, _ in corners], [y for _, y in corners]
+        drawn.append((kind, ((min(xs)-left)/(right-left), (top-max(ys))/(top-bottom),
+                             (max(xs)-left)/(right-left), (top-min(ys))/(top-bottom))))
+    return drawn
+
+
+def _marks_over(drawn, area):
+    """What is drawn over a picture after it, clipped to the picture, in shares of the page."""
+    import pypdfium2.raw as pdfium_c
+
+    def overlap(box):
+        return max(0, min(box[2], area[2])-max(box[0], area[0]))*max(0, min(box[3], area[3])-max(box[1], area[1]))
+    whole = (area[2]-area[0])*(area[3]-area[1])
+    images = [index for index, (kind, _) in enumerate(drawn) if kind == pdfium_c.FPDF_PAGEOBJ_IMAGE]
+    # The picture itself: the image at its edges, else one image covering it (clipped), else its tiles.
+    own = ([index for index in images if all(abs(a-b) <= AREA_TOLERANCE for a, b in zip(drawn[index][1], area))]
+           or [index for index in images if overlap(drawn[index][1]) >= MARK_COVER*whole]
+           or [index for index in images if all(drawn[index][1][k] >= area[k]-AREA_TOLERANCE for k in (0, 1))
+               and all(drawn[index][1][k] <= area[k]+AREA_TOLERANCE for k in (2, 3))])
+    if not own:
+        return []
+    marks = []
+    for index in range(own[0]+1, len(drawn)):
+        box = drawn[index][1]
+        if index in own or overlap(box) <= 0 or overlap(box) >= MARK_COVER*whole:
+            continue
+        marks.append([round(min(max(value, area[k % 2]), area[2+k % 2]), 6) for k, value in enumerate(box)])
+    return marks
+
+
+def picture_marks(report, sources):
+    """Marks drawn over each picture, by picture index: {index: [shares of the page]}; only marked pictures."""
+    import pypdfium2
+    found = {}
+    pages = {}
+    for index, page, area in sources:
+        pages.setdefault(page, []).append((index, area))
+    with PDFIUM_LOCK, pypdfium2.PdfDocument(source_pdf(report)) as document:
+        for number, pictures in pages.items():
+            page = document[number-1]
+            try:
+                drawn = _drawn_objects(page)
+            finally:
+                page.close()
+            for index, area in pictures:
+                marks = _marks_over(drawn, area)
+                if marks:
+                    found[str(index)] = marks
+    return found
+
+
 def pages_info(output):
-    """What the cutout editor draws on: page sizes, snapshot sizes and the pictures that may be cut."""
+    """What the cutout editor draws on: page sizes, snapshot sizes, the pictures that may be cut and
+    the marks drawn over them, also over pictures already replaced by cutouts."""
     report = load_report(Path(output).resolve())
     geometry = page_geometry(report)
     pages = []
@@ -801,7 +907,11 @@ def pages_info(output):
         scale = snapshot_scale(page)
         pages.append({'number': number, 'size': [round(x1-x0, 3), round(bottom-top, 3)],
                       'snapshot': [round((x1-x0)*scale), round((bottom-top)*scale)]})
-    return {'pages': pages, 'pictures': cutout_sources(report, geometry)}
+    pictures = cutout_sources(report, geometry)
+    sources = [(picture['image'], picture['page'], picture['area']) for picture in pictures]
+    sources += [(record['image'], record['page'], record['area']) for record in report.get('cutouts') or []
+                if isinstance(record, dict) and record.get('kind') == 'image']
+    return {'pages': pages, 'pictures': pictures, 'marks': picture_marks(report, sources)}
 
 
 def _rect_box(record, rect):
@@ -879,9 +989,14 @@ def parse_cutout_edits(report, payload):
             boxes = [_rect_box(record, rect) for rect in item['rects']]
             if len(boxes) > FRAME_LIMIT:
                 raise EditError(f'Из одной картинки можно сделать не больше {FRAME_LIMIT} вырезок.')
+            # A cutout of a picture with marks shows them as the page does; a page snapshot always does.
+            marks = item.get('marks', [False]*len(boxes))
+            if (not isinstance(marks, list) or len(marks) != len(boxes) or any(type(value) is not bool for value in marks)
+                    or record['kind'] != 'image' and any(marks)):
+                raise TypeError()
             members = [index for index, entry in enumerate(images)
                        if entry.get('cutout') == record['id'] and not entry.get('removed') and 'copy_of' not in entry]
-            parsed.append({'record': record, 'boxes': boxes, 'rects': item['rects'], 'members': members,
+            parsed.append({'record': record, 'boxes': boxes, 'rects': item['rects'], 'marks': marks, 'members': members,
                            'created': created})
     except EditError:
         raise
@@ -890,8 +1005,11 @@ def parse_cutout_edits(report, payload):
     return parsed
 
 
-def _snapshot_frames(report, record, boxes):
-    """Single-page PDFs and previews of page areas rendered from the source presentation."""
+def _snapshot_frames(report, record, boxes, title=None):
+    """Single-page PDFs and previews of page areas rendered from the source presentation.
+
+    `record` gives the page, the pixels per point and the page size in those pixels; `boxes` are whole
+    pixels in them."""
     import pypdfium2
     path = source_pdf(report)
     scale = record['scale']
@@ -903,11 +1021,14 @@ def _snapshot_frames(report, record, boxes):
             try:
                 for number, box in enumerate(boxes, 1):
                     raster, target = Path(folder)/f'{number}.png', Path(folder)/f'{number}.pdf'
-                    # Shares of the page in points to cut from the left, bottom, right and top.
-                    crop = (box[0]/scale, (height-box[3])/scale, (width-box[2])/scale, box[1]/scale)
+                    # Points to cut from the left, bottom, right and top. pypdfium2 rounds each of them up
+                    # to whole pixels: half a pixel less lands on the left and top edges exactly, and the
+                    # pixel of room kept on the right and below is cut off below.
+                    crop = (max(0, box[0]-.5)/scale, max(0, height-box[3]-1)/scale, max(0, width-box[2]-1)/scale,
+                            max(0, box[1]-.5)/scale)
                     bitmap = page.render(scale=scale, crop=crop)
                     try:
-                        with bitmap.to_pil() as image:
+                        with bitmap.to_pil() as rendered, rendered.crop((0, 0, box[2]-box[0], box[3]-box[1])) as image:
                             image.convert('RGB').save(raster, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                             size = list(image.size)
                             with image.copy() as thumbnail:
@@ -917,11 +1038,28 @@ def _snapshot_frames(report, record, boxes):
                     finally:
                         bitmap.close()
                     image_to_pdf(raster, target, [0, 0, (box[2]-box[0])/scale, (box[3]-box[1])/scale],
-                                 f'Страница {record["page"]}')
+                                 title or f'Страница {record["page"]}')
                     frames.append({'pdf': target.read_bytes(), 'size': size, 'preview': preview.getvalue()})
             finally:
                 page.close()
     return frames
+
+
+def _marked_frames(report, record, boxes):
+    """Parts of a picture as the page shows them, marks drawn over it included, at the picture's own resolution."""
+    if not boxes:
+        return []
+    x0, top, x1, bottom = page_geometry(report)[record['page']-1]['box']
+    width, height = x1-x0, bottom-top
+    left, upper, right, lower = record['area']
+    columns, rows = record['size']
+    # Pixels of the picture per point of the page; a poster stays within the snapshot budget.
+    scale = columns/((right-left)*width)*min(1, (SNAPSHOT_PIXELS/(columns*rows))**.5)
+    across, down = scale*(right-left)*width/columns, scale*(lower-upper)*height/rows
+    page = {'page': record['page'], 'scale': scale, 'size': [width*scale, height*scale]}
+    shown = [[round(left*width*scale+box[0]*across), round(upper*height*scale+box[1]*down),
+              round(left*width*scale+box[2]*across), round(upper*height*scale+box[3]*down)] for box in boxes]
+    return _snapshot_frames(report, page, shown, record.get('title'))
 
 
 def _report_with_cutouts(report, cutouts, start, output, aux):
@@ -931,11 +1069,16 @@ def _report_with_cutouts(report, cutouts, start, output, aux):
     revision = report.get('revision', 0)+1
     service = Path(SERVICE_DIR)
     for item in cutouts:
-        record, boxes = item['record'], item['boxes']
+        record, boxes, marks = item['record'], item['boxes'], item['marks']
         identifier = record['id']
         source = record.get('file')
         if record['kind'] == 'image':
-            cut, page_bytes = _cut_frames(output, report, record, boxes) if boxes else ([], None)
+            # The picture page is kept even when every cutout is drawn with its marks.
+            native, page_bytes = (_cut_frames(output, report, record, [box for box, marked in zip(boxes, marks) if not marked])
+                                  if boxes else ([], None))
+            native = iter(native)
+            drawn = iter(_marked_frames(report, record, [box for box, marked in zip(boxes, marks) if marked]))
+            cut = [next(drawn) if marked else next(native) for marked in marks]
             template = images[record['image']]
             if boxes and not source:
                 source = str(service/CUTOUTS_DIR/f'Вырезка {identifier} r{revision}.pdf')
@@ -943,18 +1086,21 @@ def _report_with_cutouts(report, cutouts, start, output, aux):
         else:
             cut, template = (_snapshot_frames(report, record, boxes) if boxes else []), None
         pieces = []
-        for number, (box, frame) in enumerate(zip(boxes, cut), 1):
+        for number, (box, frame, marked) in enumerate(zip(boxes, cut, marks), 1):
             index = start+len(frames)
             preview = str(service/'Миниатюры'/f'вырезка {identifier} r{revision} {number}.png')
             aux[preview] = frame['preview']
             if template is not None:
                 entry = copy.deepcopy(template)
                 for key in ('removed', 'suppressed', 'copy_of', 'collage', 'collage_replaced', 'cutout_replaced',
-                            'sha256', 'cut', 'crop_px'):
+                            'sha256', 'cut', 'crop_px', 'marks'):
                     entry.pop(key, None)
                 entry.setdefault('original_location', original_location(template))
                 entry['components'] = [dict(component, crop_px=box) for component in (template.get('components') or [])[:1]]
-                reason = f'Вырезка {number} со страницы {record["page"]}, из исходных пикселей картинки.'
+                reason = (f'Вырезка {number} со страницы {record["page"]}, как на странице: с пометками поверх картинки.'
+                          if marked else f'Вырезка {number} со страницы {record["page"]}, из исходных пикселей картинки.')
+                if marked:
+                    entry['marks'] = True
             else:
                 reason = f'Вырезка {number} со страницы {record["page"]}, снимок страницы.'
                 entry = {'status': 'unsigned', 'title': None, 'candidates': [], 'variant': None, 'group': None,
@@ -962,7 +1108,8 @@ def _report_with_cutouts(report, cutouts, start, output, aux):
                          'original_location': {'folder': 'Без подписи', 'status': 'unsigned', 'label': 'Без подписи',
                                                'reason': reason}}
             entry.update(cutout=identifier, crop_px=box, size=frame['size'], manual=True, cut='cutout', preview=preview,
-                         pdf_page=1, method='manual_crop' if template is not None else 'page_render', reason=reason)
+                         pdf_page=1, reason=reason,
+                         method='page_render' if template is None else 'marked_render' if marked else 'manual_crop')
             entry.setdefault('file', '')
             images.append(entry)
             frames[index] = frame['pdf']
@@ -995,6 +1142,32 @@ def _update_cutouts(new, summary):
                                    for item in summary]
 
 
+def parse_variant_names(report, variants, raw):
+    """Names of the variants a save makes, {key: name}: checked as a rename of a variant is, and taken
+    by no variant or folder of the result."""
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        raise EditError('Некорректный формат названий вариантов.')
+    live = {entry_group(entry) for entry in report['images'] if not entry.get('removed')} - {None}
+    taken = ({group_title(key, report).casefold() for key in live}
+             | {str(entry.get('folder') or '').casefold() for entry in report['images']}
+             | SPECIAL_FOLDERS | {OTHER_DIR.casefold(), VARIANTS_DIR.casefold()})
+    names = {}
+    for value, name in raw.items():
+        try:
+            key = variant_key(value)
+        except ValueError:
+            raise EditError('Некорректный вариант.') from None
+        if not variants.get(key) or key in live:
+            raise EditError('Название можно дать только новому варианту с изображениями.')
+        name = clean_name(name)
+        if name.casefold() in taken | {other.casefold() for other in names.values()}:
+            raise EditError(f'Вариант или папка «{name}» уже есть. Выберите другое название.')
+        names[key] = name
+    return names
+
+
 def apply_edits(output, payload):
     """Rebuild variant and individual PDFs transactionally, preserving every replaced source."""
     output = Path(output).resolve()
@@ -1004,6 +1177,7 @@ def apply_edits(output, payload):
     frame_count = sum(len(cut[1]) for cut in cuts)
     variants, removed, current = parse_payload(report, payload,
                                                pieces=frame_count+sum(len(item['boxes']) for item in cutouts))
+    names = parse_variant_names(report, variants, payload.get('variant_names'))
     for record, boxes, members, created, trim in cuts:
         if any(index not in removed for index in members):
             raise EditError('Прежние кадры склейки не убраны из правки. Обновите страницу и повторите разрезание.')
@@ -1036,6 +1210,10 @@ def apply_edits(output, payload):
         frames.update(pieces)
     else:
         cutout_summary = []
+    if names:
+        # The new variants take their names before any folder or PDF is named after them.
+        working = {**working, 'variant_names': {**(working.get('variant_names') or {}),
+                                                **{str(key): name for key, name in names.items()}}}
     images = working['images']
     misc = [int(index) for index in payload.get('misc', [])
             if int(index) >= copy_start or images[int(index)].get('removed') or entry_group(images[int(index)]) is not None]
@@ -1048,7 +1226,7 @@ def apply_edits(output, payload):
         return report, None
     # Read every source before creating backups or replacing any live PDF.
     built = {key: variant_pdf(output, working, variants[key], key, frames) for key in changed if variants[key]}
-    reserved = {str(group_file(report, key)).casefold() for key in variants}
+    reserved = {str(group_file(working, key)).casefold() for key in variants}
     singles = {}
     folder_labels = dict(report.get('folder_labels') or {})
     for index in misc:
@@ -1065,7 +1243,9 @@ def apply_edits(output, payload):
         _update_collages(new, cut_summary, checked, dismissed)
     if cutouts:
         _update_cutouts(new, cutout_summary)
-    pdfs = {str(group_file(report, key)): data for key, data in built.items()}
+    pdfs = {str(group_file(working, key)): data for key, data in built.items()}
+    if 'folder_labels' in new:
+        new['folder_labels'].update({name: name for name in names.values()})
     pdfs.update({value[0]: value[2] for value in singles.values()})
     live_files = {os.path.normcase(str(Path(entry['file']))) for entry in report['images'] if not entry.get('removed')}
     for relative in pdfs:

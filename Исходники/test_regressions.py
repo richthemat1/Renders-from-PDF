@@ -180,5 +180,64 @@ class ShutdownRegressions(unittest.TestCase):
                     self.assertEqual(document['pages'], len(reader.pages))
 
 
+
+class TransientFileLocks(unittest.TestCase):
+    """Windows Defender and the search indexer hold a file the program has just written for a moment;
+    deleting or moving it then fails with «Отказано в доступе» (PermissionError)."""
+    pages = [{'images': [{'box': (50, 170, 800, 500), 'color': color}], 'text': [(title, 50, 120, 18)]}
+             for title, color in [('Вариант 1. Двор', '#e4b5a3'), ('Вариант 1. Сквер', '#a4cbb7'), ('Парковка', '#adc3de')]]
+
+    def test_a_file_held_for_a_moment_does_not_fail_the_processing(self):
+        import photo_export
+        unlink, rename = Path.unlink, Path.rename
+        held = {'unlink': 0, 'rename': 0}
+
+        def busy(kind):
+            held[kind] += 1
+            raise PermissionError(13, 'Процесс не может получить доступ к файлу, так как этот файл занят другим процессом')
+
+        def held_unlink(path, *args, **kwargs):
+            return busy('unlink') if held['unlink'] < 3 else unlink(path, *args, **kwargs)
+
+        def held_rename(path, target):
+            return busy('rename') if held['rename'] < 2 else rename(path, target)
+
+        with tempfile.TemporaryDirectory(prefix='pdf-held-') as root:
+            source = make_pdf(root, self.pages)
+            with patch.object(Path, 'unlink', held_unlink), patch.object(Path, 'rename', held_rename):
+                report = photo_export.extract(source)
+            self.assertEqual(held, {'unlink': 3, 'rename': 2})
+            self.assertEqual(report['errors'], [])
+            output = Path(report['output'])
+            self.assertTrue((output/'Отчёт.json').is_file())
+            self.assertEqual([path.name for path in Path(root).iterdir() if path.name.startswith('.pdf-photos-')], [])
+
+    def test_a_saved_pdf_held_for_a_moment_is_still_replaced(self):
+        import os
+        replace, held = os.replace, []
+
+        def held_replace(source, target):
+            if len(held) < 2:
+                held.append(target)
+                raise PermissionError(13, 'Процесс не может получить доступ к файлу')
+            return replace(source, target)
+
+        with tempfile.TemporaryDirectory(prefix='pdf-held-') as root, patch.object(os, 'replace', held_replace):
+            path = Path(root)/'Вариант 1.pdf'
+            path.write_bytes(b'old')
+            photo_edit._write_bytes(path, b'new')
+            self.assertEqual((path.read_bytes(), len(held)), (b'new', 2))
+            self.assertEqual([item.name for item in Path(root).iterdir()], ['Вариант 1.pdf'])
+
+    def test_a_failure_stays_itself_when_its_temporary_folder_cannot_be_removed(self):
+        import photo_export
+        with tempfile.TemporaryDirectory(prefix='pdf-held-') as root:
+            source = make_pdf(root, self.pages)
+            with patch.object(photo_export, 'SETTLE_SECONDS', 0.2),                     patch.object(photo_export, 'render_previews', side_effect=ValueError('Сбой миниатюр')),                     patch.object(photo_export, 'shutil') as shutil:
+                shutil.rmtree.side_effect = PermissionError(13, 'Отказано в доступе')
+                with self.assertRaisesRegex(ValueError, 'Сбой миниатюр'):
+                    photo_export.extract(source)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

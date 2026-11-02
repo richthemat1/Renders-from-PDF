@@ -30,6 +30,8 @@ export interface ImageEntry {
   cutout?: string;
   /** The picture or an earlier cutout replaced by cutouts of this record; not shown as removed. */
   cutout_replaced?: string;
+  /** A cutout drawn as the page shows it, with the marks over its picture. */
+  marks?: boolean;
   method?: string;
   manual?: boolean;
   group?: string;
@@ -102,6 +104,8 @@ export interface CutoutRecord {
 export interface PagesInfo {
   pages: { number: number; size: [number, number]; snapshot: [number, number] }[];
   pictures: { image: number; page: number; area: Rect; size: [number, number] }[];
+  /** What is drawn over a picture after it, by picture index; only pictures with marks are listed. */
+  marks?: Record<string, Rect[]>;
 }
 export interface Result {
   id: string;

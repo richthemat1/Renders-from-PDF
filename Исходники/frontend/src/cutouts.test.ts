@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { byPlace, contains, snapTo, sourceFor } from "./Cutouts";
+import { byPlace, contains, snapTo, sourceFor, touches } from "./Cutouts";
 import type { CutoutSource } from "./Cutouts";
-import { boxRect, createDraft, editDraft, isDirty, payload, rectBox } from "./editor";
+import { boxRect, createDraft, draftImage, editDraft, isDirty, payload, rectBox } from "./editor";
 import type { CutoutChange } from "./editor";
 import type { ImageEntry, Rect, Report } from "./types";
 
@@ -42,11 +42,18 @@ describe("cutout editor helpers", () => {
     expect(rectBox([0.09, 0.1, 0.3, 0.51], area, [800, 600])).toEqual([0, 0, 400, 600]);
     boxRect([0, 0, 400, 600], area, [800, 600]).forEach((value, index) => expect(value).toBeCloseTo(left[index], 9));
   });
+  it("tells a frame over a mark from one that only borders it", () => {
+    const sign: Rect = [0.3, 0.44, 0.34, 0.53];
+    expect(touches(left, [sign])).toBe(false);
+    expect(touches([0.1, 0.1, 0.3, 0.5], [sign])).toBe(false);
+    expect(touches([0.2, 0.4, 0.31, 0.5], [[0.6, 0.1, 0.7, 0.2], sign])).toBe(true);
+    expect(touches(area, [])).toBe(false);
+  });
 });
 
 describe("cutouts in the draft", () => {
   const change = (extra: Partial<CutoutChange>): CutoutChange => ({ key: "cutout:img:0", record: null, kind: "image", page: 1,
-    source: 0, area, size: [800, 600], replace: [0], rects: [left], targets: ["keep"], ...extra });
+    source: 0, area, size: [800, 600], replace: [0], rects: [left], targets: ["keep"], marks: [false], ...extra });
 
   it("puts a cutout in the place of its picture, and without cutouts brings the picture back", () => {
     const initial = createDraft(report([entry()]));
@@ -83,5 +90,15 @@ describe("cutouts in the draft", () => {
     expect(back.variants["2"]).toEqual([0]);
     expect(payload(back, 0)).toEqual({ revision: 0, variants: { 2: [0] }, removed: [1], restored: [0],
       cutouts: [{ record: "1-v0", rects: [] }] });
+  });
+  it("keeps the marks over a picture in the cutouts that take them, and only there", () => {
+    const initial = createDraft(report([entry()]));
+    const cut = editDraft(initial, { type: "cutouts", changes: [change({ rects: [left, area], targets: ["keep", "keep"],
+      marks: [true, false] })] });
+    expect(cut.frames[1].marks).toBe(true);
+    expect(cut.frames[2].marks).toBeUndefined();
+    expect(draftImage(cut, report([entry()]), 1)).toMatchObject({ method: "marked_render", marks: true });
+    expect(draftImage(cut, report([entry()]), 2)).toMatchObject({ method: "manual_crop", marks: undefined });
+    expect(payload(cut, 0).cutouts).toEqual([{ source: 0, rects: [left, area], marks: [true, false] }]);
   });
 });

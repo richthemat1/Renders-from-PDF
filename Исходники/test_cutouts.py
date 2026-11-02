@@ -4,8 +4,10 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image, ImageChops, ImageDraw
+import pypdf.filters
 from reportlab.pdfgen import canvas
 
 from photo_export import extract
@@ -109,6 +111,17 @@ class Cutouts(unittest.TestCase):
                 self.assertEqual(image.convert('RGB').getpixel(point), source.getpixel(point))
         self.assertEqual(saved['edits'][-1]['cutouts'], [{'cutout': record['id'], 'pieces': [len(saved['images'])-1],
                                                           'replaced': []}])
+
+    def test_a_picture_that_inflates_past_the_pypdf_cap_is_still_cut(self):
+        # A 7019×3899 render with a soft mask is kept in the result as an 82 MB zlib stream, past the
+        # 75 MB pypdf inflates by default; here the cap is lowered below this 800×600 picture instead.
+        with mock.patch.object(pypdf.filters, 'ZLIB_MAX_OUTPUT_LENGTH', 1_000_000):
+            saved, _ = self.cut([RENDER])
+            self.assertEqual(pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH, 1_000_000)
+        piece = saved['images'][-1]
+        self.assertEqual((piece['crop_px'], piece['size']), ([0, 0, 560, 600], [560, 600]))
+        with exported_image(saved, piece) as image:
+            self.assertEqual(image.convert('RGB').getpixel((300, 300)), render_with_plan().getpixel((300, 300)))
 
     def test_cutouts_are_cut_again_returned_and_the_save_undone(self):
         from photo_edit import apply_edits, restore_last_save
@@ -221,6 +234,125 @@ class JpegCutout(unittest.TestCase):
                 cut = exported_image(saved, piece)
                 self.assertEqual(cut.size, expected.size)
                 self.assertIsNone(ImageChops.difference(cut.convert('RGB'), expected.convert('RGB')).getbbox())
+
+
+class NearlyStraightPicture(unittest.TestCase):
+    def test_a_picture_placed_with_a_skew_of_rounding_noise_is_cut_from_its_pixels(self):
+        # Such PDFs place photos with a skew of -0.00005 pt per point of height: rounding, not a rotation.
+        from photo_edit import apply_edits, pages_info
+        with tempfile.TemporaryDirectory(prefix='pdf-photos-skew-') as root:
+            raster = Path(root)/'render.png'
+            render_with_plan().save(raster)
+            source = Path(root)/'skew.pdf'
+            pdf = canvas.Canvas(str(source), pagesize=(1000, 750))
+            pdf.setFont('FixtureArial', 16)
+            pdf.drawString(60, 750-110, 'Фотомонтаж. Вариант 2')
+            pdf.saveState()
+            pdf.transform(600, 0, -5.4e-05, 450, 60, 750-580)
+            pdf.drawImage(str(raster), 0, 0, 1, 1)
+            pdf.restoreState()
+            pdf.showPage()
+            pdf.save()
+            report = extract(source)
+            output = Path(report['output'])
+            picture = next(index for index, entry in enumerate(report['images']) if not entry.get('removed'))
+            self.assertEqual([value['image'] for value in pages_info(output)['pictures']], [picture])
+            members = variants(report)
+            members['2'] = [len(report['images'])]
+            saved, _ = apply_edits(output, {'revision': 0, 'variants': members, 'removed': [picture],
+                                            'cutouts': [{'source': picture, 'rects': [RENDER]}]})
+            piece = saved['images'][-1]
+            self.assertEqual((piece['method'], piece['size']), ('manual_crop', [560, 600]))
+            with exported_image(saved, piece) as image:
+                self.assertEqual(image.convert('RGB').getpixel((300, 300)), render_with_plan().getpixel((300, 300)))
+
+
+BLUE = (40, 90, 200)
+# A sign over the render in points from the top left, drawn after the picture as on a photomontage.
+SIGN = (300, 330, 340, 400)
+
+
+def marked_pdf(root, in_form=False):
+    """The render with a blue sign drawn over it, and an OCR word over it that nobody sees."""
+    root = Path(root)
+    raster = root/'render.png'
+    render_with_plan().save(raster)
+    target = root/'marked.pdf'
+    pdf = canvas.Canvas(str(target), pagesize=(1000, 750))
+    pdf.setFont('FixtureArial', 16)
+    pdf.drawString(60, 750-110, 'Фотомонтаж. Вариант 2')
+    pdf.drawImage(str(raster), 60, 750-130-450, 600, 450)
+    # Over the plain light corner of the render: 10..90 pt right of the picture edge, 18..30 pt below its top.
+    text = pdf.beginText(70, 750-160)
+    text.setTextRenderMode(3)
+    text.setFont('FixtureArial', 16)
+    text.textLine('скан')
+    pdf.drawText(text)
+    left, top, right, bottom = SIGN
+    pdf.setFillColorRGB(*(value/255 for value in BLUE))
+    if in_form:
+        # Drawn at the origin of a form that is placed by a shift, as InDesign and Illustrator export.
+        pdf.beginForm('sign')
+        pdf.setFillColorRGB(*(value/255 for value in BLUE))
+        pdf.rect(0, 0, right-left, bottom-top, fill=1, stroke=0)
+        pdf.endForm()
+        pdf.saveState()
+        pdf.translate(left, 750-bottom)
+        pdf.doForm('sign')
+        pdf.restoreState()
+    else:
+        pdf.rect(left, 750-bottom, right-left, bottom-top, fill=1, stroke=0)
+    pdf.showPage()
+    pdf.save()
+    return target
+
+
+def near(actual, expected, spread=40):
+    return all(abs(a-b) <= spread for a, b in zip(actual, expected))
+
+
+class MarkedCutouts(unittest.TestCase):
+    def extract(self, **options):
+        temp = tempfile.TemporaryDirectory(prefix='pdf-photos-marks-')
+        self.addCleanup(temp.cleanup)
+        report = extract(marked_pdf(temp.name, **options))
+        picture = next(index for index, entry in enumerate(report['images']) if not entry.get('removed'))
+        return report, Path(report['output']), picture
+
+    def test_marks_drawn_over_a_picture_are_found_and_unseen_text_is_not(self):
+        from photo_edit import pages_info
+        for in_form in (False, True):
+            with self.subTest(in_form=in_form):
+                _, output, picture = self.extract(in_form=in_form)
+                marks = pages_info(output)['marks'][str(picture)]
+                self.assertEqual(len(marks), 1)
+                for actual, expected in zip(marks[0], (SIGN[0]/1000, SIGN[1]/750, SIGN[2]/1000, SIGN[3]/750)):
+                    self.assertAlmostEqual(actual, expected, places=3)
+
+    def test_each_cutout_keeps_or_leaves_out_the_marks_as_chosen(self):
+        from photo_edit import apply_edits
+        report, output, picture = self.extract()
+        members = variants(report)
+        start = len(report['images'])
+        members['2'] = [start, start+1]
+        saved, _ = apply_edits(output, {'revision': 0, 'variants': members, 'removed': [picture],
+                                        'cutouts': [{'source': picture, 'rects': [RENDER, RENDER], 'marks': [True, False]}]})
+        marked, plain = saved['images'][start:]
+        self.assertEqual((marked['marks'], marked['method'], marked['crop_px'], marked['size']),
+                         (True, 'marked_render', [0, 0, 560, 600], [560, 600]))
+        self.assertNotIn('marks', plain)
+        # The middle of the sign, in pixels of the picture: 4/3 px per point from its corner at (60, 130).
+        sign = (round((320-60)*4/3), round((365-130)*4/3))
+        source = render_with_plan()
+        with exported_image(saved, marked) as image:
+            self.assertEqual(image.size, (560, 600))
+            self.assertTrue(near(image.convert('RGB').getpixel(sign), BLUE))
+            # Elsewhere the photo itself, at its own resolution; the unseen OCR word does not appear.
+            self.assertEqual(image.convert('RGB').getpixel((10, 590)), source.getpixel((10, 590)))
+            with image.convert('L').crop((10, 15, 115, 50)) as corner:
+                self.assertEqual(corner.getextrema(), (source.getpixel((10, 10))[0],)*2)
+        with exported_image(saved, plain) as image:
+            self.assertEqual(image.convert('RGB').getpixel(sign), source.getpixel(sign))
 
 
 class SourcePagesServer(unittest.TestCase):

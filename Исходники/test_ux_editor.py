@@ -37,6 +37,32 @@ class RecoverableEdits(EditFixture, unittest.TestCase):
             self.assertTrue((output / first_backup / 'Отчёт.json').is_file())
             self.assertEqual(saved['revision'], 3)
 
+    def test_a_new_variant_named_in_words_gets_a_folder_and_a_pdf_of_that_name(self):
+        with tempfile.TemporaryDirectory(prefix='pdf-named-') as root:
+            output, _ = self.export(root)
+            saved, _ = photo_edit.apply_edits(output, {
+                'revision': 0, 'variants': {'1': [0, 1], '2': [2], '3': [3]},
+                'variant_names': {'3': 'Благоустройство 1'},
+            })
+            entry = saved['images'][3]
+            self.assertEqual((entry['variant'], entry['folder']), (3, 'Благоустройство 1'))
+            self.assertEqual(saved['variant_names'], {'3': 'Благоустройство 1'})
+            self.assertEqual(Path(entry['file']), photo_edit.group_file(saved, 3))
+            self.assertEqual(Path(entry['file']).name, 'Благоустройство 1.pdf')
+            self.assertTrue((output / entry['file']).is_file())
+
+    def test_a_name_taken_or_not_allowed_for_a_variant_changes_nothing(self):
+        with tempfile.TemporaryDirectory(prefix='pdf-named-') as root:
+            output, _ = self.export(root)
+            before = self.files(output)
+            for names in ({'3': 'вариант 2'}, {'3': 'Без подписи'}, {'3': 'План: 1'}, {'2': 'Новое имя'},
+                          {'4': 'Нет такого'}):
+                with self.subTest(names=names), self.assertRaises(photo_edit.EditError):
+                    photo_edit.apply_edits(output, {
+                        'revision': 0, 'variants': {'1': [0, 1], '2': [2], '3': [3]}, 'variant_names': names,
+                    })
+            self.assertEqual(self.files(output), before)
+
     def test_return_to_misc_extracts_only_the_selected_pdf_page(self):
         with tempfile.TemporaryDirectory(prefix='pdf-return-') as root:
             output, _ = self.export(root)

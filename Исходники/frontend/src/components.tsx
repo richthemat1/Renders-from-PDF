@@ -6,7 +6,7 @@ import { noticeParts } from "./api";
 import { APP_ICON_AVAILABLE } from "./app-icon.generated";
 import { DIALOG_MOTION, MENU_MOTION, TOAST_MOTION, useAnimatedOpen, useMotion, usePresence, useRefreshMotion } from "./motion";
 import type { Notice } from "./types";
-import { nextSubvariant, nextVariant, variantKey, variantParent, VARIANT_KEY_ERROR } from "./editor";
+import { namedSuggestions, nextSubvariant, nextVariant, variantChoice, variantKey, variantParent } from "./editor";
 import { clampSidebarWidth, setSidebarPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_RAIL_WIDTH,
   useSidebarPreferences } from "./sidebar";
 import "./sidebar-visual.css";
@@ -558,10 +558,16 @@ export interface SelectOption {
 }
 
 /** Free numbers one click away: the next whole variant, a subvariant of it and the next subvariants of nearby variants. */
-export function VariantSuggestions({ variants, current, preferred, onPick }: {
-  variants: string[]; current: string; preferred: string | null; onPick(value: string): void;
+export function VariantSuggestions({ variants, current, preferred, names = [], labelOf, onPick }: {
+  variants: string[]; current: string; preferred: string | null;
+  /** Next names of named variants, offered beside the numbers. */
+  names?: string[];
+  /** A variant named in words hides its number, so no subvariant of it is offered. */
+  labelOf?(key: string): string;
+  onPick(value: string): void;
 }) {
-  const parents = [...new Set([...(preferred ? [variantParent(preferred)] : []), ...variants.map(variantParent)])];
+  const parents = [...new Set([...(preferred ? [variantParent(preferred)] : []), ...variants.map(variantParent)])]
+    .filter((key) => !labelOf || !variants.includes(key) || /^вариант /i.test(labelOf(key)));
   const next = nextVariant(variants);
   const options = [next, ...parents.slice(0, 3).map((key) => nextSubvariant(variants, key)), `${next}.1`]
     .filter((key, index, all) => all.indexOf(key) === index && !variants.includes(key));
@@ -571,40 +577,50 @@ export function VariantSuggestions({ variants, current, preferred, onPick }: {
       aria-pressed={chosen === key} onClick={() => onPick(key)}>
       {key.includes(".") ? "Подвариант" : "Вариант"} {key}
     </button>)}
+    {names.map((name) => <button key={name} type="button" className={`variant-suggestion${current.trim() === name ? " is-chosen" : ""}`}
+      aria-pressed={current.trim() === name} onClick={() => onPick(name)}>{name}</button>)}
   </div>;
 }
 
-/** A number for a variant not made yet, whole (4) or a subvariant (4.1), for cutouts or frames to go to. */
-export function NewVariantDialog({ variants, preferred, subject, onCreate, onClose }: {
+/** A variant not made yet, by number — whole (4) or a subvariant (4.1) — or by a name of its own, for cards,
+ * cutouts or frames to go to. A number or a name there is already picks that variant. */
+export function NewVariantDialog({ variants, labelOf, preferred, subject, title = "Новый вариант", action = "Создать вариант",
+  onCreate, onClose }: {
   variants: string[];
+  labelOf(key: string): string;
   preferred: string | null;
   /** What goes there: «Вырезка 2 встанет в новый вариант.» */
   subject: string;
-  onCreate(key: string): void;
+  title?: string;
+  action?: string;
+  onCreate(key: string, name?: string): void;
   onClose(): void;
 }) {
-  const [number, setNumber] = useState(() => nextVariant(variants));
+  const [value, setValue] = useState(() => nextVariant(variants));
   const [error, setError] = useState("");
   const input = useId();
+  const labels = Object.fromEntries(variants.map((key) => [key, labelOf(key)]));
+  const choice = variantChoice(value, labels);
+  const pick = (next: string) => { setValue(next); setError(""); };
   return (
-    <Dialog title="Новый вариант" onClose={onClose}>
+    <Dialog title={title} onClose={onClose}>
       <form onSubmit={(event) => {
         event.preventDefault();
-        // The form sits in the editor dialog; its keys and submit stay here.
+        // The form may sit in an editor dialog; its keys and submit stay here.
         event.stopPropagation();
-        const key = variantKey(number);
-        if (key === null) { setError(VARIANT_KEY_ERROR); return; }
-        onCreate(key);
+        if ("error" in choice) { setError(choice.error); return; }
+        onCreate(choice.key, choice.name);
       }}>
-        <p>{subject} Целый номер создаёт вариант, номер с точкой — подвариант. Папка и PDF появятся после сохранения.</p>
-        <label htmlFor={input} className="form-label new-variant-label">Номер варианта или подварианта</label>
-        <input id={input} data-autofocus className="form-input" type="text" inputMode="decimal" autoComplete="off" required
-          aria-invalid={!!error} value={number} onChange={(event) => { setNumber(event.target.value); setError(""); }} />
+        <p>{subject} Номер создаёт вариант, номер с точкой — подвариант, а любой другой текст — вариант с таким названием.
+          Папка и PDF появятся после сохранения.</p>
+        <label htmlFor={input} className="form-label new-variant-label">Номер или название варианта</label>
+        <input id={input} data-autofocus className="form-input" type="text" autoComplete="off" required
+          aria-invalid={!!error} value={value} onChange={(event) => pick(event.target.value)} />
         {error && <p className="dialog-error" role="alert">{error}</p>}
-        <VariantSuggestions variants={variants} current={number} preferred={preferred}
-          onPick={(value) => { setNumber(value); setError(""); }} />
+        <VariantSuggestions variants={variants} current={value} preferred={preferred}
+          names={namedSuggestions(Object.values(labels))} labelOf={labelOf} onPick={pick} />
         <div className="dialog-choices">
-          <button className="btn primary"><Plus size={16} />{variants.includes(variantKey(number) ?? "") ? "Выбрать этот вариант" : "Создать вариант"}</button>
+          <button className="btn primary"><Plus size={16} />{"key" in choice && variants.includes(choice.key) ? "Выбрать этот вариант" : action}</button>
           <div className="dialog-alternatives">
             <button type="button" className="btn secondary" onClick={onClose}>Отмена</button>
           </div>

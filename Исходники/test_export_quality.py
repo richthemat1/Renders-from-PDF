@@ -261,6 +261,8 @@ class ExportQuality(unittest.TestCase):
         caption = 'Материалы благоустройства территории и дополнительных общественных пространств второй очереди'
         self.assertEqual(clean_text('- Стеноваяпанель'), 'Стеновая панель')
         self.assertEqual(photo_export.safe_name(caption, 28), 'Материалы благоустройства')
+        # A colon before a dash of the caption leaves one dash on the disk, not «— —».
+        self.assertEqual(photo_export.safe_name('Размещение по адресу: — Фрагмент схемы'), 'Размещение по адресу — Фрагмент схемы')
         with tempfile.TemporaryDirectory() as root:
             pages = [{'images': [{'box': (50, 180, 800, 450)}], 'text': [(title, 50, 120, 18)]}
                      for title in ['Двор / Восток', 'Двор : Восток']]
