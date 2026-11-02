@@ -109,16 +109,19 @@ class CollagesUI(unittest.TestCase):
         expect(section.locator('.collage-card')).to_contain_text('Целиком')
         self.assertEqual(self.errors, [])
 
-    def test_confident_automatic_cut_is_ready_and_recut_with_light_margins_trimmed(self):
+    def test_automatic_cut_waits_for_a_person_and_is_recut_with_light_margins_trimmed(self):
         self.open(collage_pdf)
-        # Wide white gutters and a variant for every frame: nothing for a person to check.
-        expect(self.page.locator('.review-summary-collages')).to_have_text('Склейки: 2Открыть склейки')
+        # Even wide white gutters do not prove a cut: a drawing of facades has them too, so a person confirms it.
+        expect(self.page.locator('.review-summary-collages')).to_contain_text('Склейки: 2, проверить 2')
         expect(self.page.locator('.asset-card .collage-badge').first).to_have_text('Кадр 1 из склейки')
         section = self.collages()
         cards = section.locator('.collage-card')
         expect(cards).to_have_count(2)
-        expect(cards.first).to_contain_text('Проверено · 2 кадра')
-        cards.first.get_by_role('button', name='Изменить разрезку').click()
+        expect(cards.first).to_contain_text('Разрезано автоматически · 2 кадра')
+        expect(section.get_by_role('button', name='Нужно проверить')).to_contain_text('2')
+        cards.nth(1).get_by_role('button', name='Всё верно').click()
+        expect(cards.nth(1)).to_contain_text('Проверено · 2 кадра')
+        cards.first.get_by_role('button', name='Проверить разрезку').click()
         editor = self.page.locator('dialog.cut-editor')
         expect(editor.locator('.cut-line.horizontal')).to_have_count(1)
         expect(editor.get_by_label('Обрезать светлые поля')).to_be_checked()

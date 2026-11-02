@@ -20,7 +20,11 @@ import {
   namedSuggestions,
   variantChoice,
 } from "./editor";
+import type { Draft } from "./editor";
 import type { Report } from "./types";
+
+/** A draft without the steps it could redo: an undone draft is the earlier one plus its way back. */
+const settled = ({ future: _, ...draft }: Draft) => draft;
 
 const report = {
   revision: 4,
@@ -67,6 +71,24 @@ describe("editor preserves stable report indices", () => {
     );
     expect(editDraft(next, { type: "undo" }).removed).toEqual([]);
   });
+  it("repeats undone steps with redo, and a new step forgets them", () => {
+    const initial = createDraft(report);
+    const removed = editDraft(initial, { type: "remove", ids: [0] });
+    const moved = editDraft(removed, { type: "move", ids: [3], target: "2" });
+    const back = editDraft(editDraft(moved, { type: "undo" }), { type: "undo" });
+    expect(settled(back)).toEqual(initial);
+    expect(back.future).toHaveLength(2);
+    const again = editDraft(back, { type: "redo" });
+    expect(payload(again, 4)).toEqual(payload(removed, 4));
+    expect(payload(editDraft(again, { type: "redo" }), 4)).toEqual(payload(moved, 4));
+    // Redo with nothing undone, and after a new step, changes nothing.
+    expect(editDraft(moved, { type: "redo" })).toBe(moved);
+    const other = editDraft(again, { type: "remove", ids: [1] });
+    expect(other.future).toBeUndefined();
+    expect(editDraft(other, { type: "redo" })).toBe(other);
+    // The saved payload never carries the history of steps.
+    expect(Object.keys(payload(back, 4))).not.toContain("future");
+  });
   it("selects a range only from the visible search/filter results", () => {
     expect(selectRange([0, 2, 5, 6], 2, 6)).toEqual([2, 5, 6]);
     expect(selectRange([0, 2, 5], 99, 5)).toEqual([5]);
@@ -99,7 +121,7 @@ describe("editor preserves stable report indices", () => {
     expect(draftVariant(next, 0)).toBeNull();
     expect(draftLocation(next, original, 0)).toEqual({ folder: "Без подписи", status: "unsigned", variant: null });
     expect(payload(next, 4).misc).toEqual([0]);
-    expect(editDraft(next, { type: "undo" })).toEqual(initial);
+    expect(settled(editDraft(next, { type: "undo" }))).toEqual(initial);
   });
   it("preserves group order when moving multiple selected pages to either edge", () => {
     const ordered = { ...report, images: [
@@ -139,7 +161,7 @@ describe("copies are independent draft entries until the ordinary save", () => {
       variants: { "1": [0, 1], "2": [2], "3": [5, 6, 7] }, removed: [], copies: [0, 1, 3] });
     expect(draftImage(next, report, 5).copy_of).toBe(0);
     expect(draftImage(next, report, 5).pdf_page).toBe(1);
-    expect(editDraft(next, { type: "undo" })).toEqual(initial);
+    expect(settled(editDraft(next, { type: "undo" }))).toEqual(initial);
   });
   it("keeps copies beside their originals and can remove a pending copy without saving it", () => {
     const initial = createDraft(report);

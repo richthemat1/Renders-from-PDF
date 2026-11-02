@@ -19,8 +19,8 @@ from pypdf.errors import PyPdfError
 from PIL import Image
 
 from photo_export import (COLLAGES_DIR, CUTOUTS_DIR, OTHER_DIR, PDFIUM_LOCK, SERVICE_DIR, VARIANTS_DIR, VERSION,
-                          entry_group, group_file, group_title, has_service_dir, image_to_pdf, safe_name, settled,
-                          write_gallery)
+                          entry_group, file_stem, group_file, group_title, has_service_dir, image_to_pdf, safe_name,
+                          settled, write_gallery)
 from photo_layout import variant_key, variant_sort_key
 from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL, turned
 
@@ -308,13 +308,12 @@ def _misc_target(output, report, index, reserved, folder_labels=None):
                 str(original).casefold() not in reserved):
             reserved.add(str(original).casefold())
             return str(original), location
-    stem = prefix+(' — '+safe_name(entry['title']) if entry.get('title') else '')
     for number in range(1, 10000):
         suffix = '' if number == 1 else f' ({number})'
         available = PATH_LIMIT-len(str(Path(output)/directory))-len(suffix)-len('.pdf')-1
         if available < len(prefix):
             raise EditError('Путь результата слишком длинный для отдельного PDF изображения.')
-        relative = directory/(stem[:available].rstrip(' .')+suffix+'.pdf')
+        relative = directory/(file_stem(prefix, entry.get('title'), available)+suffix+'.pdf')
         path = _safe_path(output, relative)
         if str(relative).casefold() not in reserved and not _backup_io_path(path).exists():
             reserved.add(str(relative).casefold())

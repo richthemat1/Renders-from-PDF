@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { Check, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, Rows3, Scissors, SeparatorHorizontal,
+import { Check, CircleHelp, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, Rows3, Scissors, SeparatorHorizontal,
   SeparatorVertical, Sparkles, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
@@ -82,7 +82,7 @@ function status(view: CollageView): { tone: string; icon: ReactNode; label: stri
   const count = view.boxes.length;
   const frames = `${count} ${plural(count, ["кадр", "кадра", "кадров"])}`;
   if (view.state === "suspected") return { tone: "amber", icon: <TriangleAlert size={14} />, label: "Возможно, склейка" };
-  if (view.state === "whole") return { tone: "neutral", icon: <Layers size={14} />, label: "Целиком" };
+  if (view.state === "whole") return { tone: "neutral", icon: <Layers size={14} />, label: view.pending ? "Целиком · не сохранено" : "Целиком" };
   if (view.pending) return { tone: "blue", icon: <Scissors size={14} />, label: `Разрезано · ${frames} · не сохранено` };
   if (view.state === "auto" && !view.checked) return { tone: "blue", icon: <Scissors size={14} />, label: `Разрезано автоматически · ${frames}` };
   if (view.state === "auto") return { tone: "green", icon: <Check size={14} />, label: `Проверено · ${frames}` };
@@ -239,7 +239,7 @@ export function turnedLines(lines: Lines, axis: Axis, size: [number, number], se
   return axis === "x" ? { xs: values, ys: [] } : { xs: [], ys: values };
 }
 
-export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, onClose }: {
+export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, onClose, onHelp }: {
   view: CollageView;
   resultId: string;
   variants: string[];
@@ -249,6 +249,8 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   /** The frames kept, and names given to variants made for them here. */
   onApply(boxes: Box[], targets: Target[], trim: boolean, names: Record<string, string>): void;
   onClose(): void;
+  /** The help window on «Склейки», over the editor. */
+  onHelp?(): void;
 }) {
   const [width, height] = view.size;
   const initial = view.boxes.length ? view.boxes : view.suggestion;
@@ -471,6 +473,8 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   const arrowsAxis = selected && selectedValue !== null ? selected.axis : mode;
   return (
     <Dialog title="Разрезать склейку" wide className="cut-editor" onClose={onClose}
+      headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Склейки" title="Как пользоваться: Склейки"
+        onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle">Страница {view.page} · {view.title} · {width} × {height} px</p>}>
       <div className="cut-editor-body" onKeyDown={keyDown}>
         <div className="cut-tools" role="toolbar" aria-label="Инструменты разрезки">
@@ -498,7 +502,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
           <span className="cut-divider" />
           <button className="btn text-action" disabled={searching} onClick={() => void findSeams()}><Sparkles size={16} />Найти швы</button>
           <span className="cut-spacer" />
-          <label className="cut-toggle">
+          <label className="cut-toggle" title="Срезает белые поля и подписи у краёв каждого кадра. У чертежей выключите, чтобы остались названия видов и отметки высот.">
             <input type="checkbox" checked={trim} onChange={(event) => setTrim(event.target.checked)} />
             <span aria-hidden="true" />Обрезать светлые поля
           </label>
@@ -588,7 +592,9 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
                 const target = targetOf(index);
                 return (
                   <li key={index} className={off ? "is-skipped" : ""}>
-                    {view.preview && <CroppedImage src={view.preview} size={view.size} box={cell} alt="" className="cut-thumb" />}
+                    {/* A frame of any shape sits whole in its slot, never stretched to the row. */}
+                    {view.preview && <span className={`cut-thumb${(cell[2] - cell[0]) / Math.max(1, cell[3] - cell[1]) < 0.56 ? " is-tall" : ""}`}>
+                      <CroppedImage src={view.preview} size={view.size} box={cell} alt="" /></span>}
                     <div>
                       <strong>Кадр {index + 1}</strong><span>{cell[2] - cell[0]} × {cell[3] - cell[1]} px</span>
                       {!whole && <Select label={`Куда поместить кадр ${index + 1}`} disabled={off} options={choices}

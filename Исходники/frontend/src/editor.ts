@@ -65,6 +65,8 @@ interface DraftData {
 }
 export interface Draft extends DraftData {
   past: DraftData[];
+  /** Steps taken back, newest last, for Ctrl+Y; any new step forgets them. */
+  future?: DraftData[];
 }
 export type Edit =
   | { type: "copy"; ids: number[]; target: string; name?: string }
@@ -78,7 +80,8 @@ export type Edit =
   | { type: "cutouts"; changes: CutoutChange[]; names?: Record<string, string> }
   | { type: "collage-check"; id: string }
   | { type: "collage-dismiss"; id: string }
-  | { type: "undo" };
+  | { type: "undo" }
+  | { type: "redo" };
 
 export function createDraft(report: Report): Draft {
   const variants: Record<string, number[]> = {};
@@ -101,7 +104,7 @@ export function createDraft(report: Report): Draft {
 }
 
 function remember(previous: Draft, data: DraftData): Draft {
-  const { past: _, ...snapshot } = previous;
+  const snapshot = dataOf(previous);
   if (JSON.stringify(snapshot) === JSON.stringify(data)) return previous;
   return {
     ...data,
@@ -318,7 +321,7 @@ function applyCutout(draft: DraftData, change: CutoutChange): DraftData {
 export function editDraft(draft: Draft, edit: Edit): Draft {
   const next = applyEdit(draft, edit);
   const made = Object.keys(next.variants).filter((key) => !(key in draft.variants));
-  if (edit.type === "undo" || !made.length) return next;
+  if (edit.type === "undo" || edit.type === "redo" || !made.length) return next;
   // A variant this edit makes takes the name given to it; one made by its number forgets an older name.
   const names = edit.type === "move" || edit.type === "copy"
     ? edit.name ? { [variantKey(edit.target) ?? edit.target]: edit.name } : {}
@@ -341,7 +344,11 @@ function applyEdit(draft: Draft, edit: Edit): Draft {
     return remember(draft, { ...dataOf(draft), collageDismissed: [...new Set([...draft.collageDismissed, edit.id])] });
   if (edit.type === "undo") {
     const last = draft.past.at(-1);
-    return last ? { ...last, past: draft.past.slice(0, -1) } : draft;
+    return last ? { ...last, past: draft.past.slice(0, -1), future: [...(draft.future ?? []).slice(-49), dataOf(draft)] } : draft;
+  }
+  if (edit.type === "redo") {
+    const next = draft.future?.at(-1);
+    return next ? { ...next, past: [...draft.past.slice(-49), dataOf(draft)], future: draft.future!.slice(0, -1) } : draft;
   }
   if (edit.type === "move")
     return moveSelection(draft, edit.ids, edit.target, edit.before);
@@ -489,7 +496,7 @@ export function payload(draft: Draft, revision: number) {
   return value;
 }
 function dataOf(draft: Draft): DraftData {
-  const { past: _, ...data } = draft;
+  const { past: _, future: __, ...data } = draft;
   return data;
 }
 export function removedIds(draft: Draft): number[] {

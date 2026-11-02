@@ -185,3 +185,10 @@
     padding-left: 0;
   }
 }
+
+/* A double click on a control or on the text of an empty section must not select words of the interface.
+   Names, paths and captions in content stay selectable. */
+button, .btn, label, [role="tab"], [role="menuitem"], [role="option"], .collage-chip, .status-badge,
+.empty, .collages-empty, .cutouts-empty, .nav-label, .section-note, .status-note {
+  user-select: none;
+}

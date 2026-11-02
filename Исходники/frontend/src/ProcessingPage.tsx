@@ -16,6 +16,7 @@ import {
   ListCollapse,
   LoaderCircle,
   LockKeyhole,
+  Play,
   ScanEye,
   ShieldCheck,
   Tag,
@@ -33,6 +34,7 @@ interface ProcessingPageProps {
   onChoose(): void;
   onPrevious(): void;
   onCancel(): void;
+  onResume(): void;
   onSettings(): void;
   onOpenResult(): void;
   onHistory(): void;
@@ -63,7 +65,7 @@ function OriginalsNote() {
   return <p className="processing-originals"><LockKeyhole size={14} /><span>Исходные файлы не изменяются</span></p>;
 }
 
-export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious, onCancel, onSettings, onOpenResult, onHistory, onOpenHistory, failures }: ProcessingPageProps) {
+export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious, onCancel, onResume, onSettings, onOpenResult, onHistory, onOpenHistory, failures }: ProcessingPageProps) {
   const view = processingView(state);
   const processing = view.outcome === "processing";
   const complete = view.outcome === "complete";
@@ -115,6 +117,8 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
             </div>
             {processing ? <button className="btn secondary processing-main-action" onClick={onCancel} disabled={waiting || state.cancelling}>
               <CircleStop size={16} />{state.cancelling ? "Останавливаю…" : "Остановить обработку"}
+            </button> : view.remaining > 0 ? <button className="btn primary processing-main-action" onClick={onResume} disabled={waiting}>
+              <Play size={16} />Продолжить оставшиеся ({view.remaining})
             </button> : view.canOpenResult && <button className={`btn ${complete ? "primary" : "secondary"} processing-main-action`} disabled={waiting} onClick={onOpenResult}>
               <ArrowUpRight size={16} />{complete ? "Открыть результат" : "Открыть сохранённый результат"}
             </button>}
@@ -163,7 +167,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
           </div>}
           <div className="processing-body-footer">
             <OriginalsNote />
-            {processing && view.canOpenResult && <button className="text-btn processing-live-result" onClick={onOpenResult} disabled={waiting}><ArrowUpRight size={15} />Открыть сохранённый результат</button>}
+            {(processing || view.remaining > 0) && view.canOpenResult && <button className="text-btn processing-live-result" onClick={onOpenResult} disabled={waiting}><ArrowUpRight size={15} />Открыть сохранённый результат</button>}
           </div>
         </> : <>
           <div className="processing-new-title"><h2 id="new-processing-title">Новая обработка</h2><p>PDF → изображения и варианты</p></div>
@@ -181,7 +185,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
     {view.showJob && !processing && <aside className="processing-next-panel" aria-labelledby="next-processing-title">
       <h2 id="next-processing-title"><FilePlus2 size={18} />Новая обработка</h2>
-      <UploadZone fileDrag={fileDrag} waiting={waiting} quiet={complete} onChoose={onChoose} />
+      <UploadZone fileDrag={fileDrag} waiting={waiting} quiet={complete || view.remaining > 0} onChoose={onChoose} />
       <p className="processing-next-local"><ShieldCheck size={14} /><span>Обработка на вашем компьютере</span></p>
     </aside>}
     </div>

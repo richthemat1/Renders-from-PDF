@@ -27,8 +27,11 @@ def make_pdf(root, pages):
         for image_index, image in enumerate(spec.get('images', [])):
             x, top, width, height = image['box']
             path = root / f'image-{page_index}-{image_index}.png'
-            Image.new('RGB', image.get('size', (600, 400)),
-                      image.get('color', '#456789')).save(path)
+            if 'picture' in image:
+                image['picture'].save(path)
+            else:
+                Image.new('RGB', image.get('size', (600, 400)),
+                          image.get('color', '#456789')).save(path)
             pdf.drawImage(str(path), x, 800-top-height, width, height)
         for text, x, top, size in spec.get('text', []):
             pdf.setFont('FixtureArial', size)

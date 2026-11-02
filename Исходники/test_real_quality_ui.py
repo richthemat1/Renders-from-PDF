@@ -52,7 +52,7 @@ class RealQualityUI(unittest.TestCase):
         folder.click()
         expect(self.page.locator('.library-header h2')).to_have_text(caption)
         self.edit()
-        self.page.get_by_role('button', name='Переименовать группу', exact=True).click()
+        self.page.get_by_role('button', name='Переименовать подпись', exact=True).click()
         expect(self.page.get_by_label('Новое имя')).to_have_value(caption)
         requests = []
 
@@ -86,7 +86,7 @@ class RealQualityUI(unittest.TestCase):
         self.page.get_by_role('button', name='Перенести в вариант', exact=True).click()
         expect(self.page.get_by_role('menuitem', name=caption, exact=True)).to_be_visible()
         self.page.keyboard.press('Escape')
-        self.page.get_by_role('button', name='Переименовать группу', exact=True).click()
+        self.page.get_by_role('button', name='Переименовать вариант', exact=True).click()
         expect(self.page.get_by_label('Новое имя')).to_have_value(caption)
 
     def test_tiny_original_stays_centered_at_natural_size_even_with_an_enlarged_preview(self):

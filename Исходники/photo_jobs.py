@@ -65,6 +65,8 @@ class JobService:
                      'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
         self._logs = []
         self._pending_paths, self._pending_repeat = (), None
+        # Files a stopped queue did not reach, so «Продолжить оставшиеся» needs no new selection.
+        self._remaining = ()
         if self.workspace.warning:
             self._append(self.workspace.warning, 'warn')
 
@@ -82,6 +84,10 @@ class JobService:
         self._next_log += 1
         self._logs.append({'id': self._next_log, 'text': str(text), 'level': level})
         self._logs = self._logs[-500:]
+
+    def _fresh_log(self, mark):
+        """A new selection starts its own list of events; what was said about this selection stays."""
+        self._logs = [item for item in self._logs if item['id'] > mark]
 
     def _reject(self, message, error=ValueError):
         self._status, self._detail = 'Ошибка: ' + str(message), str(message)
@@ -133,12 +139,14 @@ class JobService:
     def prepare(self, paths):
         """Native-selected paths stay here until a metadata-only duplicate prompt is resolved."""
         with self._lock:
+            mark = self._next_log
             paths = self._selection(paths)
             self._pending_paths, self._pending_repeat = (), None
             if not paths:
                 return self.snapshot()
+            self._fresh_log(mark)
             previous = self.snapshot()['history']
-            duplicates = []
+            duplicates, fresh = [], []
             for source in paths:
                 key = os.path.normcase(str(source))
                 item = next((item for item in previous
@@ -146,20 +154,35 @@ class JobService:
                 if item is not None:
                     duplicates.append({'name': source.name, 'source': str(source), 'previous_id': item['id'],
                                        'finished_at': item['finished_at'], 'available': item['available']})
+                else:
+                    fresh.append(source.name)
             if duplicates:
                 self._pending_paths = paths
-                self._pending_repeat = {'token': secrets.token_urlsafe(24), 'files': duplicates}
+                # `new`: files of the same selection never processed; the prompt says what happens to them.
+                self._pending_repeat = {'token': secrets.token_urlsafe(24), 'files': duplicates, 'new': fresh}
                 return self.snapshot()
-            return self.start(paths)
+            return self.start(paths, fresh=False)
 
     def confirm_repeat(self, token, proceed):
+        """`proceed`: True processes every file again, 'new' only the files never processed, False nothing."""
         with self._lock:
-            if (not isinstance(token, str) or type(proceed) is not bool or self._pending_repeat is None
+            if (not isinstance(token, str) or (type(proceed) is not bool and proceed != 'new')
+                    or self._pending_repeat is None
                     or not secrets.compare_digest(token, self._pending_repeat['token'])):
                 raise ValueError('Подтверждение устарело. Выберите PDF ещё раз.')
             paths = self._pending_paths
+            repeated = {os.path.normcase(item['source']) for item in self._pending_repeat['files']}
             self._pending_paths, self._pending_repeat = (), None
-            return self.start(paths) if proceed else self.snapshot()
+            if proceed == 'new':
+                paths = tuple(path for path in paths if os.path.normcase(str(path)) not in repeated)
+            return self.start(paths, fresh=False) if proceed and paths else self.snapshot()
+
+    def resume(self):
+        """Process again the files a stopped queue did not finish, with the settings of today."""
+        with self._lock:
+            if self._busy or not self._remaining:
+                raise ValueError('Нет файлов, оставшихся после остановки. Выберите PDF ещё раз.')
+            return self.start(self._remaining)
 
     def _record_failure(self, source, error):
         action = ('choose_output' if isinstance(error, (OutputPathError, PermissionError))
@@ -169,16 +192,21 @@ class JobService:
         if self.workspace.warning:
             self._append(self.workspace.warning, 'warn')
 
-    def start(self, paths):
+    def start(self, paths, fresh=True):
+        """`fresh`: the events of earlier queues go; prepare() has already done it for its selection."""
         with self._lock:
+            mark = self._next_log
             paths = self._selection(paths)
             if not paths:
                 return self.snapshot()
+            if fresh:
+                self._fresh_log(mark)
             self._pending_paths, self._pending_repeat = (), None
+            self._remaining = ()
             self._cancel.clear()
             # outputs: result folders of this queue in order, so a batch lists each of its files.
             self._job = {'outcome': 'processing', 'total': len(paths), 'completed': 0, 'failed': 0,
-                         'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': []}
+                         'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0}
             self._current_output = None
             self._totals = dict.fromkeys(self._totals, 0)
             self._progress, self._found = 0, 0
@@ -364,6 +392,8 @@ class JobService:
 
     def _worker(self, paths, settings, preflight_failed=0):
         successes, partial, started = 0, preflight_failed, monotonic()
+        # Files done with, saved or failed; a file stopped halfway is not.
+        handled = 0
         try:
             for index, source in enumerate(paths, 1):
                 if self._cancel.is_set():
@@ -418,12 +448,16 @@ class JobService:
                         self._found = 0
                         if not self._cancel.is_set():
                             self._progress = 100 * index / len(paths)
+                handled = index
         finally:
             with self._lock:
                 self._busy, self._found = False, 0
                 cancelled = self._cancel.is_set()
-                self._progress = 100 if successes and not cancelled else 0
+                # A stopped queue shows the share of files it saved, as its status line counts them.
+                self._progress = (100 * successes / len(paths) if cancelled else 100 if successes else 0)
                 if cancelled:
+                    self._remaining = tuple(paths[handled:])
+                    self._job['remaining'] = len(self._remaining)
                     self._job['outcome'] = 'cancelled'
                     self._status = f'Остановлено. Готово файлов: {successes} из {len(paths)}'
                     self._detail = 'Полностью обработанные файлы сохранены. Все результаты доступны в истории.'
@@ -439,4 +473,4 @@ class JobService:
                     self._job['outcome'] = 'failed'
                     self._status, self._detail = 'Ошибка: PDF не обработан', 'Причины и действия — в списке «Не обработано».'
                 seconds = round(monotonic() - started)
-                self._append(f'Завершено за {seconds // 60}:{seconds % 60:02d}.', 'muted')
+                self._append(f'{"Остановлено" if cancelled else "Завершено"} за {seconds // 60}:{seconds % 60:02d}.', 'muted')

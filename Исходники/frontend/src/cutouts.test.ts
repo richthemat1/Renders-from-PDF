@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byPlace, contains, snapTo, sourceFor, touches } from "./Cutouts";
+import { byPlace, contains, cutoutNumbers, snapTo, sourceFor, touches } from "./Cutouts";
 import type { CutoutSource } from "./Cutouts";
 import { boxRect, createDraft, draftImage, editDraft, isDirty, payload, rectBox } from "./editor";
 import type { CutoutChange } from "./editor";
@@ -100,5 +100,17 @@ describe("cutouts in the draft", () => {
     expect(draftImage(cut, report([entry()]), 1)).toMatchObject({ method: "marked_render", marks: true });
     expect(draftImage(cut, report([entry()]), 2)).toMatchObject({ method: "manual_crop", marks: undefined });
     expect(payload(cut, 0).cutouts).toEqual([{ source: 0, rects: [left, area], marks: [true, false] }]);
+  });
+});
+
+describe("cutout numbers", () => {
+  it("number the cutouts of every source page by page in reading order, as the editor does", () => {
+    const source = (page: number, kind: "image" | "page", pieces: [number, Rect][]) => ({ key: `${kind}${page}`, record: null, kind, page,
+      source: null, area: [0, 0, 1, 1], size: [100, 100], title: "", preview: null, pending: false, variant: null, variantLabel: null,
+      pieces: pieces.map(([id, rect]) => ({ id, rect, variant: null, marks: false })) }) as CutoutSource;
+    // A snapshot drawn above the cutout of a picture on the same page comes first; a later page comes last.
+    const numbers = cutoutNumbers([source(3, "image", [[7, [0.1, 0.5, 0.4, 0.9]]]), source(3, "page", [[9, [0.5, 0.1, 0.9, 0.3]]]),
+      source(5, "image", [[2, [0, 0, 1, 1]]])]);
+    expect([...numbers.entries()]).toEqual([[9, 1], [7, 2], [2, 3]]);
   });
 });

@@ -166,6 +166,27 @@
   /* The tools wrap instead of running out of the window. */
   .cutout-editor .cut-tools { flex-wrap: wrap; height: auto; padding-block: 8px; row-gap: 8px; }
 }
+/* A narrow window keeps the page at least about 400 px wide: «‹ N из M ›» in the tools turns the pages,
+   so the strip of pages goes, and the list of cutouts gets narrower. */
+@media (max-width: 900px) {
+  .cutout-pages { display: none; }
+  .cutout-editor .cutout-panel { flex-basis: 260px; }
+  .cutout-editor .cut-tools { gap: 10px; padding-inline: 16px; }
+  .cutout-editor .cut-tools .cut-divider { display: none; }
+  .cutout-scroller { padding-inline: 32px; }
+}
+/* A low window gives its height to the page: smaller header and footer, only the note under the page
+   (the mouse and keys are in the help). */
+@media (max-height: 720px) {
+  .dialog.cutout-editor > .dialog-heading { height: 60px; padding-block: 0; }
+  .cutout-editor .dialog-icon { width: 32px; height: 32px; }
+  .cutout-editor > .dialog-heading h2 { font-size: 17px; }
+  .cutout-editor .cut-footer { height: 60px; }
+  .cutout-editor .cut-footer p span { display: none; }
+  .cutout-editor .cut-hints p:not(.cut-note) { display: none; }
+  .cutout-scroller { padding-top: 12px; }
+  .cutout-center { gap: 8px; padding-bottom: 8px; }
+}
 
 /* «С пометками» in a cutout row: whether the frame keeps what is drawn over its picture; the switch at the right. */
 .cutout-row .cutout-marks { align-self: stretch; min-height: 28px; }

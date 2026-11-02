@@ -66,7 +66,7 @@ import type { DropPlace } from "./cardDrag";
 import { EditorToolbar } from "./EditorToolbar";
 import { CollagesPage, CroppedImage, CutEditor, needsCheck } from "./Collages";
 import type { CollageView } from "./Collages";
-import { byPlace, CutoutEditor, CutoutsPage, pageUrl } from "./Cutouts";
+import { byPlace, cutoutNumbers, CutoutEditor, CutoutsPage, pageUrl } from "./Cutouts";
 import type { CutoutResult, CutoutSource, PictureInfo } from "./Cutouts";
 import type { Box } from "./editor";
 import { ReviewSummary } from "./ReviewSummary";
@@ -101,6 +101,7 @@ export function Viewer({
   onBack,
   onSaveReady,
   onHelp,
+  onHelpTopic,
 }: {
   result: Result;
   footer: ReactNode;
@@ -111,6 +112,8 @@ export function Viewer({
   onSaveReady?(save: (() => Promise<boolean>) | null): void;
   /** Open the help window on a section: the editor's «?» opens «Редактирование». */
   onHelp?(topic: HelpTopic): void;
+  /** The help section about what is on screen now, for «Как пользоваться» in the menu. */
+  onHelpTopic?(topic: HelpTopic): void;
 }) {
   const initial = useMemo(() => createDraft(result.report), [result]);
   const [draftState, setDraft] = useState<Draft>(initial);
@@ -125,7 +128,9 @@ export function Viewer({
   const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
   // «Изменения сохранены» reports a save made here, not a result that was only opened.
-  const [savedHere, setSavedHere] = useState(false);
+  const [savedHere, setSavedHere] = useState<"" | "saved" | "undone">("");
+  // «Ещё → Отменить последнее сохранение» asks first: unlike a step of the draft, the undone save cannot be redone.
+  const [confirmUndoSave, setConfirmUndoSave] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [rename, setRename] = useState<Rename | null>(null);
   const [newVariant, setNewVariant] = useState(false);
@@ -289,7 +294,8 @@ export function Viewer({
         variant: location?.variant ?? null,
         variantLabel: location === null ? null : location.variant !== null ? variantLabel(labelled, location.variant)
           : folderLabel(report, location.folder),
-        reason: cut ? undefined : record.reason,
+        // Why the program cut it says nothing once a person cut it again or kept it whole.
+        reason: cut || record.state === "whole" || record.state === "manual" ? undefined : record.reason,
       };
     };
     const views: CollageView[] = [];
@@ -382,12 +388,11 @@ export function Viewer({
   }, [draft, report, result.base_url, result.id, allRows, liveCard]);
   const shownCutouts = cutoutViews.filter((view) => view.pieces.length);
   const cutoutCount = shownCutouts.reduce((sum, view) => sum + view.pieces.length, 0);
+  // One numbering for the gallery, the section and the editor, so «Вырезка 2» is the same cutout everywhere.
+  const cutoutNumber = useMemo(() => cutoutNumbers(cutoutViews), [cutoutViews]);
   function cutoutOf(id: number): { view: CutoutSource; number: number } | undefined {
-    for (const view of shownCutouts) {
-      const at = view.pieces.findIndex((piece) => piece.id === id);
-      if (at >= 0) return { view, number: at + 1 };
-    }
-    return undefined;
+    const view = shownCutouts.find((value) => value.pieces.some((piece) => piece.id === id));
+    return view && { view, number: cutoutNumber.get(id)! };
   }
   const pictureInfo = useCallback((index: number): PictureInfo => {
     const location = draftLocation(draft, report, index);
@@ -554,6 +559,7 @@ export function Viewer({
       );
       onResult(value.result);
       setSelected([]);
+      setSavedHere("undone");
       notify("Последнее сохранение отменено. Предыдущие файлы восстановлены.");
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setConflict(true);
@@ -576,7 +582,7 @@ export function Viewer({
       onResult(value.result);
       setSelected([]);
       onDirty(false);
-      setSavedHere(true);
+      setSavedHere("saved");
       notify("Правки сохранены. Резервная копия создана.", false, {
         label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => undoSaved(value.result),
       });
@@ -609,7 +615,7 @@ export function Viewer({
         setFilter(`folder:${value.result.report.images[id]?.folder || rename.name.trim()}`);
       }
       setRename(null);
-      setSavedHere(true);
+      setSavedHere("saved");
       notify(value.message);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setConflict(true);
@@ -623,6 +629,9 @@ export function Viewer({
       notify(errorText(error), true),
     );
   }
+  useEffect(() => {
+    onHelpTopic?.(filter === "collages" ? "collages" : filter === "cutouts" ? "cutouts" : editing ? "edit" : "review");
+  }, [filter, editing, onHelpTopic]);
   const reordering = filter.startsWith("variant:");
   const { drag, startDrag } = useCardDrag({
     enabled: editing && !saving,
@@ -663,7 +672,11 @@ export function Viewer({
         event.preventDefault();
         setSelected((ids) => [...new Set([...ids, ...visibleIds])]);
       }
-      if ((event.ctrlKey || event.metaKey) && event.code === "KeyZ") {
+      // Ctrl+Shift+Z repeats a step as Ctrl+Y does; it must never take one more step back.
+      if ((event.ctrlKey || event.metaKey) && (event.code === "KeyY" || (event.code === "KeyZ" && event.shiftKey))) {
+        event.preventDefault();
+        change({ type: "redo" });
+      } else if ((event.ctrlKey || event.metaKey) && event.code === "KeyZ") {
         event.preventDefault();
         change({ type: "undo" });
       }
@@ -889,6 +902,7 @@ export function Viewer({
   const canMoveEdge = selectedActive.length > 0 && selectionVariants.size === 1 && !selectionVariants.has(null);
   const variantCount = variants.filter((key) => draft.variants[key].length && !key.includes(".")).length;
   const subvariantCount = variants.filter((key) => draft.variants[key].length && key.includes(".")).length;
+  const variantSummary = `Варианты: ${variantCount}` + (subvariantCount ? `, подвариантов: ${subvariantCount}` : "");
   const parents = [...new Set(variants.map(variantParent))];
   // A subvariant shares its variant's colour, so 3 and 3.1 read as one family.
   const dotOf = (key: string) => `color-${Math.max(0, parents.indexOf(variantParent(key))) % 4}`;
@@ -913,10 +927,11 @@ export function Viewer({
             <span className={`nav-icon-attention${collageCheck ? " has-attention" : ""}`}
               title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={17} /></span>)}
           {sidebar("cutouts", "Вырезки", cutoutCount, <Crop size={17} />)}
-          <button className="nav-group-toggle" aria-label={`Варианты: ${variants.length}`} title={`Варианты: ${variants.length}`}
+          {/* Counted as in the heading of the result: whole variants, their subvariants are listed under them. */}
+          <button className="nav-group-toggle" aria-label={variantSummary} title={variantSummary}
             aria-expanded={variantsOpen} aria-controls="variant-navigation"
             onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
-            <Layers3 size={16} /><span>Варианты</span><b>{variants.length}</b><ChevronDown size={14} />
+            <Layers3 size={16} /><span>Варианты</span><b>{variantCount}</b><ChevronDown size={14} />
           </button>
           <Collapsible id="variant-navigation" open={variantsOpen}>
           {variants.map((key) =>
@@ -985,12 +1000,12 @@ export function Viewer({
             <kbd>Ctrl K</kbd>
           </label>
           <div className="topbar-actions">
-            {(saving || dirty || savedHere) && <StatusNote busy={saving} dirty={dirty}>
+            {(saving || dirty || savedHere) && <StatusNote busy={saving} dirty={dirty} undone={!saving && !dirty && savedHere === "undone"}>
               {saving
                 ? "Сохраняю…"
                 : dirty
                   ? "Есть изменения"
-                  : "Изменения сохранены"}
+                  : savedHere === "undone" ? "Сохранение отменено" : "Изменения сохранены"}
             </StatusNote>}
             {/* The main action of a result; while editing, «Сохранить» in the toolbar takes over. */}
             <button
@@ -1072,6 +1087,7 @@ export function Viewer({
             dirty={dirty}
             saving={saving}
             canUndo={!!draft.past.length}
+            canRedo={!!draft.future?.length}
             canMoveUp={selected.length === 1 && selectedPosition > 0}
             canMoveDown={selected.length === 1 && selectedPosition >= 0 && selectedPosition < selectedMembers.length - 1}
             canMoveEdge={canMoveEdge}
@@ -1098,7 +1114,7 @@ export function Viewer({
             onReturn={() => change({ type: "return-to-misc", ids: selectedActive })}
             onRestore={() => change({ type: "restore", ids: selectedRemoved })}
             onShowRemoved={() => { setFilter("removed"); setStatus("all"); setQuery(""); }}
-            onUndoSave={() => void undoSaved(result)}
+            onUndoSave={() => setConfirmUndoSave(true)}
             onRemove={() => change({ type: "remove", ids: selectedActive })}
             onCopy={() => startCopy(selectedActive)}
             onHelp={() => onHelp?.("edit")}
@@ -1108,6 +1124,7 @@ export function Viewer({
             onCut={() => cutImage(selectedActive[0])}
             onCutout={() => startCutout(selectedActive.length === 1 ? selectedActive[0] : undefined)}
             onUndo={() => change({ type: "undo" })}
+            onRedo={() => change({ type: "redo" })}
             onReset={() => setReset(true)}
             onSave={() => void save()}
           />
@@ -1133,11 +1150,11 @@ export function Viewer({
                 filter.startsWith("folder:")) && (
                 <button
                   className="icon-btn"
-                  aria-label="Переименовать группу"
+                  aria-label={filter.startsWith("variant:") ? "Переименовать вариант" : "Переименовать подпись"}
                   title={
                     dirty
                       ? "Сначала сохраните или сбросьте правки"
-                      : "Переименовать группу"
+                      : filter.startsWith("variant:") ? "Переименовать вариант" : "Переименовать подпись"
                   }
                   disabled={dirty || saving}
                   onClick={renameGroup}
@@ -1352,11 +1369,11 @@ export function Viewer({
       <Presence>{cutting && <CutEditor view={cutting} resultId={result.id} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
         onApply={(boxes, targets, trim, names) => applyCut(cutting, boxes, targets, trim, names)}
-        onClose={() => setCutting(null)} />}</Presence>
+        onClose={() => setCutting(null)} onHelp={onHelp && (() => onHelp("collages"))} />}</Presence>
       <Presence>{cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
         pictureInfo={pictureInfo} isLive={liveCard} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
-        onApply={applyCutouts} onClose={() => setCutoutEditor(null)} />}</Presence>
+        onApply={applyCutouts} onClose={() => setCutoutEditor(null)} onHelp={onHelp && (() => onHelp("cutouts"))} />}</Presence>
       <Presence>{previewRow && (
         <Dialog
           wide
@@ -1642,6 +1659,18 @@ export function Viewer({
               <div className="dialog-alternatives">{back}</div>
             </div>;
           })()}
+        </Dialog>
+      )}</Presence>
+      <Presence>{confirmUndoSave && (
+        <Dialog title="Отменить последнее сохранение?" busy={saving} onClose={() => setConfirmUndoSave(false)}>
+          <p>Готовые PDF и отчёт вернутся к состоянию до последнего «Сохранить». Правки этого сохранения пропадут, повторить их можно будет только вручную.</p>
+          <div className="dialog-choices">
+            <button className="btn danger" disabled={saving}
+              onClick={() => { setConfirmUndoSave(false); void undoSaved(result); }}>Отменить сохранение</button>
+            <div className="dialog-alternatives">
+              <button className="btn secondary" disabled={saving} onClick={() => setConfirmUndoSave(false)}>Оставить как есть</button>
+            </div>
+          </div>
         </Dialog>
       )}</Presence>
     </Shell>

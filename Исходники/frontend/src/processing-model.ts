@@ -73,6 +73,8 @@ export function processingView(state: Snapshot) {
     fileName,
     phase,
     canOpenResult: Boolean(state.current_output),
+    // A stopped queue keeps the files it did not reach, to go on without choosing them again.
+    remaining: outcome === "cancelled" ? state.job?.remaining ?? 0 : 0,
     warnings,
     errors,
     failed: state.job?.failed ?? 0,

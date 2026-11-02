@@ -148,6 +148,22 @@ class NativeBridge:
         return True
 
 
+def close_question(busy, unsaved):
+    """Title and text of the question before the window closes, or None when nothing would be lost."""
+    if busy and unsaved:
+        return ('Идёт обработка PDF',
+                'Закрыть окно? Обработка остановится, а несохранённые правки пропадут. '
+                'Полностью обработанные файлы и сохранённые PDF останутся на месте.')
+    if busy:
+        return ('Идёт обработка PDF',
+                'Закрыть окно и остановить обработку? Полностью обработанные файлы сохранятся, '
+                'текущий файл придётся обработать заново.')
+    if unsaved:
+        return ('Есть несохранённые изменения',
+                'Закрыть окно без сохранения правок? Сохранённые PDF останутся на месте.')
+    return None
+
+
 def frontend_path():
     base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
     return base / 'frontend' / 'dist'
@@ -228,8 +244,9 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
 
         def finish_close():
             try:
-                if bridge._unsaved and not window.create_confirmation_dialog('Есть несохранённые изменения',
-                        'Закрыть окно без сохранения правок? Сохранённые PDF останутся на месте.'):
+                # A queue stopped by closing loses the file it was on, as unsaved edits are lost.
+                question = close_question(jobs.busy, bridge._unsaved)
+                if question and not window.create_confirmation_dialog(*question):
                     closing.clear()
                     return
                 jobs.close()

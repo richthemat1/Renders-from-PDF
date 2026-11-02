@@ -1,6 +1,7 @@
 """Unnumbered perspectives respect the presentation; filtered service elements stay recoverable."""
 import contextlib
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -178,6 +179,71 @@ class AuxiliaryPictures(unittest.TestCase):
             plans = [entry for entry in report['images'] if entry['size'] == [300, 220]]
             self.assertEqual(len(plans), 3)
             self.assertFalse(any(entry.get('removed') for entry in plans))
+
+
+def light_graphic(size):
+    """A logo or a signature block: dark marks on a white ground (about 85 % light pixels)."""
+    from PIL import Image, ImageDraw
+    width, height = size
+    image = Image.new('RGB', size, 'white')
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((10, 10, height-10, height-10), outline='#555555', width=max(2, height//18))
+    for row in range(3):
+        top = height//5+row*height//4
+        draw.rectangle((height+20, top, width-40, top+height//14), fill='#333333')
+    return image
+
+
+class TitleSlideAndRepeats(unittest.TestCase):
+    """UX test 3.39, Б7: logos of a title slide and a key plan repeated larger than 5 % of a page."""
+
+    def test_logo_and_signature_of_a_title_slide_are_service_elements(self):
+        pages = [{'images': [{'box': (400, 60, 280, 74), 'picture': light_graphic((780, 205))},
+                             {'box': (50, 500, 400, 115), 'picture': light_graphic((1231, 354))}],
+                  'text': [('Жилой комплекс', 430, 150, 16), ('Жилой дом по адресу: улица Артюхиной', 50, 300, 24)]},
+                 {'images': [{'box': (50, 170, 600, 400), 'color': '#ff0000'},
+                             {'box': (700, 300, 280, 74), 'picture': light_graphic((780, 205))}],
+                  'text': [('Перспектива с юга', 50, 140, 18), ('Условный знак', 700, 280, 12)]}]
+        with tempfile.TemporaryDirectory(prefix='pdf-service-') as root:
+            _, report = run(root, pages)
+            title = [entry for entry in report['images'] if entry['page'] == 1]
+            self.assertEqual([(entry['suppression_code'], entry['removed']) for entry in title],
+                             [('cover_graphic', True)]*2)
+            self.assertIn('титульном слайде', title[0]['reason'])
+            evidence = next(item for item in report['suppressed'] if item['suppression_code'] == 'cover_graphic')
+            self.assertGreaterEqual(evidence['evidence'][0]['light_share'], .7)
+            # The same light picture inside the presentation stays a picture.
+            later = [entry for entry in report['images'] if entry['page'] == 2]
+            self.assertFalse(any(entry.get('removed') for entry in later))
+            self.assertEqual([entry['title'] for entry in later], ['Перспектива с юга', 'Условный знак'])
+
+    def test_first_page_with_a_large_picture_is_no_title_slide(self):
+        pages = [{'images': [{'box': (50, 170, 600, 400), 'color': '#ff0000'},
+                             {'box': (700, 300, 280, 74), 'picture': light_graphic((780, 205))}],
+                  'text': [('Перспектива с юга', 50, 140, 18)]}]
+        with tempfile.TemporaryDirectory(prefix='pdf-service-') as root:
+            _, report = run(root, pages)
+            self.assertFalse(any(entry.get('removed') for entry in report['images']))
+            self.assertEqual(report['counts_by_suppression'], {})
+
+    def test_repeated_picture_over_five_percent_stays_where_its_own_caption_names_it(self):
+        # 220×200 of a 1000×800 page is 5.5 %: one copy is captioned on its slide, three others are not.
+        plan = {'size': (300, 270), 'color': '#cc8866'}
+        spots = [(700, 200, 220, 200), (700, 560, 220, 200), (60, 590, 220, 200), (400, 590, 220, 200)]
+        pages = [{'images': [{'box': (50, 170, 600, 400), 'color': color}, {'box': spot, **plan}],
+                  'text': [(title, 50, 140, 18)]+([('Схема участка на карте', 700, 536, 14)] if index == 1 else [])}
+                 for index, (color, spot, title) in enumerate(zip(
+                     ['#ff0000', '#00ff00', '#0000ff', '#ffff00'], spots,
+                     ['Перспектива с юга', 'Перспектива с запада', 'Перспектива с востока', 'Перспектива с севера']))]
+        with tempfile.TemporaryDirectory(prefix='pdf-service-') as root:
+            _, report = run(root, pages)
+            plans = [entry for entry in report['images'] if entry['size'] == [300, 270]]
+            self.assertEqual([(entry['page'], bool(entry.get('removed')), entry.get('suppression_code'))
+                              for entry in plans],
+                             [(1, True, 'repeated_resource'), (2, False, None),
+                              (3, True, 'repeated_resource'), (4, True, 'repeated_resource')])
+            self.assertEqual(plans[1]['title'], 'Схема участка на карте')
+            self.assertNotIn('unless_named', json.dumps(report['suppressed'], ensure_ascii=False))
 
 
 class CaptionText(unittest.TestCase):

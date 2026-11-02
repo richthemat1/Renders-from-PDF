@@ -69,6 +69,8 @@ button.text-action:disabled { color: var(--muted); cursor: default; }
 .cut-editor > .dialog-heading { margin: 0; padding: 18px 24px; border-bottom: 1px solid var(--line); }
 .cut-editor > .dialog-heading h2 { font-size: 20px; }
 .cut-editor-subtitle { margin: 4px 0 0 !important; }
+/* «?» of an editor stands beside its close button, not in the middle of the heading. */
+.cut-editor > .dialog-heading .cut-editor-help { flex-shrink: 0; margin-left: auto; }
 .cut-editor-body { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .cut-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 10px 24px; border-bottom: 1px solid var(--line); }
 .cut-tools-label { color: var(--muted); font-size: 12px; font-weight: 650; }
@@ -143,7 +145,11 @@ button.text-action:disabled { color: var(--muted); cursor: default; }
 .cut-list li > div { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; }
 .cut-list li strong { font-size: 13px; }
 .cut-list li span { color: var(--muted); font-size: 12px; }
-.cut-thumb { flex: 0 0 auto; width: 56px; max-height: 110px; border-radius: 5px; background: #eef0f5; }
+/* A frame of any shape sits whole in the 56 × 100 slot, as in the cutout editor. */
+.cut-thumb { display: flex; flex: 0 0 56px; align-items: center; justify-content: center; align-self: flex-start; width: 56px; height: 100px;
+  overflow: hidden; border-radius: 5px; background: #eef0f5; }
+.cut-thumb .cropped-image { width: 100%; }
+.cut-thumb.is-tall .cropped-image { width: auto; height: 100%; }
 .cut-list .text-action { align-self: flex-start; }
 
 .cut-footer { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--line); }
@@ -161,6 +167,13 @@ button.text-action:disabled { color: var(--muted); cursor: default; }
 }
 @media (max-width: 1100px) {
   .cut-panel { flex-basis: 280px; }
+}
+/* A low window gives its height to the picture; the mouse and keys are in the help. */
+@media (max-height: 720px) {
+  .cut-editor:not(.cutout-editor) > .dialog-heading { padding-block: 12px; }
+  .cut-editor:not(.cutout-editor) .cut-hints { display: none; }
+  .cut-canvas { padding-block: 16px; }
+  .cut-stage { width: min(100%, calc((100cqh - 44px) * var(--ratio, 1.79))); }
 }
 /* In a smaller window the tools keep to one row: the groups speak for themselves without their captions. */
 @media (max-width: 1280px) {

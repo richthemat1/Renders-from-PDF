@@ -129,6 +129,20 @@ def drawn_share(path):
     return drawn/max(1, sum(histogram))
 
 
+def light_ground_share(image):
+    """Shares of light pixels (≥ BLANK_LIGHT_GROUND) and of pixels drawn on the ground, as in drawn_share,
+    of a picture laid on white paper, measured at 256 px."""
+    with image.convert('RGBA') as rgba:
+        rgba.thumbnail((256, 256))
+        with Image.new('RGBA', rgba.size, 'white') as paper, Image.alpha_composite(paper, rgba) as flat, \
+                flat.convert('L') as gray:
+            histogram = gray.histogram()
+    total = max(1, sum(histogram))
+    background = max(range(256), key=histogram.__getitem__)
+    drawn = sum(count for value, count in enumerate(histogram) if abs(value-background) > 24)
+    return sum(histogram[BLANK_LIGHT_GROUND:])/total, drawn/total
+
+
 @contextmanager
 def scan_image(reader, pdf_page, path, original):
     """Yield a decoded raster and the factor from its pixels to the native resource pixels."""
@@ -722,7 +736,7 @@ def analyse_scans(source, pages, resource_paths, progress=None):
         # between renders, like a pair of views in one picture of a comparison slide.
         images = [im for im in page['images'] if full_page or (
                   not im.get('repeated_static') and not im.get('fully_occluded') and not im.get('blank_layer')
-                  and not im.get('text_fill')
+                  and not im.get('text_fill') and not im.get('cover_graphic')
                   and _area(im) >= page['width']*page['height']*.04
                   and min(im['srcsize']) >= 300)]
         if images:
@@ -759,9 +773,11 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                             if len(seams) >= 2 and not _cut_problem(page, original, image, full_page):
                                 panels, seam = seams, True
                                 page.setdefault('seam_sources', []).append({'image': original, 'thin': seams.thin})
-                            elif len(panels) < 2:
+                            else:
                                 # Anything doubtful keeps the raster whole without a warning, as before;
                                 # renders that only meet edge to edge are offered to a person to cut.
+                                # Rectangles with no plain ground and no gutter between them are parts of
+                                # one photograph, such as a field and a sky: that is no scan to warn about.
                                 hint = [] if _cut_problem(page, original, image, full_page) else equal_split_hint(image)
                                 if hint:
                                     original['collage_hint'] = [[round(value*factor) for value in box] for box in hint]
@@ -781,8 +797,6 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                             # Renders carry slanted lines that OCR takes for rotated text, and labels such as
                             # «ВИД №1» are too small to read reliably: captions come from the page text.
                             record.update(method='seam', text_source='pdf_text')
-                        elif not full_page and not _compound_background(image, panels):
-                            raise ValueError('Между прямоугольниками нет простого однотонного фона; требуется проверка.')
                         if not seam:
                             if startup_error:
                                 raise RuntimeError(startup_error)

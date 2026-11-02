@@ -147,6 +147,8 @@ export interface PendingRepeat {
     finished_at: string;
     available: boolean;
   }[];
+  /** Names of the files of the same selection never processed; absent from older servers. */
+  new?: string[];
 }
 export interface NoticeAction {
   label: string;
@@ -173,6 +175,8 @@ export interface Snapshot {
     active_file: { name: string; index: number; total: number } | null;
     /** Result folders of this queue in order; absent from older servers. */
     outputs?: string[];
+    /** Files a stopped queue did not finish, which «Продолжить оставшиеся» processes. */
+    remaining?: number;
   };
   cancelling: boolean;
   closing: boolean;

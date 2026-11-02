@@ -215,7 +215,7 @@ class DesktopUI(unittest.TestCase):
         report = load_report(self.output)
         self.assertEqual([image['pdf_page'] for image in report['images'][:2]], [2, 1])
         self.page.locator('nav').get_by_role('button', name='Вариант 1 2', exact=True).click()
-        self.page.get_by_role('button', name='Переименовать группу').click()
+        self.page.get_by_role('button', name='Переименовать вариант').click()
         self.page.get_by_label('Новое имя').fill('Первый корпус')
         self.page.get_by_role('button', name='Переименовать', exact=True).click()
         expect(self.page.get_by_role('dialog')).to_have_count(0)

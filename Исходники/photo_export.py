@@ -26,9 +26,10 @@ from reportlab import rl_config
 from photo_layout import (bounds, caption_for, caption_with_variant_context, clean_text,
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
-                          text_lines, tile_groups, found_variant, variant_numbers, variant_sort_key)
+                          split_joined_words, text_lines, tile_groups, found_variant, variant_numbers,
+                          variant_sort_key)
 from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, drawn_share, is_large_raster,
-                        LARGE_RASTER_PIXELS, native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
+                        LARGE_RASTER_PIXELS, light_ground_share, native_jpeg, open_large_raster, SCRATCH_PNG_LEVEL,
                         prepare_scan_continuations, seam_caption, turned, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
@@ -42,7 +43,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.39'
+VERSION = '3.40'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -57,6 +58,9 @@ SUPPRESSED_DIR = 'Служебные элементы'
 COLLAGES_DIR = 'Склейки'
 CUTOUTS_DIR = 'Вырезки'
 PDFIUM_LOCK = RLock()
+# The largest page share of a picture repeated on four slides in different places that is still set aside.
+REPEATED_RESOURCE_SHARE = .08
+COVER_LIGHT_SHARE = .7
 
 
 def perspective_conflict(pages):
@@ -173,11 +177,49 @@ def image_to_pdf(image_path, target, bbox, title, matrix=None):
     document.save()
 
 
-def safe_name(text, limit=80):
+NAME_EDGES = ' .,;—–-_'
+
+
+def _shortened_start(text, limit):
+    """«Архитектурно…»: whole words from the start and «…», so a cut name never looks complete."""
+    if limit < 6:
+        return text[:limit].rstrip(NAME_EDGES)
+    ends = [match.end() for match in re.finditer(r'[^\s_]+', text) if match.end() <= limit-1]
+    head = text[:ends[-1]].rstrip(NAME_EDGES) if ends else ''
+    return (head or text[:limit-1].rstrip(NAME_EDGES))+'…'
+
+
+def _shortened_middle(text, limit):
+    """«30.Жилой дом, … участок_21А»: whole words from the start and from the end. The end of a file
+    name tells two presentations apart, as an address after a shared «30.Жилой дом»."""
+    room = limit-3
+    words = list(re.finditer(r'[^\s_]+', text))
+    if not words:
+        return _shortened_start(text, limit)
+    head_room = room-room*2//5
+    ends = [word.end() for word in words if word.end() <= head_room]
+    if ends:
+        head = text[:ends[-1]]
+    elif words[0].end() <= room-4:
+        head = text[:words[0].end()]
+    else:
+        head = text[:head_room]
+    head = head.rstrip(NAME_EDGES)
+    starts = [word.start() for word in words if word.start() >= len(head) and len(text)-word.start() <= room-len(head)]
+    tail = text[starts[0]:].lstrip(NAME_EDGES) if starts else ''
+    return head+' … '+tail if len(tail) >= 3 else head+'…'
+
+
+def safe_name(text, limit=80, keep_end=False):
+    """A disk name of at most limit characters. Long names lose their middle (from 40 characters, or
+    from 16 with keep_end) or their end, always on word boundaries and with «…»."""
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', ' — ', clean_text(text))
     # A replaced colon beside a dash of the caption itself makes one dash.
     text = re.sub(r'\s*—(?:\s*—)+', ' —', text)
     text = re.sub(r'\s+', ' ', text).strip(' .') or 'Без подписи'
+    if len(text) > limit and len(text.rstrip(NAME_EDGES)) <= limit:
+        # «Условные обозначения —» from a colon loses only its dash: nothing of the caption is cut.
+        text = text.rstrip(NAME_EDGES)
     if len(text) > limit:
         if limit >= 40:
             tail = text[-24:]
@@ -187,14 +229,22 @@ def safe_name(text, limit=80):
             if len(head) < len(text) and not text[len(head)].isspace() and ' ' in head:
                 head = head.rsplit(' ', 1)[0]
             text = head.rstrip(' .—–-')+' … '+tail.lstrip(' .—–-')
+        elif keep_end and limit >= 16:
+            text = _shortened_middle(text, limit)
         else:
-            shortened = text[:limit]
-            if not text[limit].isspace() and ' ' in shortened:
-                shortened = shortened.rsplit(' ', 1)[0]
-            text = shortened.rstrip(' .—–-')
+            text = _shortened_start(text, limit)
     if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', text, re.I):
         text = '_'+text
     return text
+
+
+def file_stem(prefix, title, limit):
+    """«Страница 003 — 001 — caption» within limit characters. The caption is shortened on words, or left
+    out when only a scrap of it would fit: its folder and the report keep it in full."""
+    room = limit-len(prefix)-3
+    if title and room >= 12:
+        return prefix+' — '+safe_name(title, min(80, room))
+    return prefix
 
 
 def available_folder_name(title, limit, owners, key):
@@ -260,9 +310,10 @@ def planned_output(source, parent=None):
         available = name_budget - len(suffix)
         if available < 3:
             break
-        name = safe_name(source.stem, 78) + ' — PDF'
+        name = safe_name(source.stem, 78, keep_end=True) + ' — PDF'
         if len(name) > available:
-            name = safe_name(source.stem, available-6)+' — PDF' if available >= 10 else safe_name('Результат', available)
+            name = (safe_name(source.stem, available-6, keep_end=True)+' — PDF' if available >= 10
+                    else safe_name('Результат', available))
         destination = check_output_path(parent / (name + suffix))
         if not destination.exists():
             return destination
@@ -508,18 +559,55 @@ def prepare_image_quality(source, pages):
             # A key plan of the site keeps its pixels but moves to a free corner of each slide.
             # Without a stable place it takes one page more than a static asset: a small photo
             # shown again on three slides is still a photo, on four or more it is an auxiliary picture.
+            # Up to 5 % of the page that holds everywhere; a larger copy, up to the 8 % of a static asset,
+            # stays a picture where a caption of its own names it (checked in extract).
+            def share(page, image):
+                return (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height'])
             small = [(page, image) for page, image in occurrences
-                     if (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height']) <= .05
-                     and not region_is_clipped(page, image)]
+                     if share(page, image) <= REPEATED_RESOURCE_SHARE and not region_is_clipped(page, image)]
             pages_seen = sorted({page['number'] for page, _ in small})
             if len(small) == len(occurrences) and len(pages_seen) >= 4:
                 for page, image in small:
-                    image['repeated_resource'] = {'pages': pages_seen, 'identity_sha256': image['identity_sha256']}
+                    image['repeated_resource'] = {'pages': pages_seen, 'identity_sha256': image['identity_sha256'],
+                                                  'page_share': round(share(page, image), 4)}
             continue
         for page, image in eligible:
             # A stable placement proves the auxiliary asset's role. The same small
             # resource can move on a later slide without becoming a new photograph.
             image['repeated_static'] = {'pages': static_pages, 'identity_sha256': image['identity_sha256']}
+
+
+def mark_cover_graphics(reader, page):
+    """Set aside the logos, emblems and signature facsimiles of a title slide.
+
+    The first page is a title slide when no picture covers 15 % of it, apart from a band across its top.
+    There a picture of 1–8 % of the page, or such a band, drawn on a light ground (≥ COVER_LIGHT_SHARE
+    light pixels) is a department logo or a signed stamp, not a photo: logos measure 0.77, a facsimile
+    0.88, renders and photos below 0.1. An empty light strip is left to the blank check."""
+    if page['number'] != 1:
+        return
+    def share(image):
+        return (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height'])
+    def band(image):
+        return image['bottom'] <= page['height']*.22 and image['x1']-image['x0'] >= page['width']*.8
+    if any(share(image) >= .15 and not band(image) for image in page['images']):
+        return
+    paths = None
+    for image in page['images']:
+        if (image.get('repeated_static') or image.get('repeated_resource') or region_is_clipped(page, image)
+                or not (.01 <= share(image) <= .08 or band(image))):
+            continue
+        try:
+            if paths is None:
+                paths = image_paths(reader.pages[0])
+            with reader.pages[0].images[paths[image['object_id']]].image as picture:
+                light, drawn = light_ground_share(picture)
+        except Exception:
+            # A picture that cannot be measured stays a picture.
+            continue
+        if light >= COVER_LIGHT_SHARE and drawn >= BLANK_DRAWN_SHARE:
+            image['cover_graphic'] = {'light_share': round(light, 3), 'drawn_share': round(drawn, 4),
+                                      'page_share': round(share(image), 4)}
 
 
 def mark_blank_layers(reader, page):
@@ -559,7 +647,14 @@ def group_suppression(page, group):
         return {'suppression_code': 'repeated_resource',
                 'reason': f'Одна и та же небольшая картинка повторяется на {len(pages)} страницах в разных местах слайда — '
                           'например, план-схема участка.',
-                'evidence': [image['repeated_resource'] for image in group]}
+                'evidence': [image['repeated_resource'] for image in group],
+                # Larger than a key plan (5 %): extract keeps it where a caption of its own names it.
+                **({'unless_named': True} if any(image['repeated_resource']['page_share'] > .05 for image in group)
+                   else {})}
+    if all(image.get('cover_graphic') for image in group):
+        return {'suppression_code': 'cover_graphic',
+                'reason': 'Логотип, эмблема или факсимиле подписи на титульном слайде: небольшая картинка на светлом фоне.',
+                'evidence': [image['cover_graphic'] for image in group]}
     left, top = page['origin']
     width = max(0, min(box['x1'], left+page['width'])-max(box['x0'], left))
     height = max(0, min(box['bottom'], top+page['height'])-max(box['top'], top))
@@ -578,7 +673,7 @@ def inspect(source, progress=None):
             if progress:
                 progress({'stage': 'labels', 'current': number, 'total': total, 'found': 0})
             images = page_images(page)
-            lines = text_lines(page.extract_words(extra_attrs=['size', 'fontname']))
+            lines = text_lines(split_joined_words(page.extract_words(extra_attrs=['size', 'fontname'], return_chars=True)))
             pages.append({'number': number, 'width': page.width, 'height': page.height,
                           'origin': [page.bbox[0], page.bbox[1]],
                           'lines': lines, 'selection_references': selection_table_references(page, lines),
@@ -588,6 +683,7 @@ def inspect(source, progress=None):
     with PdfReader(source) as reader:
         for page in pages:
             mark_blank_layers(reader, page)
+            mark_cover_graphics(reader, page)
     analyse_scans(source, pages, image_paths, progress)
     headers = Counter()
     for page in pages:
@@ -1483,9 +1579,10 @@ def extract(source, output=None, progress=None):
             # A huge raster may be stored reduced; the boxes follow the pixels actually kept.
             scale = saved['size'][0]/original['srcsize'][0]
             identifier = f'{page["number"]}-{number}'
-            checked = not item['thin'] and all(entries[index]['variant'] is not None for index in members)
+            # A person confirms every automatic cut: a drawing of facades on white paper has the same
+            # wide light bands between its views as a row of renders, and is cut just as confidently.
             collages.append({
-                'id': identifier, 'page': page['number'], 'state': 'auto', 'checked': checked,
+                'id': identifier, 'page': page['number'], 'state': 'auto', 'checked': False,
                 'file': saved['file'], 'size': saved['size'], 'bbox': saved['bbox'], 'title': whole.get('title'),
                 'boxes': [[round(value*scale) for value in entries[index]['components'][0]['crop_px']]
                           for index in members],
@@ -1598,6 +1695,13 @@ def extract(source, output=None, progress=None):
             if page.get('scan', {}).get('panels'):
                 groups.sort(key=lambda group: min(im['scan_order'] for im in group))
             planned_groups = [(group, group_suppression(page, group)) for group in groups]
+            if any(suppression and suppression.get('unless_named') for _, suppression in planned_groups):
+                # A repeated picture larger than a key plan stays a picture where a caption names it on its slide.
+                page['regions'] = [bounds(group) for group, suppression in planned_groups
+                                   if suppression is None or suppression.get('unless_named')]
+                planned_groups = [(group, None if suppression and suppression.pop('unless_named', False)
+                                   and caption_for(page, bounds(group))['status'] == 'named' else suppression)
+                                  for group, suppression in planned_groups]
             page['regions'] = [bounds(group) for group, suppression in planned_groups if suppression is None]
             seam_sources = {}
             seam_pieces, hinted = {}, []
@@ -1650,11 +1754,10 @@ def extract(source, output=None, progress=None):
                 target_folder = staging/relative_folder
                 target_folder.mkdir(parents=True, exist_ok=True)
                 prefix = f'Страница {page["number"]:03d} — {sequence:03d}'
-                stem = prefix+(' — '+safe_name(match['title']) if match['title'] else '')
                 available = 239-len(str(destination/relative_folder))-1-len('.pdf')
                 if available < len(prefix):
                     raise OutputPathError('Путь результата слишком длинный. Выберите другую папку ближе к корню диска.')
-                target = target_folder/(stem[:available].rstrip(' .')+'.pdf')
+                target = target_folder/(file_stem(prefix, match['title'], available)+'.pdf')
                 # A plain title strip or a white box is no picture; seam frames and scan crops keep their own checks.
                 saved = export_region(page, paths, group, box, sequence, target, match['title'],
                                       blank_check=not seam and not any('scan_crop_px' in im for im in group))

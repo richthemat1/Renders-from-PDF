@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan,
+import { ChevronLeft, ChevronRight, CircleHelp, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan,
   Shapes, SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
@@ -100,6 +100,13 @@ export function byPlace(a: Rect, b: Rect): number {
   return Math.abs(a[1] - b[1]) > 0.01 ? a[1] - b[1] : a[0] - b[0];
 }
 
+/** Numbers of the cutouts across the result, page by page in reading order, as the editor numbers its frames. */
+export function cutoutNumbers(views: CutoutSource[]): Map<number, number> {
+  const pieces = views.flatMap((view) => view.pieces.map((piece) => ({ page: view.page, piece })));
+  pieces.sort((a, b) => a.page - b.page || byPlace(a.piece.rect, b.piece.rect));
+  return new Map(pieces.map(({ piece }, index) => [piece.id, index + 1]));
+}
+
 function sameRect(a: Rect, b: Rect): boolean {
   return a.every((value, index) => Math.abs(value - b[index]) < 1e-6);
 }
@@ -115,14 +122,14 @@ function relative(rect: Rect, area: Rect): CSSProperties {
     width: `${(rect[2] - rect[0]) / width * 100}%`, height: `${(rect[3] - rect[1]) / height * 100}%` };
 }
 
-function SourcePicture({ view, maxHeight }: { view: CutoutSource; maxHeight: number }) {
+function SourcePicture({ view, maxHeight, numbers }: { view: CutoutSource; maxHeight: number; numbers: Map<number, number> }) {
   const [width, height] = view.size;
   return (
     <span className="collage-picture cutout-picture" style={{ aspectRatio: `${width} / ${height}`,
       width: `min(100%, ${Math.round(maxHeight * width / height)}px)` }}>
       {view.preview ? <img src={view.preview} alt={view.title} draggable={false} loading="lazy" /> : <span className="no-preview" />}
       {view.pieces.map((piece, index) => (
-        <span key={piece.id} className="collage-frame cutout-card-frame" style={relative(piece.rect, view.area)}><b>{index + 1}</b></span>
+        <span key={piece.id} className="collage-frame cutout-card-frame" style={relative(piece.rect, view.area)}><b>{numbers.get(piece.id) ?? index + 1}</b></span>
       ))}
     </span>
   );
@@ -136,6 +143,7 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
   onOpen(page?: number): void;
   onReturn(view: CutoutSource): void;
 }) {
+  const numbers = cutoutNumbers(views);
   return (
     <section className="collages-page cutouts-page" aria-label="Вырезки">
       <div className="library-header">
@@ -155,7 +163,7 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
               <article key={view.key} className="collage-card cutout-card" aria-label={`Вырезки: ${view.title}`}>
                 <button className="collage-stage" disabled={saving} onClick={() => onOpen(view.page)}
                   aria-label={`Изменить вырезки: ${view.title}, страница ${view.page}`}>
-                  <SourcePicture view={view} maxHeight={220} />
+                  <SourcePicture view={view} maxHeight={220} numbers={numbers} />
                 </button>
                 <div className="collage-body">
                   <div className="collage-chips">
@@ -213,7 +221,7 @@ const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 // The page editor draws its 16 px icons with a 2 px line, as in its Figma design.
 const LINE: LucideProps = { size: 16, strokeWidth: 2, absoluteStrokeWidth: true };
 
-export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, dotOf, onApply, onClose }: {
+export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, dotOf, onApply, onClose, onHelp }: {
   resultId: string;
   title: string;
   views: CutoutSource[];
@@ -227,6 +235,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   /** The cutouts changed, and names given to variants made for them here. */
   onApply(results: CutoutResult[], names: Record<string, string>): void;
   onClose(): void;
+  /** The help window on «Вырезки», over the editor. */
+  onHelp?(): void;
 }) {
   const [info, setInfo] = useState<PagesInfo | null>(null);
   const [failure, setFailure] = useState("");
@@ -611,6 +621,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   return (
     <Dialog title="Вырезать из страниц PDF" wide className="cut-editor cutout-editor" onClose={onClose}
       icon={<Crop size={22} strokeWidth={2.75} absoluteStrokeWidth />}
+      headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Вырезки" title="Как пользоваться: Вырезки"
+        onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle"><span>{title}</span>
         {!!pages.length && <><i aria-hidden="true" /><span>{pages.length} {plural(pages.length, ["страница", "страницы", "страниц"])}</span></>}</p>}>
       {!info ? (
@@ -715,7 +727,9 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                 )}
               </div>
             </div>
-            <div className="cut-hints" style={{ maxWidth: stageWidth }}>
+            {/* As wide as the page, but never narrower than a line of hints: hints squeezed to a small page
+                grew tall and took the height the page needed, down to a page of one pixel. */}
+            <div className="cut-hints" style={{ maxWidth: Math.max(stageWidth, Math.min(bounds.width, 560)) }}>
               <p>Потяните мышью — новая рамка · Двойной щелчок по картинке — рамка по её краям · Delete — удалить выбранную</p>
               <p>← ↑ → ↓ — сдвиг на 1 px, Shift — на 10 px · Ctrl + колесо — масштаб · Ctrl+Z — отменить шаг</p>
               <p className="cut-note" role="status">{note}</p>

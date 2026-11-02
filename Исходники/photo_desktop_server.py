@@ -291,8 +291,8 @@ def desktop_handler(server):
                 operation = relative[4:] if relative in ('api/cancel', 'api/settings', 'api/sidebar', 'api/open') else None
                 result_id = None
                 record_id = None
-                if relative == 'api/jobs/confirm':
-                    operation = 'confirm'
+                if relative in ('api/jobs/confirm', 'api/jobs/resume'):
+                    operation = relative[9:]
                 if (len(parts) == 4 and parts[:2] == ['api', 'history']
                         and parts[3] in ('forget', 'repeat')):
                     operation, record_id = 'history-' + parts[3], parts[2]
@@ -332,6 +332,10 @@ def desktop_handler(server):
                         if set(payload) != {'token', 'proceed'}:
                             raise ValueError('Подтвердите повторную обработку выбранного PDF.')
                         return self.reply(200, server.jobs.confirm_repeat(payload['token'], payload['proceed']))
+                    if operation == 'resume':
+                        if payload:
+                            raise ValueError('Продолжить можно только оставшиеся файлы остановленной очереди.')
+                        return self.reply(200, server.jobs.resume())
                     actions = {'history-forget': server.jobs.forget_history,
                                'history-repeat': server.jobs.repeat_history,
                                'failure-forget': server.jobs.forget_failure,

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, CopyCheck, Crop, Ellipsis, FolderInput,
-  LoaderCircle, Plus, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
+  LoaderCircle, Plus, Redo2, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
 } from "lucide-react";
 import { ActionMenu } from "./components";
 import type { ActionMenuItem } from "./components";
@@ -15,6 +15,7 @@ interface Props {
   dirty: boolean;
   saving: boolean;
   canUndo: boolean;
+  canRedo: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   canMoveEdge: boolean;
@@ -45,6 +46,7 @@ interface Props {
   /** Open the page editor: on the one selected picture, else on the first page. */
   onCutout(): void;
   onUndo(): void;
+  onRedo(): void;
   onReset(): void;
   onSave(): void;
   /** Open the help window on «Редактирование». */
@@ -121,6 +123,8 @@ export function EditorToolbar(props: Props) {
     { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />, disabled: props.saving },
     { value: "undo", label: "Отменить шаг", icon: <Undo2 size={16} />,
       disabled: props.saving || !props.canUndo, separator: true },
+    { value: "redo", label: "Повторить шаг · Ctrl+Y", icon: <Redo2 size={16} />,
+      disabled: props.saving || !props.canRedo },
     { value: "reset", label: "Сбросить", icon: <RotateCcw size={16} />,
       disabled: props.saving || !props.dirty },
     { value: "removed", label: `Показать убранные (${props.removed})`, icon: <Trash2 size={16} /> },
@@ -142,6 +146,7 @@ export function EditorToolbar(props: Props) {
     else if (value === "restore") props.onRestore();
     else if (value === "remove") props.onRemove();
     else if (value === "undo") props.onUndo();
+    else if (value === "redo") props.onRedo();
     else if (value === "reset") props.onReset();
     else if (value === "removed") props.onShowRemoved();
     else if (value === "undo-save") props.onUndoSave();
@@ -202,7 +207,7 @@ export function EditorToolbar(props: Props) {
               <span>{props.selectedRemoved && !props.selectedActive ? "Вернуть" : "Убрать"}</span>
             </button>
             <button className="btn compact secondary editor-primary-action editor-undo" aria-label="Отменить шаг"
-              title="Отменить шаг · Ctrl+Z" disabled={props.saving || !props.canUndo} onClick={props.onUndo}>
+              title="Отменить шаг · Ctrl+Z. Повторить — Ctrl+Y" disabled={props.saving || !props.canUndo} onClick={props.onUndo}>
               <Undo2 size={16} /><span>Отменить шаг</span>
             </button>
             <button className="btn compact secondary editor-primary-action editor-reset" aria-label="Сбросить"

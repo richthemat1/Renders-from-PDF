@@ -26,6 +26,9 @@ GRID_AXES = re.compile(r'^\s*\w{1,2}(?:\s*[-–—/]\s*\w{1,2})+\s*$')
 # Real captions reach ~140 characters; a longer line is a paragraph of the slide text.
 CAPTION_MAX_LENGTH = 200
 OVERPRINT_BAND = 2
+# Some presentations place words without a space character: «зонирования» and «объекта» stand 0.21–0.29 em
+# apart, letters of one word within 0.11 em. pdfplumber joins anything closer than 3 pt into one word.
+WORD_GAP_EM = .2
 
 
 def variant_key(value):
@@ -64,6 +67,26 @@ def clean_text(value):
     text = re.sub(r'^[—–\-•]+\s+', '', text)
     # A known joined caption phrase; avoid guessing word boundaries in arbitrary names.
     return re.sub(r'\b(стеновая)(панель)\b', r'\1 \2', text, flags=re.I)
+
+
+def split_joined_words(words):
+    """Split words that pdfplumber joined across a gap wider than WORD_GAP_EM of the letter size.
+
+    Words need their 'chars' (extract_words(return_chars=True)); a gap never joins more than before."""
+    result = []
+    for word in words:
+        chars = word.pop('chars', None) or []
+        cuts = [index for index in range(1, len(chars))
+                if chars[index]['x0']-chars[index-1]['x1'] > WORD_GAP_EM*float(chars[index-1].get('size') or 12)]
+        if not cuts:
+            result.append(word)
+            continue
+        for start, end in zip([0]+cuts, cuts+[len(chars)]):
+            part = chars[start:end]
+            result.append(dict(word, text=''.join(char['text'] for char in part),
+                               x0=min(char['x0'] for char in part), x1=max(char['x1'] for char in part),
+                               top=min(char['top'] for char in part), bottom=max(char['bottom'] for char in part)))
+    return result
 
 
 def deduplicate_words(words):
@@ -400,13 +423,83 @@ def row_heading(page, region):
     return heading
 
 
+def _overlaps(box, other):
+    return (min(box['x1'], other['x1']) > max(box['x0'], other['x0'])
+            and min(box['bottom'], other['bottom']) > max(box['top'], other['top']))
+
+
+def _spans(box, other):
+    """Whether two boxes share some width."""
+    return min(box['x1'], other['x1']) > max(box['x0'], other['x0'])
+
+
+def _side_gap(line, box):
+    """Horizontal distance from a line to a picture on its level, or None when they overlap."""
+    if box['x0'] >= line['x1']:
+        return box['x0']-line['x1']
+    if box['x1'] <= line['x0']:
+        return line['x0']-box['x1']
+    return None
+
+
+def other_pictures(page, region, small=False):
+    """Pictures of the page apart from region; with small, also those set aside as fragments, such as
+    a lamp beside its description or a colour swatch of a legend."""
+    boxes = [box for box in page.get('regions', []) if not _overlaps(box, region)]
+    if small:
+        boxes += [image for image in page.get('images', []) if not _overlaps(image, region)]
+    return boxes
+
+
+def side_picture(page, line, region):
+    """A smaller picture beside the line on its level, or partly under it: the line labels it, as
+    «2. Газон» labels the swatch on its right, and is no caption of a larger picture above or below.
+    A line wholly on a picture is printed on its plate, as a heading on a light strip, and labels nothing."""
+    area = (region['x1']-region['x0'])*(region['bottom']-region['top'])
+    for box in other_pictures(page, region, small=True):
+        if _overlaps(line, box):
+            if all(box[key] <= line[key] for key in ('x0', 'top')) and all(box[key] >= line[key] for key in ('x1', 'bottom')):
+                continue
+            gap = 0
+        else:
+            gap = _side_gap(line, box)
+        level = min(line['bottom'], box['bottom'])-max(line['top'], box['top'])
+        if (gap is not None and gap <= page['width']*.12 and level >= (line['bottom']-line['top'])*.3
+                and min(box['x1']-box['x0'], box['bottom']-box['top']) >= line['size']*.8
+                and (box['x1']-box['x0'])*(box['bottom']-box['top']) <= area*.5):
+            return box
+    return None
+
+
+def heads_table(page, line):
+    """Whether the line heads a table: two or more cells start right under it within its width."""
+    cells = [other for other in page['captions'] if other is not line
+             and 0 <= other['top']-line['bottom'] <= line['size']*2
+             and line['x0'] <= (other['x0']+other['x1'])/2 <= line['x1']]
+    return len(cells) >= 2
+
+
+def side_caption(page, region):
+    """A label at the side of a picture, level with its top, as in a row of lamps each described on its
+    left: used only when no line above or below names the picture."""
+    candidates = [line for line in page['captions']
+                  if caption_text(line['text'])
+                  and (gap := _side_gap(line, region)) is not None and gap <= max(line['size']*2, page['width']*.02)
+                  and abs(line['top']-region['top']) <= line['size']*1.5
+                  and not any(_overlaps(line, box) for box in page.get('regions', []))]
+    return min(candidates, key=lambda line: _side_gap(line, region), default=None)
+
+
 def caption_for(page, region):
     width, height = region['x1']-region['x0'], region['bottom']-region['top']
     if (width < page['width']*.025 or height < page['height']*.035
             or (width/max(height, 1) > 12 and height < page['height']*.075)):
         return {'status': 'unsigned', 'title': None, 'candidates': [],
                 'reason': 'Мелкий или узкий элемент: отдельная подпись не определена.'}
-    choices = []
+    choices, labels = [], []
+    pictures = page.get('regions', [])+[
+        image for image in other_pictures(page, region, small=True)
+        if image['x1']-image['x0'] >= page['width']*.025 and image['bottom']-image['top'] >= page['height']*.035]
     for line in page['captions']:
         if not caption_text(line['text']):
             continue
@@ -434,17 +527,34 @@ def caption_for(page, region):
             contained = all(abs(owner[key]-region[key]) < 1 for key in ('x0', 'top', 'x1', 'bottom'))
             if not contained:
                 continue
+        if not contained and side_picture(page, line, region):
+            labels.append(line)
+            continue
         above = region['top']-line['bottom']
         below = line['top']-region['bottom']
         inset = max(24, min(45, height*.12))
         if -inset <= above <= page['height']*.20:
+            # A caption does not reach past another picture: «Скамейка «Энигма»» names the bench under it,
+            # not the plan under the bench.
+            if not contained and any(_spans(box, line) and _spans(box, region)
+                                     and line['bottom'] <= box['top'] and box['bottom'] <= region['top']
+                                     for box in pictures):
+                continue
             gap, side = abs(above), 'above'
         elif -inset <= below <= page['height']*.075:
-            # A line that sits closer above the next picture is that picture's caption.
-            if any(min(box['x1'], line['x1']) > max(box['x0'], line['x0'])
-                   and 0 <= box['top']-line['bottom'] < below
+            # A line that sits closer above the next picture is that picture's caption, even when the
+            # picture is a small one set aside, such as a lamp under its description.
+            if any(_spans(box, line) and 0 <= box['top']-line['bottom'] < below
                    and any(abs(box[key]-region[key]) >= 1 for key in ('x0', 'top', 'x1', 'bottom'))
-                   for box in page.get('regions', [])):
+                   for box in pictures):
+                continue
+            # «Чек-лист соответствия нормативам» under a map heads the table below it.
+            if heads_table(page, line):
+                labels.append(line)
+                continue
+            # Nor past the label of another picture or a table heading.
+            if any(region['bottom'] <= label['top'] and label['bottom'] <= line['top']
+                   and _spans(label, line) and _spans(label, region) for label in labels):
                 continue
             gap, side = abs(below)+(0 if contained else page['height']*.025), 'below'
         else:
@@ -460,6 +570,12 @@ def caption_for(page, region):
                     'source_caption': heading.get('source_text', heading['text']),
                     'reason': 'Общий заголовок над рядом изображений одного размера.',
                     'caption_bbox': [round(heading[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
+        label = side_caption(page, region)
+        if label is not None:
+            return {'status': 'named', 'title': label['text'], 'candidates': [label['text']],
+                    'source_caption': label.get('source_text', label['text']),
+                    'reason': 'Подпись стоит сбоку от изображения на уровне его верхнего края.',
+                    'caption_bbox': [round(label[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
         return {'status': 'unsigned', 'title': None, 'candidates': [],
                 'reason': 'Рядом с изображением не найдена читаемая подпись.'}
     score, side, best = choices[0]
@@ -476,8 +592,12 @@ def caption_for(page, region):
         other = choices[1][2]
         # A heading above the nearest caption tops the same stack; the parent rule below names it.
         stacked = side == choices[1][1] == 'above' and other['bottom'] <= best['top']+1
+        # A label under the picture that neither starts at its left edge nor stands under its middle
+        # points at a part of it, as «спортивные площадки» at a leader line: it does not name the picture.
+        callout = (choices[1][1] == 'below' and abs(other['x0']-region['x0']) > width*.1
+                   and abs((other['x0']+other['x1']-region['x0']-region['x1'])/2) > width*.25)
         if (other['text'] != best['text'] and abs(other['top']-best['top']) > 8
-                and other['size'] >= best['size']*.85 and not stacked):
+                and other['size'] >= best['size']*.85 and not stacked and not callout):
             return {'status': 'review', 'title': None,
                     'candidates': [best['text'], other['text']],
                     'reason': 'Неоднозначная связь изображения с соседними подписями.'}

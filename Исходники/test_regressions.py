@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from PIL import Image, ImageDraw
 import pypdfium2
 from pypdf import PdfReader, PdfWriter
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
 
 import photo_edit
@@ -100,6 +101,83 @@ class ExportRegressions(unittest.TestCase):
                         for x, y in ((.2, .2), (.8, .2), (.2, .8), (.8, .8)):
                             position = (round(actual.width*x), round(actual.height*y))
                             self.assertEqual(actual.getpixel(position), expected.getpixel(position))
+
+
+class CaptionRegressions(unittest.TestCase):
+    """UX test 3.39, Б7 and Б18: labels of other pictures, callouts, joined words, a false scan warning."""
+
+    def titles(self, root, pages):
+        report = extract(make_pdf(root, pages))
+        return [(entry['page'], entry['status'], entry['title']) for entry in report['images']
+                if not entry.get('removed')], report
+
+    def test_words_placed_without_a_space_are_split_by_their_gap(self):
+        first = 'Схема функционального зонирования'
+        # «зонированияобъекта»: the second word starts 0.25 em after the first, closer than pdfplumber's 3 pt.
+        after = 50+pdfmetrics.stringWidth(first, 'FixtureArial', 10)+2.5
+        with tempfile.TemporaryDirectory() as root:
+            titles, _ = self.titles(root, [{'images': [{'box': (50, 170, 800, 500)}],
+                                            'text': [(first, 50, 150, 10), ('объекта (аксонометрия)', after, 150, 10)]}])
+            self.assertEqual(titles, [(1, 'named', 'Схема функционального зонирования объекта (аксонометрия)')])
+
+    def test_callout_under_a_render_does_not_compete_with_its_heading(self):
+        heading = ('Материалы благоустройства. Перспективное изображение территории', 50, 128, 14)
+        with tempfile.TemporaryDirectory() as root:
+            # «спортивные площадки» stands at a leader line near the right edge, not under the picture's middle.
+            titles, _ = self.titles(root, [{'images': [{'box': (50, 170, 800, 500)}],
+                                            'text': [heading, ('спортивные площадки', 680, 672, 12)]}])
+            self.assertEqual(titles, [(1, 'named', heading[0])])
+        with tempfile.TemporaryDirectory() as root:
+            # A line under the picture's left edge is a caption of its own: a person decides.
+            titles, _ = self.titles(root, [{'images': [{'box': (50, 170, 800, 500)}],
+                                            'text': [heading, ('Условные обозначения функциональных зон', 50, 672, 12)]}])
+            self.assertEqual(titles, [(1, 'review', None)])
+
+    def test_legend_item_names_its_swatch_not_the_plan_below(self):
+        with tempfile.TemporaryDirectory() as root:
+            titles, _ = self.titles(root, [{
+                'images': [{'box': (50, 170, 500, 450), 'color': '#ff0000'},
+                           {'box': (740, 295, 80, 40), 'color': '#33aa33'},
+                           {'box': (600, 420, 250, 200), 'color': '#cc66cc'}],
+                'text': [('Перспектива участка', 50, 140, 18), ('Условные обозначения:', 600, 190, 14),
+                         ('2. Газон', 600, 302, 10)]}])
+            self.assertEqual(titles, [(1, 'named', 'Перспектива участка'), (1, 'unsigned', None)])
+
+    def test_lamp_labels_name_the_lamps_not_the_plan(self):
+        side = 'Опора контактной сети'
+        lamp = 100+pdfmetrics.stringWidth(side, 'FixtureArial', 10)+4
+        with tempfile.TemporaryDirectory() as root:
+            titles, _ = self.titles(root, [{
+                'images': [{'box': (600, 120, 150, 100), 'color': '#aa7744'},
+                           {'box': (600, 240, 250, 150), 'color': '#cc66cc'},
+                           {'box': (620, 416, 60, 70), 'color': '#777777'},
+                           {'box': (lamp, 598, 100, 120), 'color': '#555555'}],
+                'text': [('Скамейка «Энигма»', 600, 98, 10), ('Дорожный светильник', 620, 400, 10),
+                         (side, 100, 600, 10)]}])
+            # The bench keeps its label; the plan under the bench takes neither the bench label above it
+            # nor the label of the small lamp under it; the lamp described on its left is named by it.
+            self.assertEqual(titles, [(1, 'named', 'Скамейка «Энигма»'), (1, 'unsigned', None), (1, 'named', side)])
+
+    def test_table_heading_and_legend_under_a_map_do_not_name_it(self):
+        with tempfile.TemporaryDirectory() as root:
+            titles, _ = self.titles(root, [{
+                'images': [{'box': (500, 100, 400, 300), 'color': '#557799'},
+                           {'box': (500, 408, 50, 16), 'color': '#ff0000'}],
+                'text': [('подготовки проекта планировки территории', 560, 410, 9),
+                         ('Чек-лист соответствия нормативам', 600, 432, 12),
+                         ('Показатели', 610, 456, 10), ('Решение', 700, 456, 10), ('Норматив', 780, 456, 10)]}])
+            self.assertEqual(titles, [(1, 'unsigned', None)])
+
+    def test_photo_with_rectangles_but_no_plain_ground_raises_no_scan_warning(self):
+        # «Подпись на скане не распознана» on a photograph: rectangles found inside it, no ground between them.
+        with tempfile.TemporaryDirectory() as root, \
+                patch('photo_scan.photo_panels', return_value=[(0, 0, 300, 400), (300, 0, 600, 400)]):
+            titles, report = self.titles(root, [{'images': [{'box': (50, 170, 800, 500)}],
+                                                 'text': [('Фотофиксация существующего положения', 50, 140, 18)]}])
+            self.assertEqual(titles, [(1, 'named', 'Фотофиксация существующего положения')])
+            self.assertEqual(report['warnings'], [])
+            self.assertEqual(report['scan_pages'], [])
+            self.assertEqual(report['images'][0]['size'], [600, 400])
 
 
 class ShutdownRegressions(unittest.TestCase):

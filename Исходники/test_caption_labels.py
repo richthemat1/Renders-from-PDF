@@ -1,13 +1,52 @@
 """Full caption labels survive physical path shortening and real PDF edits."""
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
 from pypdf import PdfReader
 
-from photo_export import extract
+from photo_export import extract, file_stem, planned_output, safe_name
 from photo_edit import apply_edits, load_report, rename_item, restore_last_save, write_report
 from test_photos import make_pdf
+
+
+class ShortNames(unittest.TestCase):
+    """UX test 3.39, Б15: a shortened name keeps its meaning and shows that it was shortened."""
+
+    def test_result_folder_keeps_the_end_that_tells_presentations_apart(self):
+        with tempfile.TemporaryDirectory() as root:
+            # The tester's folder: about 150 characters before the result name.
+            parent = Path(root)/('п'*(150-len(str(root))-1))
+            names = [planned_output(parent/f'{stem}.pdf').name
+                     for stem in ['30.Жилой дом, улица_Артюхиной,_земельный_участок_21А', '30.Жилой дом, улица Ленина, д. 5']]
+            self.assertTrue(all(name.startswith('30.Жилой') and ' … ' in name and name.endswith(' — PDF')
+                                for name in names), names)
+            self.assertIn('21А — PDF', names[0])
+            self.assertIn('д. 5 — PDF', names[1])
+        self.assertEqual(safe_name('30.Жилой дом, улица_Артюхиной,_земельный_участок_21А', 27, keep_end=True),
+                         '30.Жилой дом … участок_21А')
+
+    def test_short_names_end_on_a_word_with_an_ellipsis(self):
+        self.assertEqual(safe_name('Архитектурно - художественное освещение фасадов здания', 16), 'Архитектурно…')
+        self.assertEqual(file_stem('Страница 003 — 001', 'Схема планировочной организации', 40), 'Страница 003 — 001 — Схема…')
+        # Room for a scrap such as «Схе» leaves the caption out: its folder and the report keep it in full.
+        self.assertEqual(file_stem('Страница 003 — 001', 'Схема планировочной организации', 25), 'Страница 003 — 001')
+        self.assertEqual(file_stem('Страница 003 — 001', 'Схема', 40), 'Страница 003 — 001 — Схема')
+
+    def test_deep_result_cuts_no_word_in_folders_and_files(self):
+        caption = 'Архитектурно-художественное освещение фасадов здания со стороны улицы'
+        with tempfile.TemporaryDirectory() as root:
+            source = make_pdf(root, [{'images': [{'box': (50, 170, 800, 500)}], 'text': [(caption, 50, 120, 14)]}])
+            output = Path(root)/('Очень длинная папка проекта '*3).strip()/'Результат с длинным именем — PDF'
+            report = extract(source, output)
+            entry = report['images'][0]
+            self.assertEqual(entry['title'], caption)
+            folder, name = Path(entry['file']).parts[-2], Path(entry['file']).stem
+            for part in (folder, re.sub(r'^Страница \d+ — \d+(?: — )?', '', name)):
+                if part:
+                    self.assertTrue(caption.startswith(part) or part.endswith('…') or ' … ' in part, part)
+            self.assertTrue(all(len(str(path)) <= 239 for path in output.rglob('*')))
 
 
 class CaptionLabels(unittest.TestCase):

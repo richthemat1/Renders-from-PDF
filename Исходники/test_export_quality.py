@@ -260,7 +260,8 @@ class ExportQuality(unittest.TestCase):
     def test_disk_folders_shorten_on_words_and_keep_full_display_names_without_hashes(self):
         caption = 'Материалы благоустройства территории и дополнительных общественных пространств второй очереди'
         self.assertEqual(clean_text('- Стеноваяпанель'), 'Стеновая панель')
-        self.assertEqual(photo_export.safe_name(caption, 28), 'Материалы благоустройства')
+        # A shortened name shows it with «…» and never ends inside a word.
+        self.assertEqual(photo_export.safe_name(caption, 28), 'Материалы благоустройства…')
         # A colon before a dash of the caption leaves one dash on the disk, not «— —».
         self.assertEqual(photo_export.safe_name('Размещение по адресу: — Фрагмент схемы'), 'Размещение по адресу — Фрагмент схемы')
         with tempfile.TemporaryDirectory() as root:

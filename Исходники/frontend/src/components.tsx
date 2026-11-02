@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, PropsWithChildren, ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, Layers3, Menu, PanelLeftClose, PanelLeftOpen, X, Check, ChevronDown, ChevronRight, ArrowLeft, LoaderCircle, Pencil, Plus, Undo2 } from "lucide-react";
 import { noticeParts } from "./api";
 import { APP_ICON_AVAILABLE } from "./app-icon.generated";
 import { DIALOG_MOTION, MENU_MOTION, TOAST_MOTION, useAnimatedOpen, useMotion, usePresence, useRefreshMotion } from "./motion";
@@ -759,10 +759,11 @@ export function StatusNote({
   children,
   busy,
   dirty = false,
-}: PropsWithChildren<{ busy?: boolean; dirty?: boolean }>) {
+  undone = false,
+}: PropsWithChildren<{ busy?: boolean; dirty?: boolean; undone?: boolean }>) {
   return (
     <span className={`status-note${dirty && !busy ? " dirty" : ""}`}>
-      {busy ? <LoaderCircle size={14} className="spin" /> : dirty ? <Pencil size={14} /> : <Check size={14} />}
+      {busy ? <LoaderCircle size={14} className="spin" /> : dirty ? <Pencil size={14} /> : undone ? <Undo2 size={14} /> : <Check size={14} />}
       {children}
     </span>
   );

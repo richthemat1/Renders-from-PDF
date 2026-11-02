@@ -23,6 +23,18 @@ class NativeBridgeTests(unittest.TestCase):
         self.bridge = NativeBridge(self.jobs, self.server, self.root / 'app.log')
         self.bridge._window = self.window
 
+    def test_closing_asks_while_a_pdf_is_processed_as_with_unsaved_edits(self):
+        from photo_desktop import close_question
+        self.assertIsNone(close_question(False, False))
+        title, text = close_question(True, False)
+        self.assertEqual(title, 'Идёт обработка PDF')
+        self.assertIn('остановить обработку', text)
+        self.assertEqual(close_question(False, True)[0], 'Есть несохранённые изменения')
+        # Both at once: one question that names both losses.
+        both = close_question(True, True)[1]
+        self.assertIn('Обработка остановится', both)
+        self.assertIn('несохранённые правки', both)
+
     def test_cancelled_dialog_does_not_start_a_queue(self):
         self.window.create_file_dialog.return_value = None
         snapshot = self.bridge.choose_pdfs()

@@ -72,7 +72,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertEqual({key: value for key, value in job.items() if key != 'outputs'}, {
             'outcome': 'processing', 'total': 2, 'completed': 1, 'failed': 0,
             'warnings': 0, 'errors': 0,
-            'active_file': {'name': second.name, 'index': 2, 'total': 2},
+            'active_file': {'name': second.name, 'index': 2, 'total': 2}, 'remaining': 0,
         })
         self.assertEqual(len(job['outputs']), 1)
         self.assertGreater(snapshot['progress'], 50)
@@ -100,7 +100,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         snapshot = self.finish()
         job = self.job(snapshot)
         self.assertEqual({key: value for key, value in job.items() if key not in ('active_file', 'outputs')}, {
-            'outcome': 'complete', 'total': 2, 'completed': 2, 'failed': 0, 'warnings': 0, 'errors': 0,
+            'outcome': 'complete', 'total': 2, 'completed': 2, 'failed': 0, 'warnings': 0, 'errors': 0, 'remaining': 0,
         })
         # Each file of the batch keeps its own result folder, in queue order; the last one is current.
         sources = {item['output']: item['source'] for item in snapshot['history']}
@@ -135,7 +135,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         current = self.job()
         self.assertEqual({key: value for key, value in current.items() if key != 'active_file'}, {
             'outcome': 'processing', 'total': 1, 'completed': 0, 'failed': 0, 'warnings': 0, 'errors': 0,
-            'outputs': [],
+            'outputs': [], 'remaining': 0,
         })
         release.set()
         self.assertEqual(self.job(self.finish())['outcome'], 'complete')
@@ -212,7 +212,7 @@ class ProcessingJobStateTests(unittest.TestCase):
             self.assertEqual(self.job(), {
                 'outcome': 'processing', 'total': 2, 'completed': 0, 'failed': 1,
                 'warnings': 0, 'errors': 0,
-                'active_file': {'name': valid.name, 'index': 1, 'total': 1}, 'outputs': [],
+                'active_file': {'name': valid.name, 'index': 1, 'total': 1}, 'outputs': [], 'remaining': 0,
             })
             release.set()
             snapshot = self.finish()
@@ -227,7 +227,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertFalse(snapshot['has_job'])
         self.assertEqual(self.job(snapshot), {
             'outcome': 'failed', 'total': 1, 'completed': 0, 'failed': 1,
-            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [],
+            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0,
         })
 
     def test_preflight_failure_after_success_resets_stale_result_and_totals(self):
@@ -243,7 +243,7 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertTrue(failed['has_job'])
         self.assertEqual(self.job(failed), {
             'outcome': 'failed', 'total': 1, 'completed': 0, 'failed': 1,
-            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [],
+            'warnings': 0, 'errors': 0, 'active_file': None, 'outputs': [], 'remaining': 0,
         })
 
     def test_cancellation_before_first_success_has_cancelled_metadata(self):
@@ -276,7 +276,22 @@ class ProcessingJobStateTests(unittest.TestCase):
         self.assertEqual(len(snapshot['history']), 1)
         self.assertEqual(snapshot['history'][0]['source'], str(first))
         self.assertEqual(snapshot['current_output'], snapshot['history'][0]['output'])
-        self.assertEqual(snapshot['progress'], 0)
+        # «Готово файлов: 1 из 2» stands beside 50 %, not beside an empty bar.
+        self.assertEqual(snapshot['progress'], 50)
+        self.assertEqual(job['remaining'], 1)
+        self.assertEqual(snapshot['logs'][-1]['text'][:15], 'Остановлено за ')
+        # The file stopped halfway goes on without a new selection or a question about duplicates.
+        self.jobs.extractor = extract
+        resumed = self.jobs.resume()
+        self.assertTrue(resumed['busy'])
+        self.assertIsNone(resumed['pending_repeat'])
+        done = self.finish()
+        self.assertEqual((self.job(done)['outcome'], self.job(done)['total'], self.job(done)['remaining']), ('complete', 1, 0))
+        self.assertEqual({item['source'] for item in done['history']}, {str(first), str(second)})
+        # Events of the earlier queue went with it.
+        self.assertFalse(any(item['text'].startswith('Файл 1 из 2') for item in done['logs']))
+        with self.assertRaises(ValueError):
+            self.jobs.resume()
 
     def test_duplicate_prompt_and_cancelling_it_preserve_completed_metadata(self):
         source = self.source()

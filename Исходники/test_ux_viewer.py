@@ -66,6 +66,24 @@ class ViewerUX(unittest.TestCase):
         self.assertFalse(report['images'][0].get('removed'))
         self.assertEqual(report['revision'], 2)
 
+    def test_undo_save_from_the_menu_asks_first_and_says_it_was_undone(self):
+        self.edit()
+        self.card(0).get_by_role('checkbox').check()
+        self.page.keyboard.press('Delete')
+        self.save()
+        self.page.get_by_role('button', name='Ещё', exact=True).click()
+        self.page.get_by_role('menuitem', name='Отменить последнее сохранение', exact=True).click()
+        dialog = self.page.get_by_role('dialog', name='Отменить последнее сохранение?')
+        dialog.get_by_role('button', name='Оставить как есть', exact=True).click()
+        expect(dialog).to_have_count(0)
+        self.assertEqual(load_report(self.output)['revision'], 1)
+        self.page.get_by_role('button', name='Ещё', exact=True).click()
+        self.page.get_by_role('menuitem', name='Отменить последнее сохранение', exact=True).click()
+        dialog.get_by_role('button', name='Отменить сохранение', exact=True).click()
+        expect(self.page.locator('.asset-card')).to_have_count(4)
+        expect(self.page.locator('.status-note')).to_have_text('Сохранение отменено')
+        self.assertFalse(load_report(self.output)['images'][0].get('removed'))
+
     def test_readable_warning_can_reveal_related_card(self):
         report = load_report(self.output)
         report['warnings'] = [{'page': 3, 'reason': 'OCR: fixture error'}]
@@ -145,7 +163,7 @@ class ViewerUX(unittest.TestCase):
         navigation = self.page.locator('nav')
         navigation.get_by_role('button', name='Западный двор 1', exact=True).click()
         expect(self.page.get_by_role('group', name='Фильтр по статусу')).to_have_count(0)
-        self.page.get_by_role('button', name='Переименовать группу', exact=True).click()
+        self.page.get_by_role('button', name='Переименовать подпись', exact=True).click()
         self.page.get_by_label('Новое имя').fill('Западный двор — проверено')
         self.page.get_by_role('button', name='Переименовать', exact=True).click()
         expect(self.page.locator('.library-header h2')).to_have_text('Западный двор — проверено')

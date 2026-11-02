@@ -153,6 +153,36 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(Path(previous['output']).is_dir())
         self.assertIsNone(repeated['pending_repeat'])
 
+    def test_mixed_selection_names_its_new_files_and_can_process_only_them(self):
+        done = self.source(name='Готовый')
+        self.jobs.start([done])
+        previous = self.finish()['history'][0]
+        fresh = self.source(name='Новый')
+        pending = self.jobs.prepare([fresh, done])['pending_repeat']
+        # The question about the processed file says what happens to the new one.
+        self.assertEqual([item['name'] for item in pending['files']], [done.name])
+        self.assertEqual(pending['new'], [fresh.name])
+        server = self.server()
+        self.assertEqual(self.request(server, 'jobs/confirm', {'token': pending['token'], 'proceed': 'all'})[0], 400)
+        status, started = self.request(server, 'jobs/confirm', {'token': pending['token'], 'proceed': 'new'})
+        self.assertEqual(status, 200)
+        self.assertEqual(started['job']['total'], 1)
+        finished = self.finish()
+        self.assertEqual(sorted(item['source'] for item in finished['history']), sorted([str(done), str(fresh)]))
+        # The processed file kept its one result: nothing was made again.
+        self.assertEqual([item['output'] for item in finished['history'] if item['source'] == str(done)], [previous['output']])
+        # Only files processed before: «только новые» has nothing to do.
+        again = self.jobs.prepare([done])['pending_repeat']
+        self.assertEqual(again['new'], [])
+        self.assertFalse(self.jobs.confirm_repeat(again['token'], 'new')['busy'])
+
+    def test_resume_takes_no_payload_and_needs_a_stopped_queue(self):
+        server = self.server()
+        self.assertEqual(self.request(server, 'jobs/resume', {'paths': ['C:/x.pdf']})[0], 400)
+        status, error = self.request(server, 'jobs/resume', {})
+        self.assertEqual(status, 400)
+        self.assertIn('Нет файлов', error['error'])
+
     def test_forget_removes_only_history_and_stale_settings_do_not_resurrect_it(self):
         self.jobs.start([self.source()])
         record = self.finish()['history'][0]

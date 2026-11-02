@@ -139,6 +139,28 @@ class AppUX(unittest.TestCase):
         self.assertFalse(self.jobs.snapshot()['busy'])
         self.assertIsNone(self.jobs.snapshot()['pending_repeat'])
 
+    def test_mixed_selection_names_new_files_and_opens_the_old_result_while_they_are_processed(self):
+        from test_photos import make_pdf
+        (self.root / 'новый').mkdir()
+        fresh = make_pdf(self.root / 'новый', [{'images': [{'box': (50, 170, 800, 500), 'color': '#c8b4d8'}],
+                                                 'text': [('Вариант 1. Новый двор', 50, 120, 18)]}])
+        self.jobs.prepare([fresh, self.report['source']])
+        dialog = self.page.get_by_role('dialog', name='Часть PDF уже обработана')
+        expect(dialog).to_be_visible(timeout=5000)
+        expect(dialog).to_contain_text(fresh.name)
+        expect(dialog).to_contain_text('Новый — ещё не обработан')
+        expect(dialog.get_by_role('button', name='Обработать только новые', exact=True)).to_be_visible()
+        expect(dialog.get_by_role('button', name='Обработать все заново', exact=True)).to_be_visible()
+        # The old result opens, and the new PDF is not dropped: it is processed meanwhile.
+        dialog.get_by_role('button', name='Открыть прошлый и обработать новые', exact=True).click()
+        expect(dialog).to_have_count(0)
+        expect(self.page.locator('.asset-card')).to_have_count(4)
+        finished = self.jobs.wait(15)
+        self.assertEqual(finished['job']['total'], 1)
+        self.assertIn(str(fresh.resolve()), [item['source'] for item in finished['history']])
+        self.assertEqual(len(finished['history']), 2)
+        self.assertEqual(self.errors, [])
+
     def test_failed_files_are_visible_with_retry_and_forget_actions(self):
         def failing(*args, **kwargs):
             raise ValueError('Проверочная ошибка PDF')

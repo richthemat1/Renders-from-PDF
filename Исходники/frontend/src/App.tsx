@@ -43,6 +43,9 @@ export function App() {
   );
   const [waiting, setWaiting] = useState(false);
   const [help, setHelp] = useState<HelpTopic | null>(null);
+  // «Как пользоваться» in the menu of a result opens the section about the part of it on screen.
+  const helpTopic = useRef<HelpTopic>("review");
+  const trackHelpTopic = useCallback((topic: HelpTopic) => { helpTopic.current = topic; }, []);
   const [fileDrag, setFileDrag] = useState(false);
   const [, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -111,7 +114,8 @@ export function App() {
   }, []);
   useEffect(() => {
     if (!notice || notice.error) return;
-    const timer = setTimeout(() => setNotice(null), 6500);
+    // A notice with an action, such as «Отменить сохранение», stays long enough to reach for it.
+    const timer = setTimeout(() => setNotice(null), notice.action ? 20000 : 6500);
     return () => clearTimeout(timer);
   }, [notice]);
   const notify = useCallback(
@@ -328,7 +332,7 @@ export function App() {
           Настройки
         </span>
       </button>
-      <button className="project-link" title="Как пользоваться" onClick={() => setHelp("start")}>
+      <button className="project-link" title="Как пользоваться" onClick={() => setHelp(page === "viewer" ? helpTopic.current : "start")}>
         <span>
           <CircleHelp size={17} />
           Как пользоваться
@@ -386,35 +390,42 @@ export function App() {
           </div>
         </Dialog>
       )}</Presence>
-      <Presence>{state?.pending_repeat && <Dialog title={state.pending_repeat.files.length === 1 ? "Этот PDF уже обработан" : "Эти PDF уже обработаны"}
-        busy={waiting} onClose={() => {
-          const token = state.pending_repeat!.token;
-          void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
-        }}>
-        <p>Можно открыть прежний результат или создать новую выгрузку. Уже готовые папки сохранятся.</p>
-        <ul className="repeat-list">{state.pending_repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>{dateLabel(file.finished_at)}</span></li>)}</ul>
-        <div className="dialog-choices">
-          <button className="btn primary" disabled={waiting} onClick={() => {
-            const token = state.pending_repeat!.token;
-            void run(async () => { setState(await request<Snapshot>("jobs/confirm", {token, proceed:true})); setPage("work"); });
-          }}>Обработать заново</button>
-          <div className="dialog-alternatives">
-            {state.pending_repeat.files.some(file => file.available) && <button className="btn secondary" disabled={waiting} onClick={() => {
-              const previous = state.pending_repeat!.files.find(file => file.available)!;
-              const token = state.pending_repeat!.token;
-              void run(async () => {
-                setState(await request<Snapshot>("jobs/confirm", {token, proceed:false}));
-                const next = await request<Result>("open", {id:previous.previous_id});
-                setResult(next); setPage("viewer");
-              });
-            }}>Открыть прошлый результат</button>}
-            <button className={`btn ${state.pending_repeat.files.some(file => file.available) ? "quiet-text" : "secondary"}`} disabled={waiting} onClick={() => {
-              const token = state.pending_repeat!.token;
-              void run(async () => setState(await request<Snapshot>("jobs/confirm", {token, proceed:false})));
-            }}>Отмена</button>
+      <Presence>{state?.pending_repeat && (() => {
+        const repeat = state.pending_repeat;
+        // Files of the same selection never processed: no choice about the old ones may drop them silently.
+        const fresh = repeat.new ?? [];
+        const confirm = (proceed: boolean | "new") => request<Snapshot>("jobs/confirm", { token: repeat.token, proceed });
+        const previous = repeat.files.find((file) => file.available);
+        return <Dialog title={fresh.length ? "Часть PDF уже обработана" : repeat.files.length === 1 ? "Этот PDF уже обработан" : "Эти PDF уже обработаны"}
+          busy={waiting} onClose={() => void run(async () => setState(await confirm(false)))}>
+          <p>{fresh.length
+            ? `Новые PDF (${fresh.length}) можно обработать сразу. Для уже обработанных — открыть прежний результат или сделать новую выгрузку; готовые папки сохранятся.`
+            : "Можно открыть прежний результат или создать новую выгрузку. Уже готовые папки сохранятся."}</p>
+          <ul className="repeat-list">
+            {repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>Обработан {dateLabel(file.finished_at)}</span></li>)}
+            {fresh.map((name, index) => <li key={`new-${index}`} className="is-new"><strong>{name}</strong><span>Новый — ещё не обработан</span></li>)}
+          </ul>
+          <div className="dialog-choices">
+            {fresh.length ? <button className="btn primary" disabled={waiting} onClick={() =>
+              void run(async () => { setState(await confirm("new")); setPage("work"); })}>Обработать только новые</button>
+              : <button className="btn primary" disabled={waiting} onClick={() =>
+                void run(async () => { setState(await confirm(true)); setPage("work"); })}>Обработать заново</button>}
+            <div className="dialog-alternatives">
+              {!!fresh.length && <button className="btn secondary" disabled={waiting} onClick={() =>
+                void run(async () => { setState(await confirm(true)); setPage("work"); })}>Обработать все заново</button>}
+              {previous && <button className="btn secondary" disabled={waiting}
+                title={fresh.length ? "Новые PDF обработаются, пока вы смотрите прежний результат" : undefined} onClick={() =>
+                  void run(async () => {
+                    setState(await confirm(fresh.length ? "new" : false));
+                    const next = await request<Result>("open", { id: previous.previous_id });
+                    setResult(next); setPage("viewer");
+                  })}>{fresh.length ? "Открыть прошлый и обработать новые" : "Открыть прошлый результат"}</button>}
+              <button className={`btn ${previous || fresh.length ? "quiet-text" : "secondary"}`} disabled={waiting}
+                onClick={() => void run(async () => setState(await confirm(false)))}>Отмена</button>
+            </div>
           </div>
-        </div>
-      </Dialog>}</Presence>
+        </Dialog>;
+      })()}</Presence>
       <Presence>{help && <HelpDialog topic={help} onClose={() => setHelp(null)}
         onOpenGuide={() => void run(async () => { await native("open_help"); })} />}</Presence>
     </>
@@ -432,6 +443,7 @@ export function App() {
           onBack={() => navigate("history")}
           onSaveReady={registerSave}
           onHelp={setHelp}
+          onHelpTopic={trackHelpTopic}
         />
         {chrome}
       </>
@@ -474,6 +486,7 @@ export function App() {
                 <ProcessingPage state={state} waiting={waiting} fileDrag={fileDrag}
                   onChoose={choose} onPrevious={previous}
                   onCancel={() => void run(async () => setState(await request<Snapshot>("cancel", {})))}
+                  onResume={() => void run(async () => setState(await request<Snapshot>("jobs/resume", {})))}
                   onSettings={() => navigate("settings")}
                   onOpenResult={() => {
                     const output = state.current_output?.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase();

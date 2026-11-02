@@ -240,6 +240,32 @@ class ProcessingPageUI(unittest.TestCase):
         expect(panel).to_be_visible()
         expect(panel).not_to_contain_text('Материалы готовы')
         expect(panel).to_contain_text(first.name)
+        # One of two files saved: half the bar, not an empty one beside «Готово файлов: 1 из 2».
+        expect(panel.locator('.processing-progress-label strong')).to_have_text('50%')
+        expect(panel.get_by_role('button', name='Продолжить оставшиеся (1)', exact=True)).to_be_visible()
         self.page.get_by_role('button', name='Открыть сохранённый результат', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(1)
+        self.assertEqual(self.errors, [])
+
+    def test_stopped_queue_goes_on_with_the_files_it_did_not_reach(self):
+        first, second = self.source('Первый PDF'), self.source('Второй PDF')
+        entered, release = self.block(second)
+        self.jobs.start([first, second])
+        self.assertTrue(entered.wait(15))
+        try:
+            self.page.get_by_role('button', name='Остановить обработку', exact=True).click()
+            self.assertTrue(self.jobs.snapshot()['cancelling'])
+        finally:
+            release.set()
+            self.jobs.wait(15)
+        events = self.page.get_by_role('region', name='События обработки')
+        expect(events).to_contain_text('Остановлено за')
+        self.page.get_by_role('button', name='Продолжить оставшиеся (1)', exact=True).click()
+        finished = self.jobs.wait(15)
+        self.assertEqual((finished['job']['outcome'], finished['job']['total']), ('complete', 1))
+        expect(self.page.locator('.job-panel[data-outcome="complete"]')).to_be_visible()
+        # The events of the stopped queue went with it.
+        expect(events).not_to_contain_text('Остановлено за')
+        expect(events).to_contain_text(second.name)
+        self.assertEqual(len(finished['history']), 2)
         self.assertEqual(self.errors, [])

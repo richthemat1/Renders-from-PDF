@@ -226,7 +226,8 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
       </Step>
       <Step n={3} title="Сохраните">
         <Ui>Сохранить</Ui> или <Keys keys={["Ctrl", "S"]} /> записывает PDF вариантов, прежние версии уходят в
-        резервные копии. <Keys keys={["Ctrl", "Z"]} /> отменяет шаг, <Ui>Сбросить</Ui> — все несохранённые правки.
+        резервные копии. <Keys keys={["Ctrl", "Z"]} /> отменяет шаг, <Keys keys={["Ctrl", "Y"]} /> повторяет его,{" "}
+        <Ui>Сбросить</Ui> — все несохранённые правки.
       </Step>
     </ol>
     <section className="help-group">
@@ -416,6 +417,7 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
           <div><dt>Снять всё выделение</dt><dd><Keys keys={["Esc"]} /></dd></div>
           <div><dt>Убрать выбранные</dt><dd><Keys keys={["Delete"]} /></dd></div>
           <div><dt>Отменить шаг</dt><dd><Keys keys={["Ctrl", "Z"]} /></dd></div>
+          <div><dt>Повторить отменённый шаг</dt><dd><Keys keys={["Ctrl", "Y"]} /> или <Keys keys={["Ctrl", "Shift", "Z"]} /></dd></div>
           <div><dt>Сохранить</dt><dd><Keys keys={["Ctrl", "S"]} /></dd></div>
         </dl>
       </section>
