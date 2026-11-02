@@ -41,6 +41,41 @@ def enable_dpi_awareness():
             pass
 
 
+def clipboard_text():
+    """The text on the Windows clipboard, or '' when it holds none or another program keeps it open."""
+    if sys.platform != 'win32':
+        return ''
+    import ctypes
+    from ctypes import wintypes
+    import time
+    user32, kernel32 = ctypes.WinDLL('user32'), ctypes.WinDLL('kernel32')
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    CF_UNICODETEXT = 13
+    # Another program may hold the clipboard for a moment while it writes.
+    for _ in range(5):
+        if user32.OpenClipboard(None):
+            break
+        time.sleep(0.02)
+    else:
+        return ''
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        pointer = kernel32.GlobalLock(handle) if handle else None
+        if not pointer:
+            return ''
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
 def app_icon_path():
     base = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
     icon = base / 'assets' / 'app-icon.ico'

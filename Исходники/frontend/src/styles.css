@@ -1529,6 +1529,29 @@ fieldset {
   font-size: var(--text-small);
   line-height: 20px;
 }
+/* Context menus (contextMenu.tsx): the «Ещё» menu at the pointer, opaque like every menu since the 3.21 review. */
+.context-menu {
+  width: max-content;
+  min-width: 232px;
+  max-width: min(340px, calc(100vw - 32px));
+}
+.context-menu .action-menu-heading {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* What the open menu acts on: a card outside the selection is not selected, it is only ringed. */
+.asset-card[data-context-target]:not(.selected-card),
+.collage-card[data-context-target],
+.history-card[data-context-target],
+.processing-history-row[data-context-target] {
+  outline: 2px solid #8190f0;
+  outline-offset: 2px;
+}
+.project-link[data-context-target] {
+  outline: 2px solid #8190f0;
+  outline-offset: -2px;
+}
 .action-menu > button.menu-separated {
   margin-top: 4px;
   border-top: 1px solid #dcdde5;
@@ -2170,6 +2193,52 @@ kbd,
 .edit-panel.is-floating {
   border-color: #bcb8ce;
   box-shadow: 0 8px 32px #24233733;
+}
+/* Liquid glass (glass.tsx): the gallery bends at the rim of the floating dock, a light rim catches the light.
+   The white is denser than in a pure glass so the dock's 12–13px text stays readable over captions;
+   the blur above remains while the map is drawn and where the SVG filter is not supported. */
+.edit-panel.is-floating[data-glass="liquid"] {
+  border-color: #bcb8ce99;
+  background: #ffffff9e;
+  backdrop-filter: var(--liquid-glass);
+  box-shadow:
+    inset 1.5px 1.5px 0 -0.5px #fffffff2,
+    inset -1px -1px 0 -0.5px #ffffffb3,
+    inset 0 0 18px #ffffff40,
+    0 8px 32px #24233733;
+}
+.edit-panel.is-floating[data-glass="liquid"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #fff 0%, #fff0 30%, #fff0 70%, #ffffffb3 100%);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+.liquid-glass-filter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+/* Windows «Эффекты прозрачности» off: a plain white dock, neither glass nor blur. */
+@media (prefers-reduced-transparency: reduce) {
+  .edit-panel.is-floating,
+  .edit-panel.is-floating[data-glass="liquid"] {
+    border-color: #bcb8ce;
+    background: #fff;
+    backdrop-filter: none;
+  }
+  .edit-panel.is-floating[data-glass="liquid"]::before {
+    content: none;
+  }
+}
+@media (forced-colors: active) {
+  .edit-panel.is-floating[data-glass="liquid"] {
+    backdrop-filter: none;
+  }
 }
 .setting-option:hover:not(:has(input:disabled)) {
   background: #f5f6ff;

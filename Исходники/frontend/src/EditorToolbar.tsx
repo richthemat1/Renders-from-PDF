@@ -5,7 +5,12 @@ import {
 } from "lucide-react";
 import { ActionMenu } from "./components";
 import type { ActionMenuItem } from "./components";
+import { useLiquidGlass } from "./glass";
+import type { GlassShape } from "./glass";
 import { DOCK_MOTION, useMotion, usePresence } from "./motion";
+
+/** The floating dock's glass: its 18px corners, a rim that bends over 22px and shifts the gallery by up to 60px. */
+const DOCK_GLASS: GlassShape = { radius: 18, bezel: 22, scale: 60 };
 
 interface Props {
   selected: number;
@@ -65,6 +70,8 @@ export function EditorToolbar(props: Props) {
   // so the gallery does not wait under an empty space.
   const presence = usePresence();
   useMotion(panel, presence.show, floating ? DOCK_MOTION : { ...DOCK_MOTION, exit: 0 }, presence.exited);
+  // Only the floating dock is glass: the gallery moves under it, the inline panel sits on the page.
+  const glass = useLiquidGlass(panel, floating, DOCK_GLASS);
   useLayoutEffect(() => {
     const element = panel.current!;
     const measure = () => {
@@ -234,6 +241,7 @@ export function EditorToolbar(props: Props) {
           </div>}
         </section>
       </div>
+      {glass}
     </>
   );
 }

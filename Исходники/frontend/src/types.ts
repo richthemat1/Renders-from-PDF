@@ -211,6 +211,7 @@ export interface NativeApi {
   open_help(): Promise<boolean>;
   open_history_folder(id: string): Promise<boolean>;
   relocate_result(id: string): Promise<Result | null>;
+  clipboard_text(): Promise<string>;
 }
 declare global {
   interface Window {

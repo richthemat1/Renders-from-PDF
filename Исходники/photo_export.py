@@ -43,7 +43,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.40'
+VERSION = '3.41'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'

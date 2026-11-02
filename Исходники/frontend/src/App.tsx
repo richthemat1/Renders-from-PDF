@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   ArrowRight,
   Check,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { dateLabel, errorText, native, request } from "./api";
 import { Dialog, Empty, Shell, Toast } from "./components";
+import { useContextMenu, useTextFieldMenu } from "./contextMenu";
 import { BANNER_MOTION, MotionDiv, Presence } from "./motion";
 import type { HistoryItem, Notice, ProcessingFailure, Result, Snapshot } from "./types";
 import { Viewer } from "./Viewer";
@@ -43,6 +45,8 @@ export function App() {
   );
   const [waiting, setWaiting] = useState(false);
   const [help, setHelp] = useState<HelpTopic | null>(null);
+  const historyMenu = useContextMenu();
+  const textMenu = useTextFieldMenu();
   // «Как пользоваться» in the menu of a result opens the section about the part of it on screen.
   const helpTopic = useRef<HelpTopic>("review");
   const trackHelpTopic = useCallback((topic: HelpTopic) => { helpTopic.current = topic; }, []);
@@ -250,9 +254,27 @@ export function App() {
       </article>)}
     </section>;
   }
+  /** A processed PDF in the history or among the latest results: the same actions as the buttons of its card. */
+  function openHistoryMenu(event: ReactMouseEvent, item: HistoryItem) {
+    historyMenu.open(event, {
+      heading: item.name,
+      items: [
+        { value: "open", label: "Открыть результат", icon: <ArrowRight size={16} />, disabled: waiting || !item.available },
+        item.available
+          ? { value: "folder", label: "Открыть папку результата", icon: <FolderOpen size={16} />, disabled: waiting }
+          : { value: "relocate", label: "Указать папку…", icon: <FolderOpen size={16} />, disabled: waiting || !!state?.busy },
+        { value: "repeat", label: "Обработать заново", icon: <RotateCcw size={16} />, disabled: waiting || !!state?.busy },
+        { value: "forget", label: "Убрать из истории", icon: <Trash2 size={16} />, danger: true, separator: true, disabled: waiting },
+      ],
+      onAction(value) {
+        if (value === "open") void openHistory(item.id);
+        else historyAction(item, value as "folder" | "repeat" | "relocate" | "forget");
+      },
+    });
+  }
   function historyRow(item: HistoryItem) {
     const repeats = (state?.history ?? []).filter((other) => other.source.replaceAll("\\", "/").toLocaleLowerCase() === item.source.replaceAll("\\", "/").toLocaleLowerCase()).length > 1;
-    return <article className="history-entry history-card" key={item.id}>
+    return <article className="history-entry history-card" key={item.id} onContextMenu={(event) => openHistoryMenu(event, item)}>
       <button className="history-row history-card-main" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
         <span className="history-card-top">
           <span className="file-icon"><FileText size={21} /></span>
@@ -343,6 +365,8 @@ export function App() {
   const footer = <>{workNavigation}{appUtilities}</>;
   const chrome = (
     <>
+      {historyMenu.menu}
+      {textMenu}
       <Presence>{connection && (
         <MotionDiv motion={BANNER_MOTION} className="connection" role="alert">
           <AlertTriangle size={16} />
@@ -497,6 +521,7 @@ export function App() {
                   }}
                   onHistory={() => navigate("history")}
                   onOpenHistory={(item) => void openHistory(item.id)}
+                  onHistoryMenu={openHistoryMenu}
                   failures={failureList(state.failures ?? [])}
                 />
               )}

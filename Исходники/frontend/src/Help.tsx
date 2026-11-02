@@ -190,6 +190,9 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
     <Note>
       <li>Предупреждения и подробности распознавания текста появляются на панели проверки, только если они есть.</li>
       <li>Для исходной страницы нужен первоначальный PDF на прежнем месте.</li>
+      <li>Правая кнопка мыши на карточке — <Ui>Посмотреть в оригинале</Ui> сразу открывает слайд, откуда взята
+        картинка. На вариантах в меню, строках истории и карточках склеек и вырезок правая кнопка показывает те же
+        действия, что кнопки рядом.</li>
     </Note>
     <Next to="edit" go={go} />
   </>,
@@ -406,6 +409,7 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
           <div><dt>Выбрать PDF</dt><dd><Keys keys={["Ctrl", "O"]} /></dd></div>
           <div><dt>Поиск по результату</dt><dd><Keys keys={["Ctrl", "K"]} /></dd></div>
           <div><dt>Закрыть окно</dt><dd><Keys keys={["Esc"]} /></dd></div>
+          <div><dt>Меню действий (как правой кнопкой мыши)</dt><dd><Keys keys={["Shift", "F10"]} /></dd></div>
         </dl>
       </section>
       <section className="help-group">

@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import {
+  ArrowDown,
+  ArrowDownToLine,
   ArrowLeft,
+  ArrowUp,
   ArrowUpRight,
+  ArrowUpToLine,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardCopy,
   Clock3,
   Copy,
+  CopyCheck,
   Crop,
   FileText,
+  FolderInput,
   FolderOpen,
   GripVertical,
   ImageOff,
@@ -18,6 +25,8 @@ import {
   Info,
   Layers2,
   Layers3,
+  ListChecks,
+  Maximize2,
   Minus,
   LoaderCircle,
   Pencil,
@@ -36,6 +45,8 @@ import {
 } from "lucide-react";
 import { ApiError, errorText, fileUrl, native, plural, request } from "./api";
 import { ActionMenu, Dialog, Empty, NewVariantDialog, Select, Shell, StatusNote, VariantSuggestions } from "./components";
+import type { ActionMenuItem } from "./components";
+import { useContextMenu } from "./contextMenu";
 import type { HelpTopic } from "./Help";
 import {
   boxRect,
@@ -133,7 +144,8 @@ export function Viewer({
   const [confirmUndoSave, setConfirmUndoSave] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [rename, setRename] = useState<Rename | null>(null);
-  const [newVariant, setNewVariant] = useState(false);
+  /** The images «Новый вариант…» moves: the selection, or one card from its context menu. */
+  const [newVariant, setNewVariant] = useState<number[] | null>(null);
   const [cutting, setCutting] = useState<CollageView | null>(null);
   const [cutoutEditor, setCutoutEditor] = useState<{ page: number; picture?: number } | null>(null);
   const [copying, setCopying] = useState<{ ids: number[]; whole: boolean } | null>(null);
@@ -509,10 +521,11 @@ export function Viewer({
     else setSelected((ids) => (ids.length === 1 && ids[0] === id ? [] : [id]));
     anchor.current = id;
   }
-  function change(edit: Parameters<typeof editDraft>[1]) {
+  /** `keepSelection`: a card's context menu acted on that card alone, the selection was not part of it. */
+  function change(edit: Parameters<typeof editDraft>[1], keepSelection = false) {
     try {
       setDraft((previous) => editDraft(previous, edit));
-      setSelected([]);
+      if (!keepSelection) setSelected([]);
     } catch (error) {
       notify(errorText(error), true);
     }
@@ -522,9 +535,9 @@ export function Viewer({
       change({ type: "move", ids, target, before });
     }
   }
-  function reorder(direction: -1 | 1) {
-    if (selected.length !== 1) return;
-    const id = selected[0],
+  function reorder(direction: -1 | 1, ids = selected) {
+    if (ids.length !== 1) return;
+    const id = ids[0],
       key = draftVariant(draft, id);
     if (key === null) return;
     const members = draft.variants[String(key)],
@@ -760,8 +773,10 @@ export function Viewer({
     const image = event.currentTarget;
     setPreviewNatural({ key: previewKey, width: image.naturalWidth, height: image.naturalHeight });
   }
-  function showPreview(id: number) {
-    setSourcePage(false);
+  /** `source` opens on the page of the original PDF, as «Исходная страница» inside the preview does. */
+  function showPreview(id: number, source = false) {
+    if (source) setSourcePreview({ key: "" });
+    setSourcePage(source);
     setPreviewOrder(visibleIds);
     setPreview(id);
   }
@@ -828,6 +843,177 @@ export function Viewer({
     else if (filter.startsWith("folder:"))
       setRename({ kind: "folder", target: filter.slice(7), name: activeTitle });
   }
+  function renameFile(id: number) {
+    setRename({
+      kind: "file",
+      target: id,
+      name: allRows[id].image.file.replaceAll("\\", "/").split("/").at(-1)?.replace(/\.pdf$/i, "") || "",
+    });
+  }
+  function copyCaption(text: string) {
+    navigator.clipboard.writeText(text).then(() => notify("Подпись скопирована."),
+      () => notify("Не удалось скопировать подпись.", true));
+  }
+  // The right button offers what the card, the menu and the preview already have as buttons, nothing of its own.
+  const context = useContextMenu();
+  /** A selected card speaks for the whole selection; another card only for itself, and the selection stays. */
+  function openCardMenu(event: MouseEvent, id: number) {
+    if (drag) return;
+    const ids = selected.includes(id) ? selected : [id];
+    const single = ids.length === 1;
+    const row = allRows[id];
+    const active = ids.filter((value) => !removedSet.has(value));
+    const removedIds = ids.filter((value) => removedSet.has(value));
+    const key = single ? draftVariant(draft, id) : null;
+    const members = key === null ? [] : draft.variants[String(key)];
+    const position = members.indexOf(id);
+    const homes = new Set(active.map((value) => draftVariant(draft, value)));
+    const sizes = new Set(active.map(sizeKey).filter(Boolean));
+    const same = sizes.size
+      ? rows.filter((other) => !removedSet.has(other.id) && !ids.includes(other.id) && sizes.has(sizeKey(other.id))).map((other) => other.id)
+      : [];
+    const collage = removedSet.has(id) ? undefined : collageOf(id);
+    const keep = !selected.includes(id);
+    const items: ActionMenuItem[] = [
+      { value: "preview", label: "Просмотреть", icon: <Maximize2 size={16} />, disabled: !single },
+      { value: "source", label: `Посмотреть в оригинале · стр. ${row.image.page}`, icon: <Scan size={16} />, disabled: !single },
+      { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />,
+        disabled: !single || removedSet.has(id) || !!row.image.removed },
+      { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} />, disabled: !single },
+    ];
+    if (editing) items.push(
+      { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true,
+        disabled: saving || !active.length,
+        children: [...variants.map((variant) => ({ value: `move:${variant}`, label: variantLabel(labelled, variant) })),
+          { value: "move:return-to-misc", label: "Вернуть в папку подписи / Все остальное", separator: true,
+            disabled: !active.some((value) => draftVariant(draft, value) !== null) }] },
+      { value: "new", label: "Новый вариант…", icon: <Plus size={16} />, disabled: saving || !active.length },
+      { value: "copy", label: active.length > 1 ? "Создать копии" : "Создать копию", icon: <Copy size={16} />,
+        disabled: saving || !active.length },
+      { value: "same", label: same.length ? `Выбрать такие же по размеру (${same.length})` : "Выбрать такие же по размеру",
+        icon: <CopyCheck size={16} />, disabled: saving || !same.length },
+      { value: "up", label: "Раньше в варианте", icon: <ArrowUp size={16} />, separator: true,
+        disabled: saving || !single || position <= 0 },
+      { value: "down", label: "Позже в варианте", icon: <ArrowDown size={16} />,
+        disabled: saving || !single || position < 0 || position >= members.length - 1 },
+      { value: "start", label: "В начало варианта", icon: <ArrowUpToLine size={16} />,
+        disabled: saving || !active.length || homes.size !== 1 || homes.has(null) },
+      { value: "end", label: "В конец варианта", icon: <ArrowDownToLine size={16} />,
+        disabled: saving || !active.length || homes.size !== 1 || homes.has(null) },
+    );
+    if (editing && single && row.variant === null && !removedSet.has(id))
+      items.push({ value: "rename", label: "Переименовать PDF…", icon: <Pencil size={16} />, separator: true,
+        disabled: dirty || saving });
+    if (editing) items.push(
+      { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />,
+        separator: !(single && row.variant === null && !removedSet.has(id)), disabled: saving || !single || !active.length },
+      { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />,
+        disabled: saving || !single || !active.length || id in draft.frames },
+    );
+    if (removedIds.length && !active.length)
+      items.push({ value: "restore", label: single ? "Вернуть изображение" : "Вернуть изображения",
+        icon: <RotateCcw size={16} />, separator: true, disabled: saving });
+    else if (editing)
+      items.push({ value: "remove", label: "Убрать", icon: <Trash2 size={16} />, danger: true, separator: true,
+        disabled: saving || !active.length });
+    context.open(event, {
+      heading: single ? row.title : `Выбрано: ${ids.length}`,
+      items,
+      onAction(value) {
+        if (value === "preview") showPreview(id);
+        else if (value === "source") showPreview(id, true);
+        else if (value === "pdf") open(row.image.file);
+        else if (value === "caption") copyCaption(row.title);
+        else if (value === "move:return-to-misc") change({ type: "return-to-misc", ids: active }, keep);
+        else if (value.startsWith("move:")) change({ type: "move", ids: active, target: value.slice(5) }, keep);
+        else if (value === "new") setNewVariant(active);
+        else if (value === "copy") startCopy(active);
+        else if (value === "same") setSelected((chosen) => [...new Set([...chosen, ...ids, ...same])]);
+        else if (value === "up" || value === "down") reorder(value === "up" ? -1 : 1, [id]);
+        else if (value === "start" || value === "end") change({ type: "move-edge", ids: active, edge: value }, keep);
+        else if (value === "rename") renameFile(id);
+        else if (value === "cut") collage?.state === "suspected" ? startCut(collage) : cutImage(id);
+        else if (value === "cutout") startCutout(id);
+        else if (value === "remove") change({ type: "remove", ids: active }, keep);
+        else if (value === "restore") { if (!editing) setEditing(true); change({ type: "restore", ids: removedIds }, keep); }
+      },
+    });
+  }
+  /** The picture in the preview: the view switch, the scale and the same edits as the row above it. */
+  function openPreviewMenu(event: MouseEvent, id: number) {
+    const row = allRows[id];
+    const removedNow = removedSet.has(id);
+    const items: ActionMenuItem[] = [
+      sourcePage
+        ? { value: "image", label: "Извлечённое изображение", icon: <Images size={16} /> }
+        : { value: "source", label: `Посмотреть в оригинале · стр. ${row.image.page}`, icon: <Scan size={16} /> },
+      { value: "fit", label: "Вместить изображение", icon: <Scan size={16} />, disabled: zoom === 1 },
+      { value: "zoom", label: "Увеличить вдвое", icon: <Plus size={16} />, disabled: zoom >= 5 },
+      { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />, separator: true,
+        disabled: removedNow || !!row.image.removed },
+      { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} /> },
+    ];
+    if (editing) items.push(
+      { value: "move", label: "Перенести изображение", icon: <FolderInput size={16} />, separator: true, disabled: saving,
+        children: [...variants.map((variant) => ({ value: `move:${variant}`, label: variantLabel(labelled, variant) })),
+          { value: "move:return", label: "Вернуть в папку подписи / Все остальное", separator: true,
+            disabled: row.variant === null || removedNow }] },
+      { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: saving || removedNow },
+      { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />, disabled: saving || removedNow },
+      removedNow
+        ? { value: "restore", label: "Вернуть изображение", icon: <RotateCcw size={16} />, disabled: saving }
+        : { value: "remove", label: "Убрать изображение", icon: <Trash2 size={16} />, danger: true, disabled: saving },
+    );
+    context.open(event, {
+      heading: row.title,
+      items,
+      onAction(value) {
+        if (value === "image") setSourcePage(false);
+        else if (value === "source") { setSourcePreview({ key: "" }); setSourcePage(true); }
+        else if (value === "fit") { setZoom(1); previewViewport.current?.scrollTo(0, 0); }
+        else if (value === "zoom") setZoom((current) => Math.min(5, current * 2));
+        else if (value === "pdf") open(row.image.file);
+        else if (value === "caption") copyCaption(row.title);
+        else if (value === "move:return") change({ type: "return-to-misc", ids: [id] });
+        else if (value.startsWith("move:")) move(value.slice(5), [id]);
+        else if (value === "cut") cutImage(id);
+        else if (value === "cutout") { setPreview(null); startCutout(id); }
+        else if (value === "restore" || value === "remove") change({ type: value, ids: [id] });
+      },
+    });
+  }
+  /** A variant or a caption in the menu: open it, take all its cards, bring the selection there, rename it. */
+  function openGroupMenu(event: MouseEvent, key: string, title: string) {
+    const variant = key.startsWith("variant:") ? key.slice(8) : null;
+    const members = variant !== null ? draft.variants[variant] ?? []
+      : rows.filter((row) => row.folder === key.slice(7) && row.variant === null).map((row) => row.id);
+    const items: ActionMenuItem[] = [
+      { value: "open", label: "Открыть", icon: <FolderOpen size={16} /> },
+      { value: "all", label: "Выбрать все карточки", icon: <ListChecks size={16} />,
+        disabled: saving || !members.some((id) => !removedSet.has(id)) },
+    ];
+    if (variant !== null && editing) items.push(
+      { value: "here", label: selectedActive.length ? `Перенести выбранные сюда (${selectedActive.length})` : "Перенести выбранные сюда",
+        icon: <FolderInput size={16} />, disabled: saving || !selectedActive.some((id) => draftVariant(draft, id) !== variant) },
+      { value: "copy", label: "Создать копию PDF варианта", icon: <Copy size={16} />, disabled: saving || !members.length },
+    );
+    items.push({ value: "rename", label: variant !== null ? "Переименовать вариант…" : "Переименовать подпись…",
+      icon: <Pencil size={16} />, separator: true, disabled: dirty || saving });
+    context.open(event, {
+      heading: title,
+      items,
+      onAction(value) {
+        if (value === "open") { setFilter(key); setStatus("all"); }
+        else if (value === "all") {
+          if (!editing) setEditing(true);
+          setSelected((chosen) => [...new Set([...chosen, ...members.filter((id) => !removedSet.has(id))])]);
+        } else if (value === "here") move(variant!, selectedActive);
+        else if (value === "copy") startCopy(members, true);
+        else if (value === "rename") setRename(variant !== null
+          ? { kind: "variant", target: variant, name: title } : { kind: "folder", target: key.slice(7), name: title });
+      },
+    });
+  }
   function startCopy(ids: number[], whole = false) {
     if (!ids.length || saving) return;
     setNumber(nextVariant(variants));
@@ -876,6 +1062,8 @@ export function Viewer({
           setFilter(key);
           setStatus("all");
         }}
+        onContextMenu={key.startsWith("variant:") || key.startsWith("folder:")
+          ? (event) => openGroupMenu(event, key, title) : undefined}
         data-drop-variant={variant}
       >
         <span>
@@ -1107,7 +1295,7 @@ export function Viewer({
             onClearSelection={() => { setSelected([]); anchor.current = null; }}
             onMove={(target) => move(target)}
             onNewVariant={() => {
-              setNewVariant(true);
+              setNewVariant(selected);
             }}
             onReorder={reorder}
             onMoveEdge={(edge) => change({ type: "move-edge", ids: selectedActive, edge })}
@@ -1205,6 +1393,7 @@ export function Viewer({
                 data-id={row.id}
                 className={`asset-card ${selected.includes(row.id) ? "selected-card" : ""}${removedSet.has(row.id) ? " removed-card" : ""}${drag?.ids.includes(row.id) ? " is-dragging" : ""}${drag?.place?.kind === "card" && drag.place.id === row.id ? ` is-insertion-target${drag.place.after ? " is-after" : ""}` : ""}`}
                 onPointerDown={(event) => startDrag(event, row.id)}
+                onContextMenu={(event) => openCardMenu(event, row.id)}
               >
                 <div className="asset-image">
                   <button
@@ -1307,18 +1496,7 @@ export function Viewer({
                         aria-label={`Переименовать PDF ${row.id + 1}`}
                         title={dirty ? "Сначала сохраните или сбросьте правки" : saving ? "Дождитесь завершения сохранения" : "Переименовать PDF"}
                         disabled={dirty || saving}
-                        onClick={() =>
-                          setRename({
-                            kind: "file",
-                            target: row.id,
-                            name:
-                              row.image.file
-                                .replaceAll("\\", "/")
-                                .split("/")
-                                .at(-1)
-                                ?.replace(/\.pdf$/i, "") || "",
-                          })
-                        }
+                        onClick={() => renameFile(row.id)}
                       >
                         <Pencil size={13} />
                       </button>
@@ -1433,6 +1611,7 @@ export function Viewer({
             <div className={`preview-image-scroll${zoom > 1 ? " is-zoomed" : ""}`} ref={previewViewport}
               title="Колесо мыши — масштаб; двойной щелчок — увеличить или вместить"
               onDoubleClick={() => setZoom((value) => value === 1 ? 2 : 1)}
+              onContextMenu={(event) => openPreviewMenu(event, previewRow.id)}
               onPointerDown={(event) => {
                 if (zoom <= 1 || event.button !== 0) return;
                 const element = event.currentTarget;
@@ -1588,16 +1767,17 @@ export function Viewer({
           </form>
         </Dialog>
       )}</Presence>
+      {context.menu}
       <Presence>{newVariant && <NewVariantDialog title="Перенести в новый вариант" action="Создать и перенести"
         variants={variants} labelOf={(key) => variantLabel(labelled, key)}
-        preferred={selectedActive.map((id) => draftVariant(draft, id)).find((key) => key !== null)
+        preferred={newVariant.filter((id) => !removedSet.has(id)).map((id) => draftVariant(draft, id)).find((key) => key !== null)
           ?? (filter.startsWith("variant:") ? filter.slice(8) : null)}
-        subject={`Выбранных изображений: ${selected.length}.`} onClose={() => setNewVariant(false)}
+        subject={`Выбранных изображений: ${newVariant.length}.`} onClose={() => setNewVariant(null)}
         onCreate={(key, name) => {
-          change({ type: "move", ids: selected, target: key, name });
+          change({ type: "move", ids: newVariant, target: key, name });
           setFilter(`variant:${key}`);
           setStatus("all");
-          setNewVariant(false);
+          setNewVariant(null);
         }} />}</Presence>
       <Presence>{reset && (
         <Dialog

@@ -6,7 +6,8 @@ import { ChevronLeft, ChevronRight, CircleHelp, Crop, Image as ImageIcon, Images
 import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
-import type { SelectOption } from "./components";
+import type { ActionMenuItem, SelectOption } from "./components";
+import { useContextMenu } from "./contextMenu";
 import { Presence } from "./motion";
 import { CroppedImage } from "./Collages";
 import { compareVariants, nextSubvariant, rectBox } from "./editor";
@@ -144,8 +145,10 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
   onReturn(view: CutoutSource): void;
 }) {
   const numbers = cutoutNumbers(views);
+  const context = useContextMenu();
   return (
     <section className="collages-page cutouts-page" aria-label="Вырезки">
+      {context.menu}
       <div className="library-header">
         <div><h2>Вырезки</h2><span>{count}</span></div>
         {/* An empty section offers the same button in its middle and explains itself there. */}
@@ -160,7 +163,18 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
             const count = view.pieces.length;
             const where = view.variantLabel ? `в «${view.variantLabel}» ` : "";
             return (
-              <article key={view.key} className="collage-card cutout-card" aria-label={`Вырезки: ${view.title}`}>
+              <article key={view.key} className="collage-card cutout-card" aria-label={`Вырезки: ${view.title}`}
+                onContextMenu={(event) => context.open(event, {
+                  heading: view.title,
+                  // The card's own buttons.
+                  items: [
+                    { value: "open", label: "Изменить вырезки", icon: <Pencil size={16} />, disabled: saving },
+                    view.kind === "image"
+                      ? { value: "return", label: "Вернуть картинку", icon: <Undo2 size={16} />, disabled: saving }
+                      : { value: "return", label: "Удалить вырезки", icon: <Trash2 size={16} />, danger: true, disabled: saving },
+                  ],
+                  onAction: (value) => value === "open" ? onOpen(view.page) : onReturn(view),
+                })}>
                 <button className="collage-stage" disabled={saving} onClick={() => onOpen(view.page)}
                   aria-label={`Изменить вырезки: ${view.title}, страница ${view.page}`}>
                   <SourcePicture view={view} maxHeight={220} numbers={numbers} />
@@ -616,6 +630,33 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     if (value === "__new") setNaming(uids); else setTarget(uids, parse(value));
   }
   const valueOf = (target: Target) => target === "keep" ? "__keep" : target === null ? "__misc" : target;
+  const context = useContextMenu();
+  /** A frame on the page or its row in the list: the row's own controls. */
+  function openFrameMenu(event: ReactMouseEvent, frame: Frame) {
+    const source = sourceOf(frame);
+    const current = valueOf(targetOf(frame, source));
+    setSelected(frame.uid);
+    const items: ActionMenuItem[] = [
+      { value: "show", label: "Показать", icon: <LocateFixed size={16} /> },
+      { value: "to", label: "Куда поместить", icon: <Images size={16} />,
+        children: choices(source.kind === "image").map((choice) => ({
+          value: `to:${choice.value}`, label: choice.value === current ? `${choice.label} · сейчас` : choice.label,
+          separator: choice.separator, disabled: choice.value === current })) },
+    ];
+    if (hasMarks(frame, source))
+      items.push({ value: "marks", label: marked(frame, source) ? "Без пометок" : "С пометками", icon: <Shapes size={16} /> });
+    items.push({ value: "remove", label: "Удалить", icon: <Trash size={16} />, danger: true, separator: true });
+    context.open(event, {
+      heading: `Вырезка ${numberOf.get(frame.uid)} · стр. ${frame.page}`,
+      items,
+      onAction(value) {
+        if (value === "show") show(frame);
+        else if (value.startsWith("to:")) choose([frame.uid], value.slice(3));
+        else if (value === "marks") setMarks(frame.uid, !marked(frame, source));
+        else if (value === "remove") remove([frame.uid]);
+      },
+    });
+  }
   const parse = (value: string): Target => value === "__keep" ? "keep" : value === "__misc" ? null : value;
 
   return (
@@ -625,6 +666,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
         onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle"><span>{title}</span>
         {!!pages.length && <><i aria-hidden="true" /><span>{pages.length} {plural(pages.length, ["страница", "страницы", "страниц"])}</span></>}</p>}>
+      {context.menu}
       {!info ? (
         <div className="cutout-loading" role="status">
           {failure ? <><TriangleAlert size={32} /><strong>Страницы PDF недоступны</strong><p>{failure}</p>
@@ -705,7 +747,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                   return (
                     <div key={frame.uid} className={`cutout-frame${active ? " is-selected" : ""}`} style={relative(frame.rect, [0, 0, 1, 1])}
                       role="button" tabIndex={-1} aria-label={`Вырезка ${numberOf.get(frame.uid)}`} aria-pressed={active}
-                      onPointerDown={(event) => startMove(event, frame)}>
+                      onPointerDown={(event) => startMove(event, frame)} onContextMenu={(event) => openFrameMenu(event, frame)}>
                       <b>{numberOf.get(frame.uid)}</b>
                       {active && HANDLES.map((handle) => (
                         <span key={handle} className={`cutout-handle ${handle}`} aria-hidden="true"
@@ -759,6 +801,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                     const small = box[2] - box[0] < MIN_PIXELS || box[3] - box[1] < MIN_PIXELS;
                     return (
                       <div key={frame.uid} className={`cutout-row${frame.uid === selected ? " is-selected" : ""}`}
+                        onContextMenu={(event) => openFrameMenu(event, frame)}
                         title={source.kind === "image" ? `Из картинки «${source.title}»` : undefined}>
                         <span className={`cut-thumb${(box[2] - box[0]) / Math.max(1, box[3] - box[1]) < 0.56 ? " is-tall" : ""}`}>
                           {source.preview && <CroppedImage src={source.preview} size={source.size} box={box} alt="" />}

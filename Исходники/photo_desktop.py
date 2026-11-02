@@ -9,7 +9,7 @@ from threading import Event, Lock, Thread
 from photo_desktop_server import DesktopServer
 from photo_export import VERSION
 from photo_jobs import JobService
-from photo_native import app_icon_path, configure_logging, enable_dpi_awareness
+from photo_native import app_icon_path, clipboard_text, configure_logging, enable_dpi_awareness
 
 LOGGER = logging.getLogger('pdf-photos')
 
@@ -133,6 +133,11 @@ class NativeBridge:
             raise ValueError('Журнал пока не создан. События доступны на экране обработки.')
         open_local(self._log_path)
         return True
+
+    def clipboard_text(self):
+        # «Вставить» in a field's context menu: navigator.clipboard would make WebView2 ask permission each time.
+        self._guard()
+        return clipboard_text()
 
     def set_unsaved(self, value, sequence=None):
         self._guard()

@@ -35,6 +35,19 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertIn('Обработка остановится', both)
         self.assertIn('несохранённые правки', both)
 
+    def test_paste_reads_the_windows_clipboard_only_for_the_app_window(self):
+        # «Вставить» in a field's context menu: WebView2 would ask permission for navigator.clipboard every time.
+        with patch('photo_desktop.clipboard_text', return_value='Вариант 4. Двор'):
+            self.assertEqual(self.bridge.clipboard_text(), 'Вариант 4. Двор')
+        self.window.get_current_url.return_value = 'https://example.com/'
+        with self.assertRaises(ValueError):
+            self.bridge.clipboard_text()
+
+    def test_clipboard_text_is_a_string_whatever_the_clipboard_holds(self):
+        # Reads only: the test must not replace what the user has copied.
+        from photo_native import clipboard_text
+        self.assertIsInstance(clipboard_text(), str)
+
     def test_cancelled_dialog_does_not_start_a_queue(self):
         self.window.create_file_dialog.return_value = None
         snapshot = self.bridge.choose_pdfs()

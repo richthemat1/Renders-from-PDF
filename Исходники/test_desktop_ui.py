@@ -1,9 +1,11 @@
 """End-to-end React editor against real PDFs and the loopback desktop API."""
 import json
 from pathlib import Path
+import re
 import tempfile
 from types import SimpleNamespace
 import unittest
+from urllib.parse import urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 from pypdf import PdfReader
@@ -290,21 +292,44 @@ class DesktopUI(unittest.TestCase):
         self.card(0).get_by_role('checkbox').check()
         self.page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
         expect(toolbar).to_have_css('position', 'fixed')
+        # Liquid glass: the gallery bends at the rim through the SVG filter drawn for the dock's size.
+        expect(toolbar).to_have_attribute('data-glass', 'liquid')
         geometry = toolbar.evaluate('''(el) => {
             const rect = el.getBoundingClientRect();
             const main = document.querySelector('.workspace-main').getBoundingClientRect();
+            const map = document.querySelector('.liquid-glass-filter feImage');
             return {height:rect.height, bottom:innerHeight-rect.bottom,
                 centered: Math.abs((rect.left+rect.right)/2-(main.left+main.right)/2),
-                blur:getComputedStyle(el).backdropFilter};
+                glass:getComputedStyle(el).backdropFilter,
+                map:[Number(map.getAttribute('width')), Number(map.getAttribute('height'))],
+                size:[el.offsetWidth, el.offsetHeight]};
         }''')
         self.assertLessEqual(geometry['height'], 70)
         self.assertGreaterEqual(geometry['bottom'], 16)
         self.assertLess(geometry['centered'], 2)
-        self.assertIn('blur(', geometry['blur'])
+        self.assertIn('url(', geometry['glass'])
+        self.assertEqual(geometry['map'], geometry['size'])
         expect(self.card(0).get_by_role('checkbox')).to_be_checked()
         self.page.evaluate('window.scrollTo(0, 0)')
         expect(toolbar).not_to_have_css('position', 'fixed')
+        expect(toolbar).not_to_have_attribute('data-glass', 'liquid')
+        expect(self.page.locator('.liquid-glass-filter')).to_have_count(0)
         expect(self.card(0).get_by_role('checkbox')).to_be_checked()
+        self.assertEqual(self.errors, [])
+
+    def test_floating_toolbar_is_solid_when_windows_transparency_is_off(self):
+        self.extend_gallery()
+        self.page.set_viewport_size({'width': 1380, 'height': 620})
+        # Windows «Эффекты прозрачности» off reaches the page as prefers-reduced-transparency.
+        self.context.new_cdp_session(self.page).send('Emulation.setEmulatedMedia', {
+            'features': [{'name': 'prefers-reduced-transparency', 'value': 'reduce'}]})
+        self.edit()
+        toolbar = self.page.get_by_role('region', name='Инструменты редактора')
+        self.card(0).get_by_role('checkbox').check()
+        self.page.evaluate('window.scrollTo(0, document.documentElement.scrollHeight)')
+        expect(toolbar).to_have_css('position', 'fixed')
+        expect(toolbar).to_have_css('backdrop-filter', 'none')
+        expect(toolbar).to_have_css('background-color', 'rgb(255, 255, 255)')
         self.assertEqual(self.errors, [])
 
     def test_compact_toolbar_moves_and_saves_through_the_upward_overflow_menu(self):
@@ -338,6 +363,90 @@ class DesktopUI(unittest.TestCase):
         toast = self.page.locator('.toast')
         expect(toast).to_be_visible()
         self.assertLessEqual(toast.bounding_box()['y'] + toast.bounding_box()['height'], toolbar.bounding_box()['y'])
+        self.assertEqual(self.errors, [])
+
+    def test_card_menu_opens_the_original_page_and_acts_on_one_card_or_the_whole_selection(self):
+        # Viewing: the right button offers the preview's «Исходная страница» straight from the gallery.
+        self.card(0).click(button='right')
+        menu = self.page.get_by_role('menu', name='Вариант 1. Северный двор')
+        expect(menu).to_be_visible()
+        expect(menu.get_by_role('menuitem', name='Убрать')).to_have_count(0)
+        menu.get_by_role('menuitem', name='Посмотреть в оригинале · стр. 1').click()
+        dialog = self.page.get_by_role('dialog')
+        expect(dialog.get_by_role('button', name='Исходная страница 1')).to_have_attribute('aria-pressed', 'true')
+        expect(dialog.locator('img[data-preview-kind="source"]')).to_be_visible()
+        # The picture switches back from its own menu.
+        dialog.locator('.preview-image-scroll').click(button='right')
+        self.page.get_by_role('menuitem', name='Извлечённое изображение').click()
+        expect(dialog.get_by_role('button', name='Извлечённое изображение')).to_have_attribute('aria-pressed', 'true')
+        self.page.get_by_role('button', name='Закрыть диалог').click()
+
+        self.edit()
+        self.card(0).get_by_role('checkbox').check()
+        self.card(1).get_by_role('checkbox').check()
+        # A card outside the selection: the menu acts on it alone, ringed, and the selection stays.
+        self.card(3).click(button='right')
+        expect(self.card(3)).to_have_attribute('data-context-target', '')
+        self.page.get_by_role('menu', name='Западный двор').get_by_role('menuitem', name='Убрать').click()
+        expect(self.page.locator('nav').get_by_role('button', name='Убранные 1', exact=True)).to_be_visible()
+        expect(self.card(0).get_by_role('checkbox')).to_be_checked()
+        expect(self.card(1).get_by_role('checkbox')).to_be_checked()
+        # A selected card speaks for the whole selection.
+        self.card(1).click(button='right')
+        menu = self.page.get_by_role('menu', name='Выбрано: 2')
+        menu.get_by_role('menuitem', name='Перенести в вариант').click()
+        menu.get_by_role('menuitem', name='Вариант 2', exact=True).click()
+        expect(self.page.locator('nav').get_by_role('button', name='Вариант 2 3', exact=True)).to_be_visible()
+        expect(self.page.get_by_role('menu')).to_have_count(0)
+        self.assertEqual(self.errors, [])
+
+    def test_card_menu_opens_from_the_keyboard_and_gives_the_focus_back(self):
+        cover = self.card(2).locator('.cover-button')
+        cover.focus()
+        self.page.keyboard.press('Shift+F10')
+        menu = self.page.get_by_role('menu', name='Вариант 2. Восточный двор')
+        expect(menu.get_by_role('menuitem', name='Просмотреть')).to_be_focused()
+        self.page.keyboard.press('ArrowDown')
+        expect(menu.get_by_role('menuitem', name='Посмотреть в оригинале · стр. 3')).to_be_focused()
+        self.page.keyboard.press('Escape')
+        expect(menu).to_have_count(0)
+        expect(cover).to_be_focused()
+        self.assertEqual(self.errors, [])
+
+    def test_variant_menu_takes_its_cards_into_the_selection(self):
+        self.page.locator('nav').get_by_role('button', name='Вариант 1 2', exact=True).click(button='right')
+        self.page.get_by_role('menu', name='Вариант 1').get_by_role('menuitem', name='Выбрать все карточки').click()
+        expect(self.card(0).get_by_role('checkbox')).to_be_checked()
+        expect(self.card(1).get_by_role('checkbox')).to_be_checked()
+        expect(self.card(2).get_by_role('checkbox')).not_to_be_checked()
+        self.assertEqual(self.errors, [])
+
+    def test_text_field_menu_pastes_cuts_and_selects_like_windows(self):
+        url = urlsplit(self.server.url)
+        self.context.grant_permissions(['clipboard-read', 'clipboard-write'], origin=f'{url.scheme}://{url.netloc}')
+        self.page.evaluate("navigator.clipboard.writeText('Северный')")
+        search = self.page.get_by_role('searchbox')
+        search.click(button='right')
+        menu = self.page.get_by_role('menu')
+        expect(menu.get_by_role('menuitem', name='Копировать')).to_be_disabled()
+        menu.get_by_role('menuitem', name='Вставить').click()
+        expect(search).to_have_value('Северный')
+        expect(self.page.locator('.asset-card')).to_have_count(1)
+        search.dispatch_event('contextmenu')
+        self.page.get_by_role('menuitem', name='Выделить всё').click()
+        search.dispatch_event('contextmenu')
+        self.page.get_by_role('menuitem', name='Вырезать').click()
+        expect(search).to_have_value('')
+        expect(self.page.locator('.asset-card')).to_have_count(4)
+        self.assertEqual(self.errors, [])
+
+    def test_history_card_menu_opens_the_result(self):
+        self.page.get_by_role('button', name='Открыть историю обработки').click()
+        self.page.locator('.history-card').first.click(button='right')
+        menu = self.page.get_by_role('menu')
+        expect(menu.get_by_role('menuitem', name='Обработать заново')).to_be_enabled()
+        menu.get_by_role('menuitem', name='Открыть результат').click()
+        expect(self.page.locator('.asset-card')).to_have_count(4)
         self.assertEqual(self.errors, [])
 
     def test_rename_shows_the_whole_long_filename_without_horizontal_scrolling(self):

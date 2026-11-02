@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -39,6 +39,8 @@ interface ProcessingPageProps {
   onOpenResult(): void;
   onHistory(): void;
   onOpenHistory(item: HistoryItem): void;
+  /** The right button on a result row: the history card's actions. */
+  onHistoryMenu(event: MouseEvent, item: HistoryItem): void;
   failures: ReactNode;
 }
 
@@ -65,7 +67,7 @@ function OriginalsNote() {
   return <p className="processing-originals"><LockKeyhole size={14} /><span>Исходные файлы не изменяются</span></p>;
 }
 
-export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious, onCancel, onResume, onSettings, onOpenResult, onHistory, onOpenHistory, failures }: ProcessingPageProps) {
+export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious, onCancel, onResume, onSettings, onOpenResult, onHistory, onOpenHistory, onHistoryMenu, failures }: ProcessingPageProps) {
   const view = processingView(state);
   const processing = view.outcome === "processing";
   const complete = view.outcome === "complete";
@@ -132,7 +134,8 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
             <div className="processing-recent-list">
               {view.batch.map((item) => {
                 const check = item.unsigned + item.review;
-                return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}>
+                return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}
+                  onContextMenu={(event) => onHistoryMenu(event, item)}>
                   <span className="file-icon"><FileText size={21} /></span>
                   <span className="history-name"><strong>{item.name}</strong>
                     <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.documents} PDF{check > 0 && ` · проверить: ${check}`}</small>
@@ -206,7 +209,8 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       <div className="processing-recent-list">
         {state.history.slice(0, 3).map((item) => {
           const current = !processing && item.id === view.currentRecord?.id;
-          return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}>
+          return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}
+                  onContextMenu={(event) => onHistoryMenu(event, item)}>
             <span className="file-icon"><FileText size={21} /></span>
             <span className="history-name"><strong>{item.name}</strong>
               <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {current || !item.variants ? `${item.documents} PDF` : `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}`}{!current && ` · ${dateLabel(item.finished_at)}`}</small>

@@ -389,6 +389,21 @@ export interface ActionMenuItem {
   children?: ActionMenuItem[];
 }
 
+/** Arrows, Home and End move between the enabled items of an open menu. */
+export function stepMenuFocus(event: React.KeyboardEvent, menu: HTMLElement) {
+  const buttons = [...menu.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not(:disabled)")];
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  let next = index;
+  if (event.key === "ArrowDown") next = (index + 1) % buttons.length;
+  else if (event.key === "ArrowUp") next = (index - 1 + buttons.length) % buttons.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = buttons.length - 1;
+  else return;
+  event.preventDefault();
+  buttons[next]?.focus({ preventScroll: true });
+  buttons[next]?.scrollIntoView({ block: "nearest" });
+}
+
 export function ActionMenu({
   label,
   items,
@@ -505,17 +520,7 @@ export function ActionMenu({
             if (event.key === "Escape") { event.preventDefault(); close(true); }
             if (event.key === "Tab") { close(true); return; }
             if (event.key === "ArrowLeft" && submenu) { event.preventDefault(); setSubmenu(null); return; }
-            const buttons = [...menu.current!.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not(:disabled)")];
-            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-            let next = index;
-            if (event.key === "ArrowDown") next = (index + 1) % buttons.length;
-            else if (event.key === "ArrowUp") next = (index - 1 + buttons.length) % buttons.length;
-            else if (event.key === "Home") next = 0;
-            else if (event.key === "End") next = buttons.length - 1;
-            else return;
-            event.preventDefault();
-            buttons[next]?.focus({ preventScroll: true });
-            buttons[next]?.scrollIntoView({ block: "nearest" });
+            stepMenuFocus(event, menu.current!);
           }}
         >
           {submenu ? (

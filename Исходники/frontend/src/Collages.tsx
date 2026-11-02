@@ -4,7 +4,8 @@ import { Check, CircleHelp, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, 
   SeparatorVertical, Sparkles, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import { errorText, plural, request } from "./api";
 import { Dialog, NewVariantDialog, Select } from "./components";
-import type { SelectOption } from "./components";
+import type { ActionMenuItem, SelectOption } from "./components";
+import { useContextMenu } from "./contextMenu";
 import { Presence } from "./motion";
 import type { Box } from "./editor";
 import { compareVariants, nextSubvariant } from "./editor";
@@ -100,11 +101,13 @@ export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole
 }) {
   // «Все» by default: a collage handled here must not vanish from under the pointer.
   const [tab, setTab] = useState<"all" | "check" | "done">("all");
+  const context = useContextMenu();
   const shown = views.filter((view) => tab === "all" || (tab === "check") === needsCheck(view));
   const tabs: [typeof tab, string, number][] = [["all", "Все", views.length],
     ["check", "Нужно проверить", views.filter(needsCheck).length], ["done", "Готовы", views.filter((view) => !needsCheck(view)).length]];
   return (
     <section className="collages-page" aria-label="Склейки">
+      {context.menu}
       {/* The tabs share the heading row, as the status tabs of «Все изображения» do. */}
       <div className="library-header">
         <div><h2>Склейки</h2><span>{views.length}</span></div>
@@ -135,7 +138,25 @@ export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole
             const check = needsCheck(view);
             const variantless = view.state === "auto" && view.members.length > 0 && view.variant === null;
             return (
-              <article key={view.key} className={`collage-card${check ? " needs-check" : ""}`} aria-label={`Склейка: ${view.title}`}>
+              <article key={view.key} className={`collage-card${check ? " needs-check" : ""}`} aria-label={`Склейка: ${view.title}`}
+                onContextMenu={(event) => {
+                  // The card's own buttons, in the same order.
+                  const cut = view.state === "suspected" || view.state === "whole";
+                  const items: ActionMenuItem[] = cut ? [
+                    { value: "cut", label: "Разрезать…", icon: <Scissors size={16} />, disabled: saving },
+                    ...(view.state === "suspected" ? [{ value: "dismiss", label: "Это одно фото", icon: <Check size={16} />, disabled: saving }] : []),
+                  ] : [
+                    { value: "cut", label: check ? "Проверить разрезку" : "Изменить разрезку", icon: <Pencil size={16} />, disabled: saving },
+                    check ? { value: "check", label: "Всё верно", icon: <Check size={16} />, disabled: saving }
+                      : { value: "whole", label: "Вернуть целиком", icon: <Undo2 size={16} />, disabled: saving },
+                  ];
+                  context.open(event, { heading: view.title, items, onAction(value) {
+                    if (value === "cut") onCut(view);
+                    else if (value === "dismiss") onDismiss(view);
+                    else if (value === "check") onCheck(view);
+                    else if (value === "whole") onWhole(view);
+                  } });
+                }}>
                 <button className="collage-stage" disabled={saving} onClick={() => onCut(view)}
                   aria-label={`Открыть разрезку: ${view.title}, страница ${view.page}`}>
                   <CollagePicture view={view} maxHeight={220} />
@@ -377,6 +398,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
     const next = { ...lines, [key]: lines[key].map((old, at) => at === index ? clamped : old) };
     if (record) commit(next); else setLines(next);
   }
+  const context = useContextMenu();
   function remove(axis: Axis, index: number) {
     const key = axis === "x" ? "xs" : "ys";
     commit({ ...lines, [key]: lines[key].filter((_, at) => at !== index) });
@@ -476,6 +498,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
       headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Склейки" title="Как пользоваться: Склейки"
         onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle">Страница {view.page} · {view.title} · {width} × {height} px</p>}>
+      {context.menu}
       <div className="cut-editor-body" onKeyDown={keyDown}>
         <div className="cut-tools" role="toolbar" aria-label="Инструменты разрезки">
           <span className="cut-tools-label">Направление</span>
@@ -525,6 +548,14 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
                     aria-label={axis === "x" ? `Вертикальная линия ${index + 1}` : `Горизонтальная линия ${index + 1}`}
                     aria-valuenow={value} aria-valuemin={MIN_FRAME} aria-valuemax={(axis === "x" ? width : height) - MIN_FRAME}
                     className={`cut-line ${axis === "x" ? "vertical" : "horizontal"}${active ? " is-selected" : ""}`} style={position}
+                    onContextMenu={(event) => {
+                      setSelected({ axis, index });
+                      context.open(event, {
+                        heading: axis === "x" ? `Вертикальная линия ${index + 1}` : `Горизонтальная линия ${index + 1}`,
+                        items: [{ value: "remove", label: "Удалить линию · Delete", icon: <Trash2 size={16} />, danger: true }],
+                        onAction: () => remove(axis, index),
+                      });
+                    }}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       if (event.button !== 0) return;
