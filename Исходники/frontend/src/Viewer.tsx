@@ -19,6 +19,8 @@ import {
   FileText,
   FolderInput,
   FolderOpen,
+  FolderOutput,
+  FolderSearch,
   GripVertical,
   ImageOff,
   Images,
@@ -82,7 +84,7 @@ import type { CutoutResult, CutoutSource, PictureInfo } from "./Cutouts";
 import type { Box } from "./editor";
 import { ReviewSummary } from "./ReviewSummary";
 import { Collapsible, Presence } from "./motion";
-import type { NoticeAction, Rect, Result } from "./types";
+import type { NoticeAction, Rect, Result, VariantExport } from "./types";
 import "./viewer-ux.css";
 import "./preview-visual.css";
 import "./review-fixes.css";
@@ -588,7 +590,7 @@ export function Viewer({
     savingRef.current = true;
     setSaving(true);
     try {
-      const value = await request<{ result: Result; message: string }>(
+      const value = await request<{ result: Result; message: string; delivery_errors?: string[] }>(
         `results/${result.id}/apply`,
         payload(draft, report.revision),
       );
@@ -599,6 +601,8 @@ export function Viewer({
       notify("Правки сохранены. Резервная копия создана.", false, {
         label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => undoSaved(value.result),
       });
+      // The save itself succeeded; only a clean copy in the user's folder could not be refreshed.
+      if (value.delivery_errors?.length) notify(`Правки сохранены. ${value.delivery_errors.join(" ")}`, true);
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setConflict(true);
@@ -636,6 +640,40 @@ export function Viewer({
     } finally {
       setSaving(false);
     }
+  }
+  /** Variants that have a saved PDF: an empty or unsaved variant has nothing to put into a folder. */
+  const savedVariants = useMemo(() => new Set(report.documents
+    .filter((document) => document.variant !== null && document.variant !== undefined)
+    .map((document) => String(document.variant))), [report.documents]);
+  function revealVariant(key: string) {
+    void native("reveal_variant", result.id, key).catch((error) => notify(errorText(error), true));
+  }
+  /** Ask for a folder and put the saved PDFs of these variants (all without keys) straight into it. */
+  async function exportVariants(keys?: string[]) {
+    if (savingRef.current || savingState.current) return;
+    if (dirty) {
+      notify("Сначала сохраните правки. В папку попадают сохранённые PDF вариантов.", true);
+      return;
+    }
+    let value: VariantExport | null;
+    try {
+      value = await native("export_variants", result.id, keys ?? null);
+    } catch (error) {
+      notify(errorText(error), true);
+      return;
+    }
+    if (!value) return;
+    onResult(value.result);
+    if (value.errors.length) {
+      notify(value.errors.join(" "), true);
+      return;
+    }
+    const name = (path: string) => path.slice(path.lastIndexOf("\\") + 1);
+    const first = keys?.length === 1 ? keys[0] : Object.keys(value.result.delivery ?? {})[0];
+    notify(value.saved.length === 1
+      ? `«${name(value.saved[0])}» сохранён в папку «${value.folder}». После следующих сохранений он обновится сам.`
+      : `Сохранено PDF: ${value.saved.length} — в папку «${value.folder}». После следующих сохранений они обновятся сами.`,
+    false, first ? { label: "Показать в проводнике", icon: <FolderSearch size={16} />, run: () => revealVariant(first) } : undefined);
   }
   function open(relative = "") {
     void native("open_result", result.id, relative).catch((error) =>
@@ -999,6 +1037,12 @@ export function Viewer({
     );
     items.push({ value: "rename", label: variant !== null ? "Переименовать вариант…" : "Переименовать подпись…",
       icon: <Pencil size={16} />, separator: true, disabled: dirty || saving });
+    if (variant !== null) {
+      items.push({ value: "export", label: "Сохранить PDF в папку…", icon: <FolderOutput size={16} />, separator: true,
+        disabled: saving || !savedVariants.has(variant) });
+      if (result.delivery?.[variant]?.length)
+        items.push({ value: "reveal", label: "Показать копию в проводнике", icon: <FolderSearch size={16} /> });
+    }
     context.open(event, {
       heading: title,
       items,
@@ -1011,6 +1055,8 @@ export function Viewer({
         else if (value === "copy") startCopy(members, true);
         else if (value === "rename") setRename(variant !== null
           ? { kind: "variant", target: variant, name: title } : { kind: "folder", target: key.slice(7), name: title });
+        else if (value === "export") void exportVariants([variant!]);
+        else if (value === "reveal") revealVariant(variant!);
       },
     });
   }
@@ -1233,6 +1279,12 @@ export function Viewer({
               <span>{report.pages} {plural(report.pages, ["страница", "страницы", "страниц"])} в презентации</span>
             </p>
           </div>
+          {savedVariants.size > 0 && <button className="btn secondary export-all" disabled={saving} aria-label="Варианты в папку…"
+            title="Положить PDF всех вариантов в выбранную папку — без служебных файлов и вложенных папок"
+            onClick={() => void exportVariants()}>
+            <FolderOutput size={16} />
+            <span>Варианты в папку…</span>
+          </button>}
           <button className="btn secondary" onClick={() => open()}>
             <FolderOpen size={16} />
             <span>Папка результата</span>
@@ -1350,6 +1402,15 @@ export function Viewer({
                   <Pencil size={15} />
                 </button>
               )}
+            {filter.startsWith("variant:") && <button className="btn compact secondary variant-export"
+              aria-label="Сохранить PDF варианта в папку"
+              title={result.delivery?.[filter.slice(8)]?.length
+                ? `Сейчас копия лежит в «${result.delivery[filter.slice(8)][0].folder}». Можно выбрать другую папку`
+                : "Положить PDF этого варианта в выбранную папку — сразу файлом, без вложенной папки"}
+              disabled={saving || !savedVariants.has(filter.slice(8))}
+              onClick={() => void exportVariants([filter.slice(8)])}>
+              <FolderOutput size={15} /><span>В папку…</span>
+            </button>}
           </div>
           {editing && filter.startsWith("variant:") && <button className="btn compact secondary"
             aria-label="Создать копию PDF варианта" title="Создать копию всего PDF варианта"

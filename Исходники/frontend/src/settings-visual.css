@@ -418,3 +418,17 @@
     transition: none;
   }
 }
+
+/* «Готовые варианты»: one row with the folder and its buttons, laid out as a save option without a radio. */
+.settings-delivery { padding: 28px; }
+.settings-page .settings-delivery-row { margin-top: 20px; padding: 18px 0 18px 18px; gap: 12px; }
+.settings-page .settings-delivery-row .setting-option-copy { flex: 1; }
+.settings-delivery-row .settings-choose { margin-right: 0; }
+.settings-delivery-row .settings-choose:last-child { margin-right: 18px; }
+.settings-delivery-off { color: var(--settings-muted); }
+@media (max-width: 640px) {
+  .settings-delivery { padding: 22px 18px; }
+  .settings-page .settings-delivery-row { flex-wrap: wrap; padding: 16px; }
+  .settings-page .settings-delivery-row .setting-option-copy { flex-basis: 100%; }
+  .settings-delivery-row .settings-choose, .settings-delivery-row .settings-choose:last-child { margin: 0; }
+}

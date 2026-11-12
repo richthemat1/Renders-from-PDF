@@ -112,6 +112,21 @@ export interface Result {
   base_url: string;
   title: string;
   report: Report;
+  /** Where clean copies of saved variants were put, by variant key; absent from older servers. */
+  delivery?: Record<string, VariantCopy[]>;
+}
+/** A variant's PDF put straight into a folder of the user's; `auto` — the folder set in the settings. */
+export interface VariantCopy {
+  folder: string;
+  file: string;
+  auto: boolean;
+}
+export interface VariantExport {
+  folder: string;
+  /** Full paths of the PDFs written to the chosen folder. */
+  saved: string[];
+  errors: string[];
+  result: Result;
 }
 export interface HistoryItem {
   id: string;
@@ -196,6 +211,8 @@ export interface Snapshot {
     mode: "nearby" | "results" | "custom";
     folder: string;
     label: string;
+    /** The folder clean variant PDFs of every presentation go to; empty when switched off. */
+    delivery?: string;
   };
   sidebar?: { width: number; hidden: boolean };
   history: HistoryItem[];
@@ -214,6 +231,11 @@ export interface NativeApi {
   open_history_folder(id: string): Promise<boolean>;
   relocate_result(id: string): Promise<Result | null>;
   clipboard_text(): Promise<string>;
+  choose_delivery(): Promise<Snapshot>;
+  clear_delivery(): Promise<Snapshot>;
+  /** Asks for a folder; null when the dialog was closed. `variants`: keys, or null for every variant. */
+  export_variants(id: string, variants: string[] | null): Promise<VariantExport | null>;
+  reveal_variant(id: string, variant: string): Promise<boolean>;
 }
 declare global {
   interface Window {

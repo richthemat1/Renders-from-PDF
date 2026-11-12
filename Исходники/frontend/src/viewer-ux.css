@@ -530,3 +530,18 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 .section-save-bar .btn {
   min-height: 34px;
 }
+
+/* The title takes the free width, so «Варианты в папку…» and «Папка результата» stay together on the right. */
+.viewer-heading > div:first-child { flex: 1 1 auto; }
+/* «В папку…» sits by the variant's name, apart from the count beside it. */
+.library-header .variant-export { flex-shrink: 0; margin-left: 6px; min-height: 28px; height: 28px; padding-block: 0; }
+/* A narrow window has no room for the title and both folder buttons in one row, however low it is. */
+@media (max-width: 720px) {
+  .app-shell .viewer-content .viewer-heading { flex-wrap: wrap; }
+  .app-shell .viewer-content .viewer-heading > div:first-child { flex-basis: 100%; }
+}
+/* Between a phone and a wide window the title keeps its one line: «Варианты в папку…» becomes its icon. */
+@media (min-width: 721px) and (max-width: 960px) {
+  .viewer-heading .export-all span { display: none; }
+  .viewer-heading .export-all { padding-inline: 10px; }
+}

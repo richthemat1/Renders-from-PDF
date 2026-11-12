@@ -579,6 +579,8 @@ export function App() {
                       : await request<Snapshot>("settings", { mode }),
                   ))}
                   onChooseFolder={() => void run(async () => setState(await native("choose_output")))}
+                  onChooseDelivery={() => void run(async () => setState(await native("choose_delivery")))}
+                  onClearDelivery={() => void run(async () => setState(await native("clear_delivery")))}
                   onOpenLog={() => void run(async () => { await native("open_log"); })}
                 />
               )}

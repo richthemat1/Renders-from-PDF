@@ -14,6 +14,7 @@ from time import monotonic
 import traceback
 
 from photo_edit import can_undo_last_save, load_report
+from photo_delivery import sync as sync_delivery
 from photo_export import VERSION, OutputPathError, extract, planned_output
 from photo_native import Cancelled, available_memory, dropped_pdfs, lower_priority, process_memory
 from photo_state import WorkspaceState
@@ -176,7 +177,8 @@ class JobService:
                 'closing': self._closing, 'status': self._status, 'detail': self._detail,
                 'progress': min(100, max(0, self._progress)), 'totals': totals, 'logs': self._logs,
                 'settings': {'mode': self.workspace.output_mode, 'folder': self.workspace.output_folder,
-                             'label': self.workspace.output_label},
+                             'label': self.workspace.output_label,
+                             'delivery': self.workspace.delivery_folder},
                 'sidebar': self.workspace.sidebar,
                 'history': history, 'failures': self.workspace.failures, 'pending_repeat': self._pending_repeat,
                 'current_output': self._current_output, 'warning': self.workspace.warning})
@@ -340,6 +342,29 @@ class JobService:
             if self.workspace.warning:
                 self._append(self.workspace.warning, 'warn')
             return self.snapshot()
+
+    def set_delivery(self, folder=None):
+        with self._lock:
+            if self._closing:
+                self._reject('Программа закрывается. Настройки недоступны.', RuntimeError)
+            try:
+                self.workspace.set_delivery(folder)
+            except (OSError, ValueError, TypeError) as error:
+                self._reject(str(error))
+            if self.workspace.warning:
+                self._append(self.workspace.warning, 'warn')
+            return self.snapshot()
+
+    def deliver(self, report):
+        """Update the clean copies of a saved result's variants; returns what was written and what failed."""
+        with self._lock:
+            folder = self.workspace.delivery_folder
+        try:
+            return sync_delivery(report['output'], report, folder or None)
+        except Exception as error:
+            # Copies are a convenience: the result itself is already saved.
+            LOGGER.exception('Не удалось обновить готовые варианты: %s', report.get('output'))
+            return {'saved': [], 'errors': [f'Готовые варианты не обновлены: {error}.']}
 
     def set_sidebar(self, width, hidden):
         with self._lock:
@@ -518,6 +543,7 @@ class JobService:
         """Record a finished PDF and return whether it lost images; an unusable report raises."""
         source = paths[slot]
         report = normalized_report(report)
+        delivered = self.deliver(report)
         with self._lock:
             self.remember(report, processed=True)
             counts = report['counts_by_status']
@@ -546,6 +572,11 @@ class JobService:
             if report.get('preview_errors'):
                 self._append(f'Не создано миниатюр: {len(report["preview_errors"])}. Сами PDF сохранены.', 'warn')
             self._append(report['output'], 'muted')
+            if delivered['saved']:
+                self._append(f'Готовые варианты — {len(delivered["saved"])} PDF: '
+                             f'{Path(delivered["saved"][0]).parent}', 'ok')
+            for message in delivered['errors']:
+                self._append(message, 'warn')
         return bool(report['errors'])
 
     def _worker(self, paths, settings, preflight_failed=0, limit=1):

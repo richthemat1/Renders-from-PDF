@@ -23,6 +23,17 @@ def open_local(path):
         webbrowser.open(path.as_uri())
 
 
+def reveal_local(path):
+    """Open the file's folder with the file selected."""
+    path = Path(path).resolve(strict=True)
+    if sys.platform == 'win32':
+        import subprocess
+        # Explorer takes the path as one argument after «/select,» and returns a non-zero code even on success.
+        subprocess.Popen(['explorer.exe', '/select,', str(path)])
+    else:
+        open_local(path.parent)
+
+
 class NativeBridge:
     """Only these methods are exposed to JS; implementation references stay private."""
     def __init__(self, jobs, server, log_path):
@@ -67,6 +78,62 @@ class NativeBridge:
         with self._dialogs:
             folders = self._window.create_file_dialog(webview.FileDialog.FOLDER)
             return self._jobs.set_output('custom', folders[0]) if folders else self._jobs.snapshot()
+
+    def choose_delivery(self):
+        """The folder where clean variant PDFs of every presentation are put by themselves."""
+        self._guard()
+        import webview
+        with self._dialogs:
+            folders = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+            return self._jobs.set_delivery(folders[0]) if folders else self._jobs.snapshot()
+
+    def clear_delivery(self):
+        self._guard()
+        return self._jobs.set_delivery(None)
+
+    def export_variants(self, id, variants=None):
+        """Ask for a folder and put the saved PDFs of these variants (all by default) straight into it."""
+        self._guard()
+        if not isinstance(id, str) or not (variants is None or isinstance(variants, list) and variants
+                                           and all(isinstance(key, str) for key in variants)):
+            raise ValueError('Укажите варианты открытого результата.')
+        import webview
+        from photo_delivery import deliver
+        from photo_jobs import read_result
+        with self._dialogs:
+            if id not in self._server.folders:
+                raise ValueError('Результат не открыт в приложении.')
+            folders = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+            if not folders:
+                return None
+            with self._server.lock:
+                if self._server.closing.is_set():
+                    raise ValueError('Программа закрывается. Повторите после запуска.')
+                output = self._server.folders.get(id)
+                if output is None:
+                    raise ValueError('Результат не открыт в приложении.')
+                delivered = deliver(output, read_result(output), folders[0], variants)
+                return dict(delivered, result=self._server.result(id))
+
+    def reveal_variant(self, id, variant):
+        """Show the clean copy of a variant in Explorer, selected in its folder."""
+        self._guard()
+        if not isinstance(id, str) or not isinstance(variant, str):
+            raise ValueError('Укажите вариант открытого результата.')
+        from photo_delivery import load
+        with self._server.lock:
+            output = self._server.folders.get(id)
+            if output is None:
+                raise ValueError('Результат не открыт в приложении.')
+            copies = [record for record in load(output) if record['variant'] == variant]
+        # The place the user chose for this variant comes before the folder shared by all presentations.
+        for record in sorted(copies, key=lambda record: record['auto']):
+            path = Path(record['folder'])/record['file']
+            if path.is_file():
+                reveal_local(path)
+                return True
+        raise ValueError('Копия варианта не найдена: её переместили или удалили. '
+                         'Сохраните вариант в папку ещё раз.')
 
     def relocate_result(self, id):
         self._guard()

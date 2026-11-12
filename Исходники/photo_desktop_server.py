@@ -10,6 +10,7 @@ import secrets
 from threading import Lock, RLock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from photo_delivery import targets as delivery_targets
 from photo_edit import EditConflict, EditError, apply_edits, find_seams, pages_info, rename_item, source_pdf
 from photo_export import PDFIUM_LOCK
 from photo_jobs import normalized_report, read_result
@@ -88,7 +89,9 @@ class DesktopServer(PreviewServer):
         folder = self.folders[id]
         report = read_result(folder) if report is None else normalized_report(report, folder)
         return {'id': id, 'base_url': f'{self.origin}/{id}/',
-                'title': Path(report['source']).stem, 'report': report}
+                'title': Path(report['source']).stem, 'report': report,
+                # Where clean copies of the variants were put: {variant: [{folder, file, auto}]}.
+                'delivery': delivery_targets(folder)}
 
     def preview(self, id, index):
         """Render a registered report entry; the caller never supplies a disk path."""
@@ -375,6 +378,12 @@ def desktop_handler(server):
                         response = {'ok': True, 'revision': report['revision'], 'message': message, 'backup': backup}
                     report = normalized_report(report, folder)
                     server.jobs.remember(report)
+                    # The save is done; clean copies of the variants in the user's folders follow it.
+                    delivered = server.jobs.deliver(report)
+                    if delivered['saved']:
+                        response['message'] += f' Готовые варианты обновлены: {len(delivered["saved"])} PDF.'
+                    if delivered['errors']:
+                        response['delivery_errors'] = delivered['errors']
                     response['result'] = server.result(result_id, report)
                     return self.reply(200, response)
             except EditConflict as error:

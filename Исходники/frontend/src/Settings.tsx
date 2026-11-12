@@ -1,4 +1,4 @@
-import { FileText, FolderOpen, FolderOutput, Info, ShieldCheck } from "lucide-react";
+import { FileText, Files, FolderOpen, FolderOutput, Info, ShieldCheck, X } from "lucide-react";
 import type { Snapshot } from "./types";
 import "./settings-visual.css";
 
@@ -9,10 +9,13 @@ interface SettingsProps {
   waiting: boolean;
   onModeChange(mode: OutputMode): void;
   onChooseFolder(): void;
+  onChooseDelivery(): void;
+  onClearDelivery(): void;
   onOpenLog(): void;
 }
 
-export function Settings({ state, waiting, onModeChange, onChooseFolder, onOpenLog }: SettingsProps) {
+export function Settings({ state, waiting, onModeChange, onChooseFolder, onChooseDelivery, onClearDelivery, onOpenLog }: SettingsProps) {
+  const delivery = state.settings.delivery || "";
   const options: { mode: OutputMode; label: string; detail: string }[] = [
     { mode: "nearby", label: "Рядом с исходным PDF", detail: "…\\Папка с PDF\\Название — PDF" },
     { mode: "results", label: "В подпапке «Результаты»", detail: "…\\Папка с PDF\\Результаты\\Название — PDF" },
@@ -66,6 +69,28 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onOpenL
           ))}
         </fieldset>
         {state.busy && <p className="settings-busy-note">Расположение можно изменить после завершения обработки.</p>}
+      </section>
+
+      <section className="settings-panel settings-delivery" aria-labelledby="settings-delivery-title">
+        <div className="settings-section-heading">
+          <Files size={21} aria-hidden="true" />
+          <div>
+            <h2 id="settings-delivery-title">Готовые варианты</h2>
+            <p id="settings-delivery-description">Чистые PDF вариантов без служебных файлов и вложенных папок. Программа кладёт их в эту папку после обработки и обновляет после каждого «Сохранить».</p>
+          </div>
+        </div>
+        <div className={`setting-option settings-delivery-row${delivery ? " selected" : ""}`}>
+          <span className="setting-option-copy">
+            <strong>{delivery ? "Сохранять в папку" : "Не сохранять отдельно"}</strong>
+            <small>{delivery ? `${delivery}\\Название презентации — Вариант 1.pdf` : "Варианты лежат только в папке результата. Отдельный вариант можно сохранить кнопкой «В папку…»."}</small>
+          </span>
+          {delivery && <button type="button" className="settings-choose settings-delivery-off" disabled={waiting} onClick={onClearDelivery}>
+            <X size={16} aria-hidden="true" />Отключить
+          </button>}
+          <button type="button" className="settings-choose" disabled={waiting} aria-describedby="settings-delivery-description" onClick={onChooseDelivery}>
+            <FolderOpen size={16} aria-hidden="true" />{delivery ? "Изменить" : "Выбрать папку"}
+          </button>
+        </div>
       </section>
 
       <section className="settings-panel settings-about" aria-labelledby="settings-about-title">

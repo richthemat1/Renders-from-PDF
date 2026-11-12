@@ -58,6 +58,8 @@ class WorkspaceState:
         self.path = Path(path) if path is not None else Path(
             os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'PDF-Photos' / 'workspace.json'
         self.output_mode, self.output_folder = 'nearby', ''
+        # Clean copies of variant PDFs go here after processing and after each save; '' switches it off.
+        self.delivery_folder, self._delivery_changed = '', False
         self.sidebar = dict(DEFAULT_SIDEBAR)
         self.history, self.failures, self.warning, self._corrupt = [], [], '', False
         self._pending_history, self._settings_changed = {}, False
@@ -67,7 +69,8 @@ class WorkspaceState:
 
     def _load(self):
         try:
-            self.output_mode, self.output_folder, self.history, self.failures, self.sidebar = self._read()
+            (self.output_mode, self.output_folder, self.history, self.failures, self.sidebar,
+             self.delivery_folder) = self._read()
         except FileNotFoundError:
             return
         except (OSError, UnicodeError, ValueError) as error:
@@ -108,7 +111,10 @@ class WorkspaceState:
         sidebar = value.get('sidebar')
         if not self._valid_sidebar(sidebar):
             sidebar = dict(DEFAULT_SIDEBAR)
-        return mode, folder, valid, failures, sidebar
+        delivery = value.get('delivery_folder')
+        if not isinstance(delivery, str) or not delivery or not Path(delivery).is_absolute():
+            delivery = ''
+        return mode, folder, valid, failures, sidebar, delivery
 
     @staticmethod
     def _valid_sidebar(sidebar):
@@ -154,15 +160,17 @@ class WorkspaceState:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with state_lock(self.path):
                 try:
-                    mode, folder, history, failures, sidebar = self._read()
+                    mode, folder, history, failures, sidebar, delivery = self._read()
                 except FileNotFoundError:
-                    mode, folder, history, failures, sidebar = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR)
+                    mode, folder, history, failures, sidebar, delivery = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR), ''
                 except (UnicodeError, ValueError):
                     backup = self.path.with_name(self.path.name + '.corrupt-' + uuid.uuid4().hex[:10])
                     shutil.copy2(self.path, backup)
-                    mode, folder, history, failures, sidebar = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR)
+                    mode, folder, history, failures, sidebar, delivery = 'nearby', '', [], [], dict(DEFAULT_SIDEBAR), ''
                 if self._settings_changed:
                     mode, folder = self.output_mode, self.output_folder
+                if self._delivery_changed:
+                    delivery = self.delivery_folder
                 if self._sidebar_changed:
                     sidebar = dict(self.sidebar)
                 current = {os.path.normcase(item['output']): item for item in history
@@ -179,12 +187,14 @@ class WorkspaceState:
                                    [item for item in failures if item['id'] not in self._pending_failures
                                     and item['id'] not in self._forgotten_failures])[:100]
                 value = {'schema': 2, 'output_mode': mode, 'output_folder': folder, 'history': merged,
-                         'failures': merged_failures, 'sidebar': sidebar}
+                         'failures': merged_failures, 'sidebar': sidebar, 'delivery_folder': delivery}
                 temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
                 os.replace(temporary, self.path)
                 self.history = merged
                 self.failures = merged_failures
                 self.sidebar = sidebar
+                self.delivery_folder = delivery
+                self._delivery_changed = False
                 self._pending_history.clear()
                 self._pending_failures.clear()
                 self._forgotten_history.clear()
@@ -214,6 +224,16 @@ class WorkspaceState:
         self.output_mode = mode
         self.output_folder = str(folder or '')
         self._settings_changed = True
+        return self.save()
+
+    def set_delivery(self, folder=None):
+        """The folder for clean variant PDFs of every presentation, or None to switch it off."""
+        if folder is not None:
+            if not Path(folder).is_dir():
+                raise ValueError('Выберите существующую папку для готовых вариантов.')
+            folder = str(Path(folder).resolve())
+        self.delivery_folder = folder or ''
+        self._delivery_changed = True
         return self.save()
 
     def set_sidebar(self, width, hidden):
