@@ -79,6 +79,7 @@ import type { DropPlace } from "./cardDrag";
 import { EditorToolbar } from "./EditorToolbar";
 import { CollagesPage, CroppedImage, CutEditor, needsCheck } from "./Collages";
 import type { CollageView } from "./Collages";
+import { CropDialog } from "./Crop";
 import { byPlace, cutoutNumbers, CutoutEditor, CutoutsPage, pageUrl } from "./Cutouts";
 import type { CutoutResult, CutoutSource, PictureInfo } from "./Cutouts";
 import type { Box } from "./editor";
@@ -149,6 +150,8 @@ export function Viewer({
   /** The images «Новый вариант…» moves: the selection, or one card from its context menu. */
   const [newVariant, setNewVariant] = useState<number[] | null>(null);
   const [cutting, setCutting] = useState<CollageView | null>(null);
+  /** «Вырезать…»: the card being cropped in place, the whole picture to draw the frame on and its crop so far. */
+  const [cropping, setCropping] = useState<{ view: CollageView; src: string; box: Box | null } | null>(null);
   const [cutoutEditor, setCutoutEditor] = useState<{ page: number; picture?: number } | null>(null);
   const [copying, setCopying] = useState<{ ids: number[]; whole: boolean } | null>(null);
   const [copyTarget, setCopyTarget] = useState("same");
@@ -352,13 +355,45 @@ export function Viewer({
       notify("Сначала сохраните изменения: разрезать можно сохранённое изображение.", true);
       return;
     }
+    startCut(handCut(id));
+  }
+  /** A saved picture that is no collage yet, as the cut it starts. */
+  function handCut(id: number): CollageView {
     const image = report.images[id];
     const location = draftLocation(draft, report, id);
-    startCut({ key: `m${id}`, collage: null, source: id, page: image.page, size: image.size,
+    return { key: `m${id}`, collage: null, source: id, page: image.page, size: image.size,
       title: image.title || allRows[id]?.title || `Страница ${image.page}`,
       preview: image.preview ? fileUrl(result.base_url, image.preview) : null, state: "manual", checked: true,
       pending: false, boxes: [], suggestion: [], members: [id], frames: [], variant: location.variant,
-      variantLabel: location.variant !== null ? variantLabel(labelled, location.variant) : folderLabel(report, location.folder) });
+      variantLabel: location.variant !== null ? variantLabel(labelled, location.variant) : folderLabel(report, location.folder) };
+  }
+  /** «Вырезать…»: crop one card where it stands. The crop is written at once, so nothing else may wait to be saved. */
+  function cropImage(id: number) {
+    if (saving) return;
+    if (dirty || id in draft.frames || id in draft.copies || id >= draft.sourceCount) {
+      notify("Сначала сохраните или отмените правки: обрезка сразу записывается в PDF.", true);
+      return;
+    }
+    const known = collageOf(id);
+    // A picture cut into several frames is changed by its lines, in the editor of the cut.
+    if (known && (known.boxes.length > 1 || known.members.length > 1)) return startCut(known);
+    const whole = new URL(`api/results/${encodeURIComponent(result.id)}/preview/${id}?revision=${report.revision}`, document.baseURI).href;
+    setCropping(known
+      ? { view: known, src: known.preview ?? whole, box: known.boxes[0] ?? null }
+      : { view: handCut(id), src: whole, box: null });
+  }
+  async function applyCrop(box: Box) {
+    if (!cropping) return;
+    const { view } = cropping;
+    let next: Draft;
+    try {
+      next = editDraft(draft, { type: "cut", key: view.key, collage: view.collage, source: view.source,
+        replace: view.members.filter((id) => !(id in draft.frames)), boxes: [box], targets: ["keep"], trim: false });
+    } catch (error) {
+      notify(errorText(error), true);
+      return;
+    }
+    if (await persist(next, "Изображение обрезано и записано в PDF. Резервная копия создана.")) setCropping(null);
   }
   function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean,
     names: Record<string, string> = {}) {
@@ -584,21 +619,20 @@ export function Viewer({
       setSaving(false);
     }
   }, [notify, onResult]);
-  const save = useCallback(async (): Promise<boolean> => {
+  const persist = useCallback(async (data: Draft, done = "Правки сохранены. Резервная копия создана."): Promise<boolean> => {
     if (savingRef.current || savingState.current) return false;
-    if (!dirty) return true;
     savingRef.current = true;
     setSaving(true);
     try {
       const value = await request<{ result: Result; message: string; delivery_errors?: string[] }>(
         `results/${result.id}/apply`,
-        payload(draft, report.revision),
+        payload(data, report.revision),
       );
       onResult(value.result);
       setSelected([]);
       onDirty(false);
       setSavedHere("saved");
-      notify("Правки сохранены. Резервная копия создана.", false, {
+      notify(done, false, {
         label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => undoSaved(value.result),
       });
       // The save itself succeeded; only a clean copy in the user's folder could not be refreshed.
@@ -612,7 +646,11 @@ export function Viewer({
       savingRef.current = false;
       setSaving(false);
     }
-  }, [dirty, draft, report.revision, result.id, onResult, onDirty, notify, undoSaved]);
+  }, [report.revision, result.id, onResult, onDirty, notify, undoSaved]);
+  const save = useCallback(async (): Promise<boolean> => {
+    if (savingRef.current || savingState.current) return false;
+    return dirty ? persist(draft) : true;
+  }, [dirty, draft, persist]);
   useEffect(() => {
     onSaveReady?.(save);
     return () => onSaveReady?.(null);
@@ -919,6 +957,8 @@ export function Viewer({
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />,
         disabled: !single || removedSet.has(id) || !!row.image.removed },
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} />, disabled: !single },
+      { value: "crop", label: "Вырезать…", icon: <Crop size={16} />, separator: true,
+        disabled: saving || !single || !active.length },
     ];
     if (editing) items.push(
       { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true,
@@ -973,6 +1013,7 @@ export function Viewer({
         else if (value === "rename") renameFile(id);
         else if (value === "cut") collage?.state === "suspected" ? startCut(collage) : cutImage(id);
         else if (value === "cutout") startCutout(id);
+        else if (value === "crop") cropImage(id);
         else if (value === "remove") change({ type: "remove", ids: active }, keep);
         else if (value === "restore") { if (!editing) setEditing(true); change({ type: "restore", ids: removedIds }, keep); }
       },
@@ -1610,6 +1651,8 @@ export function Viewer({
         labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
         onApply={(boxes, targets, trim, names) => applyCut(cutting, boxes, targets, trim, names)}
         onClose={() => setCutting(null)} onHelp={onHelp && (() => onHelp("collages"))} />}</Presence>
+      <Presence>{cropping && <CropDialog title={cropping.view.title} src={cropping.src} size={cropping.view.size}
+        box={cropping.box} busy={saving} onApply={(box) => void applyCrop(box)} onClose={() => setCropping(null)} />}</Presence>
       <Presence>{cutoutEditor && <CutoutEditor resultId={result.id} title={result.title} views={cutoutViews} start={cutoutEditor}
         pictureInfo={pictureInfo} isLive={liveCard} variants={variants} dotOf={dotOf}
         labelOf={(key) => variants.includes(key) ? variantLabel(labelled, key) : `Вариант ${key} (новый)`}
