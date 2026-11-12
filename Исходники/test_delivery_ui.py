@@ -29,7 +29,8 @@ class DeliveryUI(unittest.TestCase):
             self.calls.append(variants)
             with self.server.lock:
                 output = self.server.folders[id]
-                return dict(deliver(output, read_result(output), self.folder, variants), result=self.server.result(id))
+                return dict(deliver(output, read_result(output), self.folder, variants, subfolder=variants is None),
+                            result=self.server.result(id))
         self.page.expose_function('exportVariantsForTest', export)
         self.page.expose_function('revealVariantForTest', lambda id, variant: self.calls.append(('reveal', variant)) or True)
         self.page.evaluate('''() => { window.pywebview = {api: {
@@ -63,7 +64,11 @@ class DeliveryUI(unittest.TestCase):
     def test_all_variants_button_and_unsaved_edits_ask_to_save_first(self):
         self.page.get_by_role('button', name='Варианты в папку…', exact=True).click()
         expect(self.page.get_by_text('Сохранено PDF: 2', exact=False)).to_be_visible()
-        self.assertEqual(self.names(), ['Вариант 1.pdf', 'Вариант 2.pdf'])
+        # One folder named after the source PDF, and only the variants in it.
+        inner = self.folder / Path(read_result(self.output)['source']).stem
+        self.assertEqual(self.names(), [inner.name])
+        self.assertEqual(sorted(path.name for path in inner.iterdir()), ['Вариант 1.pdf', 'Вариант 2.pdf'])
+        expect(self.page.get_by_text(f'в папку «{inner}»', exact=False)).to_be_visible()
         self.assertEqual(self.calls, [None])
         self.page.get_by_role('button', name='Редактировать', exact=True).click()
         self.card(0).get_by_role('checkbox').check()
@@ -73,10 +78,10 @@ class DeliveryUI(unittest.TestCase):
         expect(self.page.get_by_text('Сначала сохраните правки', exact=False)).to_be_visible()
         self.assertEqual(self.calls, [None])
         # The save refreshes the copies made before by itself.
-        before = (self.folder / 'Вариант 2.pdf').read_bytes()
+        before = (inner / 'Вариант 2.pdf').read_bytes()
         self.save()
-        self.assertNotEqual((self.folder / 'Вариант 2.pdf').read_bytes(), before)
-        self.assertEqual((self.folder / 'Вариант 2.pdf').read_bytes(),
+        self.assertNotEqual((inner / 'Вариант 2.pdf').read_bytes(), before)
+        self.assertEqual((inner / 'Вариант 2.pdf').read_bytes(),
                          (self.output / 'Вариант 2' / 'Вариант 2.pdf').read_bytes())
         self.assertEqual(self.errors, [])
 

@@ -1,17 +1,20 @@
 """Offline image export with generic captions, tile assembly and safe fallbacks."""
 import argparse
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import html
 from io import BytesIO
 import json
+import multiprocessing
+import multiprocessing.connection
 import os
 from pathlib import Path
 import re
 import shutil
 import sys
 import tempfile
-from threading import RLock
+from threading import RLock, Thread
 import time
 from urllib.parse import quote
 
@@ -25,6 +28,7 @@ from pypdf.generic import ContentStream, IndirectObject
 from reportlab import rl_config
 
 from photo_layout import (bounds, caption_for, caption_with_variant_context, clean_text,
+                          page_start,
                           prepare_captions, prepare_selected_variants, prepare_variant_context,
                           region_is_clipped, selected_caption_with_variant, SELECTION_REFERENCE,
                           split_joined_words, text_lines, tile_groups, found_variant, variant_numbers,
@@ -45,14 +49,15 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.43'
+VERSION = '3.44'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
 VARIANTS_DIR = 'Варианты'
 OTHER_DIR = 'Все остальное'
 SERVICE_DIR = '_Служебное'
-PERSPECTIVE_TITLE = re.compile(r'^\W*перспективн\w*\s+изображени', re.I)
+# «Визуализация №3» is the same view under another name; without a number the word describes a scheme or a map.
+PERSPECTIVE_TITLE = re.compile(r'^\W*(?:перспективн\w*\s+изображени|визуализаци\w*\s*№\s*\d)', re.I)
 OUTDATED_VARIANT = re.compile(r'\b(?:предыдущ|первоначальн|прежн|устаревш|архивн|отклон[её]нн|неактуальн)\w*'
                               r'|\bне\s+принят\w*', re.I)
 SUPPRESSED_DIR = 'Служебные элементы'
@@ -509,12 +514,8 @@ def prepare_image_quality(source, pages):
     placements, identities = defaultdict(list), {}
     with PdfReader(source) as reader:
         for page in pages:
-            try:
-                paints = opaque_paints(reader.pages[page['number']-1], reader)
-            except Exception as error:
-                paints = []
-                page['quality_warning'] = {'page': page['number'], 'reason': 'Проверка перекрытий: '+str(error),
-                                           'fallback': 'Изображения с недоказанным перекрытием сохранены.'}
+            # Read with the page itself: on a sheet of drawings this parse takes as long as its text.
+            paints = page.pop('paints')
             by_object = defaultdict(list)
             for paint in paints:
                 if paint['kind'] == 'image':
@@ -593,7 +594,8 @@ def mark_cover_graphics(reader, page):
     def share(image):
         return (image['x1']-image['x0'])*(image['bottom']-image['top'])/(page['width']*page['height'])
     def band(image):
-        return image['bottom'] <= page['height']*.22 and image['x1']-image['x0'] >= page['width']*.8
+        return (image['bottom']-page_start(page)[1] <= page['height']*.22
+                and image['x1']-image['x0'] >= page['width']*.8)
     if any(share(image) >= .15 and not band(image) for image in page['images']):
         return
     paths = None
@@ -643,10 +645,14 @@ def group_suppression(page, group):
     if all(image.get('fully_occluded') for image in group):
         return {'suppression_code': 'fully_occluded', 'reason': 'Изображение полностью закрыто более поздним непрозрачным элементом.',
                 'evidence': [image['fully_occluded'] for image in group]}
-    if all(image.get('repeated_static') for image in group) and not any('scan_crop_px' in image for image in group):
+    # A photo stored as strips is judged whole: each strip of a 20 % photo is small enough to pass for a logo.
+    share = (box['x1']-box['x0'])*(box['bottom']-box['top'])/(page['width']*page['height'])
+    if (all(image.get('repeated_static') for image in group) and not any('scan_crop_px' in image for image in group)
+            and share <= (.22 if region_is_clipped(page, box) else .08)):
         return {'suppression_code': 'repeated_static', 'reason': 'Одинаковый вспомогательный элемент повторяется в одном месте не менее чем на трёх страницах.',
                 'evidence': [image['repeated_static'] for image in group]}
-    if all(image.get('repeated_resource') for image in group) and not any('scan_crop_px' in image for image in group):
+    if (all(image.get('repeated_resource') for image in group) and not any('scan_crop_px' in image for image in group)
+            and share <= REPEATED_RESOURCE_SHARE):
         pages = group[0]['repeated_resource']['pages']
         return {'suppression_code': 'repeated_resource',
                 'reason': f'Одна и та же небольшая картинка повторяется на {len(pages)} страницах в разных местах слайда — '
@@ -669,20 +675,88 @@ def group_suppression(page, group):
     return None
 
 
-def inspect(source, progress=None):
-    pages = []
-    with pdfplumber.open(source) as document:
+# A light presentation is read in a second or two, a sheet of drawings takes ten seconds a page on one
+# core. Pages still unread after this many seconds go to worker processes, so only a heavy PDF pays
+# the second it takes to start them.
+PAGE_POOL_AFTER = 3
+
+
+def page_workers():
+    """Processes that read the pages of one PDF: a quarter of the logical processors, six at most,
+    since up to four PDFs of a queue are read at once and each worker holds the PDF open."""
+    return max(1, min(6, (os.cpu_count() or 2)//4))
+
+
+def read_page(document, reader, number):
+    """What one page says without looking at its neighbours: its text lines, the placement of its
+    pictures and what it paints over them."""
+    page = document.pages[number-1]
+    images = page_images(page)
+    lines = text_lines(split_joined_words(page.extract_words(extra_attrs=['size', 'fontname'], return_chars=True)))
+    facts = {'number': number, 'width': page.width, 'height': page.height,
+             'origin': [page.bbox[0], page.bbox[1]],
+             'lines': lines, 'selection_references': selection_table_references(page, lines),
+             'images': images, 'source_components': len(images)}
+    page.close()
+    try:
+        facts['paints'] = opaque_paints(reader.pages[number-1], reader)
+    except Exception as error:
+        facts['paints'] = []
+        facts['quality_warning'] = {'page': number, 'reason': 'Проверка перекрытий: '+str(error),
+                                    'fallback': 'Изображения с недоказанным перекрытием сохранены.'}
+    return facts
+
+
+_worker_pdf = None
+
+
+def _open_in_worker(source):
+    """Each worker opens the PDF once and keeps it for all its pages."""
+    global _worker_pdf
+    parent = multiprocessing.parent_process()
+    if parent is not None:
+        # The process of the PDF may be ended at once, by a stop that took too long or by Windows when
+        # memory runs out. Nothing tells its workers, so each watches it and leaves with it.
+        def leave_with_parent():
+            multiprocessing.connection.wait([parent.sentinel])
+            os._exit(1)
+        Thread(target=leave_with_parent, daemon=True, name='pdf-photos-parent-watch').start()
+    _worker_pdf = pdfplumber.open(source), PdfReader(source)
+
+
+def _read_in_worker(number):
+    return read_page(*_worker_pdf, number)
+
+
+def read_pages(source, progress=None):
+    """The pages of the PDF in order. `progress` hears of each page once, as it is read."""
+    started = time.monotonic()
+    with pdfplumber.open(source) as document, PdfReader(source) as reader:
         total = len(document.pages)
-        for number, page in enumerate(document.pages, 1):
+        pages = {}
+        waiting = list(range(1, total+1))
+
+        def done(facts):
+            pages[facts['number']] = facts
             if progress:
-                progress({'stage': 'labels', 'current': number, 'total': total, 'found': 0})
-            images = page_images(page)
-            lines = text_lines(split_joined_words(page.extract_words(extra_attrs=['size', 'fontname'], return_chars=True)))
-            pages.append({'number': number, 'width': page.width, 'height': page.height,
-                          'origin': [page.bbox[0], page.bbox[1]],
-                          'lines': lines, 'selection_references': selection_table_references(page, lines),
-                          'images': images, 'source_components': len(images)})
-            page.close()
+                progress({'stage': 'labels', 'current': len(pages), 'total': total, 'found': 0})
+        workers = min(page_workers(), total)
+        while waiting and (workers < 2 or len(waiting) < 2 or time.monotonic()-started < PAGE_POOL_AFTER):
+            done(read_page(document, reader, waiting.pop(0)))
+    if waiting:
+        pool = ProcessPoolExecutor(min(workers, len(waiting)), mp_context=multiprocessing.get_context('spawn'),
+                                   initializer=_open_in_worker, initargs=(str(source),))
+        try:
+            for facts in pool.map(_read_in_worker, waiting):
+                done(facts)
+        finally:
+            # A stop or a fault must not wait for pages nobody will use, nor leave processes behind.
+            pool.shutdown(wait=True, cancel_futures=True)
+    return [pages[number] for number in range(1, total+1)]
+
+
+def inspect(source, progress=None):
+    pages = read_pages(source, progress)
     prepare_image_quality(source, pages)
     with PdfReader(source) as reader:
         for page in pages:
@@ -692,11 +766,11 @@ def inspect(source, progress=None):
     headers = Counter()
     for page in pages:
         headers.update({(tuple(im['srcsize']), *(round(im[k]) for k in ('x0', 'top', 'x1', 'bottom')))
-                        for im in page['images'] if im['bottom'] < page['height']*.14})
+                        for im in page['images'] if im['bottom']-page_start(page)[1] < page['height']*.14})
     for page in pages:
         for image in page['images']:
             key = (tuple(image['srcsize']), *(round(image[k]) for k in ('x0', 'top', 'x1', 'bottom')))
-            image['repeated_header'] = (image['bottom'] < page['height']*.14
+            image['repeated_header'] = (image['bottom']-page_start(page)[1] < page['height']*.14
                                         and headers[key] >= max(3, len(pages)*.5))
     prepare_captions(pages)
     prepare_selected_variants(pages)

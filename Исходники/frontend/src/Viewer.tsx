@@ -648,7 +648,8 @@ export function Viewer({
   function revealVariant(key: string) {
     void native("reveal_variant", result.id, key).catch((error) => notify(errorText(error), true));
   }
-  /** Ask for a folder and put the saved PDFs of these variants (all without keys) straight into it. */
+  /** Ask for a folder and put the saved PDFs of these variants straight into it; without keys all
+   *  variants go into a folder named after the source PDF, made inside the chosen one. */
   async function exportVariants(keys?: string[]) {
     if (savingRef.current || savingState.current) return;
     if (dirty) {
@@ -1280,7 +1281,7 @@ export function Viewer({
             </p>
           </div>
           {savedVariants.size > 0 && <button className="btn secondary export-all" disabled={saving} aria-label="Варианты в папку…"
-            title="Положить PDF всех вариантов в выбранную папку — без служебных файлов и вложенных папок"
+            title="Создать в выбранном месте папку с названием исходного PDF и положить в неё PDF всех вариантов — без служебных файлов"
             onClick={() => void exportVariants()}>
             <FolderOutput size={16} />
             <span>Варианты в папку…</span>

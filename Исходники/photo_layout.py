@@ -17,6 +17,7 @@ SELECTION_REFERENCE = re.compile(
     r'^(ВПМ|Выбранный\s+вариант)\s*[:—–-]?\s*'
     rf'(?:(?:вариант\s*№?\s*({VARIANT_NUMBER}))|(?:№?\s*({VARIANT_NUMBER})\s*(?:вариант)?))$', re.I)
 PLAN_CAPTION = re.compile(r'\b(?:схем\w*|ситуационн\w*|генплан\w*|карт[аыуе]\w*|ПОЗУ|планировочн\w*)\b', re.I)
+NUMBERED_VIEW = re.compile(r'\b(?:изображени\w*|визуализаци\w*|вид|ракурс)\s*№\s*\d', re.I)
 OVERPRINT_NUMBER = re.compile(r'№?\d+[.)]?')
 # Marks drawn on plans and sections: «на отм. +3,200», «150.6 М 38 ЭТ». They label a level, not the picture.
 ELEVATION_MARK = re.compile(r'^\s*(?:на\s+)?отм\.?\s*[.,]?\s*[+\-−]?\s*\d'
@@ -60,6 +61,13 @@ def variant_sort_key(key):
 def variant_parent(key):
     """The whole variant a key belongs to: 3 for '3.1' and for 3."""
     return int(str(key).partition('.')[0])
+
+
+def page_start(page):
+    """(left, top) of the page in the coordinates of its lines and pictures. A page box need not start
+    at zero: a CAD export centres it, and then every «top 13 % of the page» is counted from here."""
+    left, top = page.get('origin', (0, 0))
+    return left, top
 
 
 def clean_text(value):
@@ -178,12 +186,12 @@ def prepare_captions(pages):
                          and (key := found_variant(match[1])) is not None}
     for page in pages:
         repeated.update({line['text'].casefold() for line in page['lines']
-                         if line['top'] < page['height']*.13})
+                         if line['top']-page_start(page)[1] < page['height']*.13})
     threshold = max(3, math.ceil(len(pages)*.65))
     for page in pages:
         lines = [dict(line) for line in page['lines']
                  if len(line['text']) <= 400
-                 and not (line['top'] < page['height']*.13
+                 and not (line['top']-page_start(page)[1] < page['height']*.13
                           and repeated[line['text'].casefold()] >= threshold)]
         merged = []
         for line in lines:
@@ -220,7 +228,7 @@ def prepare_numbered_variant_labels(pages):
             if name and not name[0].isdigit() and re.search(r'[^\W\d_]', name):
                 references.setdefault((found_variant(full[1]), name.casefold()), page['number'])
     for page in pages:
-        if not any(line['top'] < page['height']*.25 and COMPARISON_HEADING.search(line['text'])
+        if not any(line['top']-page_start(page)[1] < page['height']*.25 and COMPARISON_HEADING.search(line['text'])
                    for line in page['lines']):
             continue
         recognized = set()
@@ -262,7 +270,7 @@ def prepare_variant_context(pages):
                             and image['bottom']-image['top'] >= page['height']*.15))]
         lines = page['captions']
         numbers = variant_numbers(' '.join(line['text'] for line in page['lines']))
-        comparison = any(line['top'] < page['height']*.25 and COMPARISON_HEADING.search(line['text'])
+        comparison = any(line['top']-page_start(page)[1] < page['height']*.25 and COMPARISON_HEADING.search(line['text'])
                          for line in page['lines'])
         if comparison:
             active = None
@@ -281,7 +289,7 @@ def prepare_variant_context(pages):
         else:
             if len(numbers) > 1 or (active and numbers and numbers != {active['variant']}):
                 active = None
-            headers = [line for line in page['lines'] if line['top'] < page['height']*.18
+            headers = [line for line in page['lines'] if line['top']-page_start(page)[1] < page['height']*.18
                        and variant_numbers(line['text'])]
             if not comparison and len(numbers) == 1 and headers:
                 heading = {'variant': next(iter(numbers)), 'title': headers[0]['text'],
@@ -317,11 +325,11 @@ def caption_with_variant_context(page, region, match):
                        f'на исходной странице {context["page"]}.')
 
 
-def region_is_clipped(page, region):
-    left, top = page.get('origin', (0, 0))
-    return (region['x0'] < left-.5 or region['top'] < top-.5
-            or region['x1'] > left+page['width']+.5
-            or region['bottom'] > top+page['height']+.5)
+def region_is_clipped(page, region, slack=.5):
+    left, top = page_start(page)
+    return (region['x0'] < left-slack or region['top'] < top-slack
+            or region['x1'] > left+page['width']+slack
+            or region['bottom'] > top+page['height']+slack)
 
 
 def prepare_selected_variants(pages):
@@ -405,7 +413,7 @@ def row_heading(page, region):
         return None
     # «Вариант 1» or «Перспективное изображение №2» names one picture; a row heading names a subject.
     headings = [line for line in page['captions']
-                if caption_text(line['text']) and line['x0'] < page['width']*.12
+                if caption_text(line['text']) and line['x0']-page_start(page)[0] < page['width']*.12
                 and not VARIANT_LABEL.search(line.get('source_text', line['text']))
                 and not re.search(r'№\s*\d', line['text'])
                 and 0 <= min(box['top'] for box in row)-line['bottom'] <= page['height']*.20
@@ -490,6 +498,38 @@ def side_caption(page, region):
     return min(candidates, key=lambda line: _side_gap(line, region), default=None)
 
 
+def slide_title(page, region):
+    """The title of the slide at its left margin, as «Визуализация №6» over a picture centred on the page:
+    it stands over no picture, yet names every large picture of the first row. Used only when nothing
+    else names the picture."""
+    left, top = page_start(page)
+    boxes = page.get('regions', [])
+    if (not boxes or region['x1']-region['x0'] < page['width']*.07
+            or region['bottom']-region['top'] < page['height']*.08):
+        return None
+    first_row = min(box['top'] for box in boxes)
+    # A key plan or a legend beside the main picture is not what the slide is about.
+    largest = max((box['x1']-box['x0'])*(box['bottom']-box['top']) for box in boxes)
+    if (region['top']-first_row > page['height']*.06
+            or (region['x1']-region['x0'])*(region['bottom']-region['top']) < largest/3):
+        return None
+    titles = [line for line in page['captions']
+              if caption_text(line['text']) and line['x0']-left < page['width']*.12
+              and 0 <= first_row-line['bottom'] <= page['height']*.25
+              and not any(_overlaps(line, box) for box in other_pictures(page, region, small=True))]
+    # The line nearest to the pictures; a heading higher up is the header of the presentation.
+    title = max(titles, key=lambda line: line['bottom'], default=None)
+    # «Вариант 1» or «Визуализация №6» names one view (as in row_heading): with several large pictures
+    # in the row nobody can tell which one it means. «Фотофиксация. Фотомонтаж №1» names its whole pair.
+    if title is not None and (VARIANT_LABEL.search(title.get('source_text', title['text']))
+                              or NUMBERED_VIEW.search(title['text'])):
+        row = [box for box in boxes if box['top']-first_row <= page['height']*.06
+               and (box['x1']-box['x0'])*(box['bottom']-box['top']) >= largest/3]
+        if len(row) > 1:
+            return None
+    return title
+
+
 def caption_for(page, region):
     width, height = region['x1']-region['x0'], region['bottom']-region['top']
     if (width < page['width']*.025 or height < page['height']*.035
@@ -505,7 +545,7 @@ def caption_for(page, region):
             continue
         overlap = max(0, min(region['x1'], line['x1'])-max(region['x0'], line['x0']))
         selected_marker = SELECTED_MARKER.fullmatch(line['text'])
-        margin_marker = (selected_marker and line['x0'] < page['width']*.10
+        margin_marker = (selected_marker and line['x0']-page_start(page)[0] < page['width']*.10
                          and 0 <= region['top']-line['bottom'] <= page['height']*.075
                          and len([box for box in page.get('regions', [region])
                                   if abs(box['top']-region['top']) < page['height']*.06
@@ -576,6 +616,12 @@ def caption_for(page, region):
                     'source_caption': label.get('source_text', label['text']),
                     'reason': 'Подпись стоит сбоку от изображения на уровне его верхнего края.',
                     'caption_bbox': [round(label[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
+        title = slide_title(page, region)
+        if title is not None:
+            return {'status': 'named', 'title': title['text'], 'candidates': [title['text']],
+                    'source_caption': title.get('source_text', title['text']),
+                    'reason': 'Заголовок слайда у левого поля над изображениями.',
+                    'caption_bbox': [round(title[k], 3) for k in ('x0', 'top', 'x1', 'bottom')]}
         return {'status': 'unsigned', 'title': None, 'candidates': [],
                 'reason': 'Рядом с изображением не найдена читаемая подпись.'}
     score, side, best = choices[0]

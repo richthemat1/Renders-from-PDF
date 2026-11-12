@@ -14,7 +14,7 @@ from threading import Thread
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 from pypdf import PdfReader
 
-from photo_layout import clean_text, variant_numbers
+from photo_layout import clean_text, page_start, region_is_clipped, variant_numbers
 
 try:
     # What page.images[…] calls in pypdf 6.10 (pinned in requirements.txt) once it has parsed the page.
@@ -151,7 +151,9 @@ def direct_image(obj):
     image = _plain_pixels(obj, jpeg=masked)
     if image is None or not masked:
         return image
-    alpha = _plain_pixels(obj['/SMask'], jpeg=False)
+    # A JPEG mask is taken as stored: pypdf encodes it as JPEG a second time, which costs seconds per
+    # photo and shifts its transparency by a few levels.
+    alpha = _plain_pixels(obj['/SMask'], jpeg=True)
     if alpha is None or alpha.mode != 'L':
         image.close()
         if alpha is not None:
@@ -811,8 +813,7 @@ def _cut_problem(page, original, image, full_page):
     ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
     if abs(image.width/image.height/ratio-1) > .025:
         return 'Поворот или деформация скана: разрезание отключено.'
-    if not full_page and (original['x0'] < -1 or original['top'] < -1
-            or original['x1'] > page['width']+1 or original['bottom'] > page['height']+1):
+    if not full_page and region_is_clipped(page, original, 1):
         return 'Часть составного растра находится за краем страницы; требуется проверка.'
     return None
 
@@ -948,7 +949,8 @@ def column_caption(page, region, match):
                and source['bbox'][2] >= region['x1']-1 and source['bbox'][3] >= region['bottom']-1]
     if page['scan'].get('full_page') is False and len(sources) != 1:
         return match
-    left, top, right, bottom = sources[0]['bbox'] if sources else (0, 0, page['width'], page['height'])
+    left, top, right, bottom = (sources[0]['bbox'] if sources else
+                                (*page_start(page), page_start(page)[0]+page['width'], page_start(page)[1]+page['height']))
     width, height = right-left, bottom-top
     headers = [line for line in page['captions'] if top <= line['top'] < top+height*.25
                and left <= (line['x0']+line['x1'])/2 <= right
@@ -1010,7 +1012,8 @@ def whole_scan_caption(page, match):
     if (not page.get('scan') or page['scan'].get('full_page') is False
             or page['scan'].get('panels') or page['scan'].get('error')):
         return match
-    headers = [line for line in page['captions'] if page['height']*.13 <= line['top'] < page['height']*.25]
+    headers = [line for line in page['captions']
+               if page['height']*.13 <= line['top']-page_start(page)[1] < page['height']*.25]
     if not headers:
         # OCR noise in a table footer must not become the name of the whole slide.
         return dict(status='unsigned', title=None, candidates=[], reason='Для цельного скана не найден однозначный заголовок.')

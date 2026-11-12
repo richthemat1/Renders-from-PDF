@@ -46,6 +46,34 @@ class VariantDelivery(EditFixture, unittest.TestCase):
         self.assertEqual(self.names(), ['Вариант 1.pdf', 'Вариант 2.pdf'])
         self.assertEqual(len(result['saved']), 2)
 
+    def test_all_variants_go_into_a_folder_named_after_the_source_pdf(self):
+        result = deliver(self.output, self.report(), self.folder, subfolder=True)
+        inner = self.folder/Path(self.report()['source']).stem
+        self.assertEqual(self.names(), [inner.name])
+        self.assertEqual(self.names(inner), ['Вариант 1.pdf', 'Вариант 2.pdf'])
+        self.assertEqual(result['folder'], str(inner))
+        self.assertEqual(sorted(result['saved']), [str(inner/'Вариант 1.pdf'), str(inner/'Вариант 2.pdf')])
+        self.assertEqual(targets(self.output)['2'], [{'folder': str(inner), 'file': 'Вариант 2.pdf', 'auto': False}])
+        # The same button again refreshes the same folder: no second folder, no «(2)» files.
+        deliver(self.output, self.report(), self.folder, subfolder=True)
+        self.assertEqual(self.names(), [inner.name])
+        self.assertEqual(self.names(inner), ['Вариант 1.pdf', 'Вариант 2.pdf'])
+
+    def test_folder_of_the_presentation_is_shortened_to_leave_room_for_its_pdfs(self):
+        deep = self.folder
+        while len(str(deep)) < 205:
+            deep = deep/'Очень длинная папка проекта'
+        deep = Path(str(deep)[:205].rstrip(' '+os.sep))
+        deep.mkdir(parents=True)
+        report = dict(self.report(), source=str(Path(self.root.name)/('Жилой комплекс на улице Примерной '*4+'.pdf')))
+        result = deliver(self.output, report, deep, subfolder=True)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(len(result['saved']), 2)
+        self.assertTrue(all(len(path) <= PATH_LIMIT and Path(path).is_file() for path in result['saved']))
+        # Whole words from both ends of the name, and both variants keep their full file names.
+        self.assertRegex(Path(result['folder']).name, r'^Жилой … .*Примерной$')
+        self.assertEqual(sorted(Path(path).name for path in result['saved']), ['Вариант 1.pdf', 'Вариант 2.pdf'])
+
     def test_copy_follows_a_save_and_a_removed_variant_takes_its_copy_away(self):
         deliver(self.output, self.report(), self.folder)
         saved, _ = photo_edit.apply_edits(self.output, {'revision': 0, 'variants': {'1': [0, 1, 2]}})
@@ -214,7 +242,10 @@ class DeliveryBridge(EditFixture, unittest.TestCase):
         self.assertEqual(value['saved'], [str(self.folder/'Вариант 2.pdf')])
         self.assertEqual(value['result']['delivery'], {'2': [{'folder': str(self.folder), 'file': 'Вариант 2.pdf',
                                                                'auto': False}]})
-        self.assertEqual(len(self.bridge.export_variants(self.id, None)['saved']), 2)
+        everything = self.bridge.export_variants(self.id, None)
+        inner = self.folder/Path(self.output.name.removesuffix(' — PDF')).name
+        self.assertEqual(sorted(everything['saved']), [str(inner/'Вариант 1.pdf'), str(inner/'Вариант 2.pdf')])
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), [inner.name, 'Вариант 2.pdf'])
         self.window.create_file_dialog.return_value = None
         self.assertIsNone(self.bridge.export_variants(self.id, ['1']))
         for wrong in ([], [1], 'all'):

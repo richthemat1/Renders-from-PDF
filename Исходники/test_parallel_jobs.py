@@ -173,6 +173,8 @@ class ProcessQueue(unittest.TestCase):
                 and all(phases)):
             sleep(.02)
         self.assertEqual(len(multiprocessing.active_children()), 2)
+        # A heavy PDF reads its pages in worker processes of its own, which a daemon may not start.
+        self.assertFalse(any(child.daemon for child in multiprocessing.active_children()))
         self.jobs.cancel()
         done = self.jobs.wait(120)
         self.assertEqual((done['job']['outcome'], done['job']['remaining']), ('cancelled', 2))

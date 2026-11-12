@@ -20,10 +20,11 @@ from photo_native import Cancelled, available_memory, dropped_pdfs, lower_priori
 from photo_state import WorkspaceState
 
 LOGGER = logging.getLogger('pdf-photos')
-# Most PDFs of a queue that run at once: each takes a core and up to 2 GB at its peak.
+# Most PDFs of a queue that run at once: each takes a core, a heavy one also its page workers.
 MAX_PARALLEL = 4
-# Memory one more PDF is given room for: at their peak seven presentations of 17–117 pages took 0.3–1.8 GB.
-FILE_MEMORY = 1_500_000_000
+# Memory one more PDF is given room for. At their peak eleven presentations of 17–117 pages took 0.3–2.5 GB:
+# a deck with sheets of drawings 2.4 GB in its own process, another 2.5 GB in the workers reading its pages.
+FILE_MEMORY = 2_500_000_000
 
 
 def parallel_limit():
@@ -529,9 +530,11 @@ class JobService:
             self._show_active()
         LOGGER.info('Processing %s', source)
         if stop is not None:
+            # Not a daemon: a heavy PDF reads its pages in worker processes of its own, which a daemon may
+            # not start. The queue stops and joins every process it started before the window closes.
             handle = multiprocessing.get_context('spawn').Process(
                 target=process_file, args=(slot, source, output, events, stop),
-                daemon=True, name=f'pdf-photos-{slot + 1}')
+                daemon=False, name=f'pdf-photos-{slot + 1}')
         else:
             def run():
                 return self.extractor(source, output=output, progress=lambda info: self._thread_progress(slot, info))

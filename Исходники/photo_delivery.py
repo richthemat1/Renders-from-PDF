@@ -109,6 +109,22 @@ def file_name(folder, title, presentation=None):
     return stem+'.pdf'
 
 
+def presentation_folder(folder, report):
+    """The folder named after the source PDF inside the chosen one, made if it is not there yet.
+
+    Its name is cut on words so that «Вариант 10.pdf» inside it still opens in Explorer."""
+    room = PATH_LIMIT-len(str(folder))-1-1-len('Вариант 10 …')-len('.pdf')-len(' (2)')
+    if room < MIN_STEM:
+        raise DeliveryError('Путь к папке слишком длинный: папка презентации с PDF вариантов в нём не поместится. '
+                            'Выберите папку ближе к корню диска, например D:\\Варианты.')
+    inner = Path(folder)/safe_name(Path(report['source']).stem, min(room, 100), keep_end=True)
+    try:
+        inner.mkdir(exist_ok=True)
+    except OSError as error:
+        raise DeliveryError(f'Не удалось создать папку «{inner.name}»: {error.strerror or error}.') from error
+    return inner
+
+
 def _digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -232,8 +248,11 @@ def sync(output, report, auto_folder=None):
     return _refresh(output, report, records, auto_folder or None)
 
 
-def deliver(output, report, folder, variants=None):
-    """Put the chosen variants (all by default) into folder as bare PDFs and follow them from now on."""
+def deliver(output, report, folder, variants=None, subfolder=False):
+    """Put the chosen variants (all by default) into folder as bare PDFs and follow them from now on.
+
+    With subfolder they go into a folder named after the source PDF, made inside the chosen one:
+    the variants of several presentations sent to one place stay apart."""
     folder = checked_folder(folder, output)
     documents = variant_documents(report)
     keys = list(documents) if variants is None else [str(key) for key in variants]
@@ -241,6 +260,8 @@ def deliver(output, report, folder, variants=None):
     if missing or not keys:
         raise DeliveryError('В сохранённом результате нет такого варианта. Если вариант только что создан '
                             'или изменён, сначала нажмите «Сохранить».')
+    if subfolder:
+        folder = presentation_folder(folder, report)
     records = load(output)
     chosen = []
     for key in keys:

@@ -92,7 +92,8 @@ class NativeBridge:
         return self._jobs.set_delivery(None)
 
     def export_variants(self, id, variants=None):
-        """Ask for a folder and put the saved PDFs of these variants (all by default) straight into it."""
+        """Ask for a folder and put the saved PDFs of these variants straight into it; with no variants
+        named, all of them go into a folder named after the source PDF, made inside the chosen one."""
         self._guard()
         if not isinstance(id, str) or not (variants is None or isinstance(variants, list) and variants
                                            and all(isinstance(key, str) for key in variants)):
@@ -112,7 +113,8 @@ class NativeBridge:
                 output = self._server.folders.get(id)
                 if output is None:
                     raise ValueError('Результат не открыт в приложении.')
-                delivered = deliver(output, read_result(output), folders[0], variants)
+                # All variants at once go into a folder named after the source PDF; one variant goes in bare.
+                delivered = deliver(output, read_result(output), folders[0], variants, subfolder=variants is None)
                 return dict(delivered, result=self._server.result(id))
 
     def reveal_variant(self, id, variant):

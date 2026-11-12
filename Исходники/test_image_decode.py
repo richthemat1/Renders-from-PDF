@@ -88,12 +88,25 @@ class DirectDecode(unittest.TestCase):
         page, objects = self.fixture()
         for name, obj in objects.items():
             with self.subTest(name):
+                if name == '/JpegMask':
+                    continue
                 self.assertTrue(same(pypdf_image(page, name, obj), page.images[name].image))
+
+    def test_jpeg_mask_keeps_its_own_pixels(self):
+        """pypdf encodes a JPEG mask a second time, with loss; the direct picture has the colours of pypdf
+        and the transparency exactly as the mask stores it."""
+        page, objects = self.fixture()
+        obj = objects['/JpegMask']
+        found, expected = pypdf_image(page, '/JpegMask', obj), page.images['/JpegMask'].image
+        self.assertEqual(found.mode, 'RGBA')
+        self.assertTrue(same(found.convert('RGB'), expected.convert('RGB')))
+        with Image.open(BytesIO(obj['/SMask'].get_data())) as mask:
+            self.assertTrue(same(found.getchannel('A'), mask))
 
     def test_only_exact_kinds_skip_pypdf(self):
         page, objects = self.fixture()
         direct = {name for name, obj in objects.items() if direct_image(obj) is not None}
-        self.assertEqual(direct, {'/MaskedJpeg', '/Jpx', '/MaskedJpx', '/Flate', '/MaskedGrey', '/OtherMaskSize'})
+        self.assertEqual(direct, {'/MaskedJpeg', '/Jpx', '/MaskedJpx', '/Flate', '/MaskedGrey', '/OtherMaskSize', '/JpegMask'})
 
     def test_scratch_files_stay_byte_for_byte(self):
         """image_sha256 and the blank check read the scratch raster: its file does not change."""
@@ -105,7 +118,7 @@ class DirectDecode(unittest.TestCase):
                 with self.subTest(name):
                     found = page.images[name]
                     suffix = Path(found.name).suffix.lower()
-                    if photo_export.native_jpeg(obj) is not None:
+                    if photo_export.native_jpeg(obj) is not None or name == '/JpegMask':
                         continue
                     if suffix in ('.jpg', '.jpeg', '.png'):
                         before = found.data
