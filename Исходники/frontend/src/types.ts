@@ -19,6 +19,8 @@ export interface ImageEntry {
   suppressed?: boolean;
   suppression_code?: string;
   copy_of?: number;
+  /** Clockwise degrees the card was turned by hand («Повернуть»); its PDF page turns, the pixels stay. */
+  turn?: 90 | 180 | 270;
   /** The collage this card belongs to: one of its frames, or the whole picture offered for cutting. */
   collage?: string;
   /** A frame's box in the collage pixels. */
@@ -49,6 +51,8 @@ export interface Report {
   source: string;
   output: string;
   pages: number;
+  /** Source pages read turned, by page number: a scan of a sheet lying on its side, in clockwise degrees. */
+  upright_pages?: Record<string, number>;
   images: ImageEntry[];
   documents: {
     file: string;

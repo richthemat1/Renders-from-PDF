@@ -22,7 +22,7 @@ from photo_export import (COLLAGES_DIR, CUTOUTS_DIR, OTHER_DIR, PDFIUM_LOCK, SER
                           entry_group, file_stem, group_file, group_title, has_service_dir, image_to_pdf, safe_name,
                           settled, write_gallery)
 from photo_layout import variant_key, variant_sort_key
-from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL, turned
+from photo_scan import native_jpeg, SCRATCH_PNG_LEVEL, shown_transpose, TURNS, turned
 
 BACKUPS = '_Резервные копии'
 
@@ -185,8 +185,9 @@ def entry_pdf_source(output, report, index):
     return path, page
 
 
-def variant_pdf(output, report, ids, key, frames=None):
-    """Join entry pages into one PDF; `frames` holds the in-memory pages of new collage frames."""
+def variant_pdf(output, report, ids, key, frames=None, rotations=None):
+    """Join entry pages into one PDF; `frames` holds the in-memory pages of new collage frames and
+    `rotations` the clockwise degrees a page turns by, without touching its pixels."""
     writer = PdfWriter()
     readers = {}
     try:
@@ -205,7 +206,9 @@ def variant_pdf(output, report, ids, key, frames=None):
                 readers[path] = PdfReader(path)
             if page >= len(readers[path].pages):
                 raise EditError('В PDF больше нет нужной страницы изображения.')
-            writer.add_page(readers[path].pages[page])
+            added = writer.add_page(readers[path].pages[page])
+            if rotations and rotations.get(index):
+                added.rotation = (added.rotation+rotations[index]) % 360
             writer.add_outline_item(f'Страница {entry["page"]} — {entry["title"] or entry["folder"]}', position)
         buffer = BytesIO()
         writer.write(buffer)
@@ -496,6 +499,37 @@ FRAME_MIN = 16
 FRAME_LIMIT = 64
 
 
+def turned_png(data, turn):
+    """A PNG turned clockwise by `turn` degrees; the same bytes without a turn."""
+    if not turn % 360:
+        return data
+    with Image.open(BytesIO(data)) as image, image.transpose(TURNS[turn % 360]) as shown:
+        buffer = BytesIO()
+        shown.save(buffer, 'PNG')
+        return buffer.getvalue()
+
+
+def parse_turns(report, payload):
+    """Cards turned by hand: {index: clockwise degrees, a quarter turn or a half turn}."""
+    raw = payload.get('turns', {})
+    try:
+        if not isinstance(raw, dict):
+            raise TypeError()
+        turns = {}
+        for key, value in raw.items():
+            index = int(key)
+            if type(value) is not int or value % 360 not in TURNS or index in turns:
+                raise ValueError()
+            turns[index] = value % 360
+    except (TypeError, ValueError):
+        raise EditError('Некорректный формат поворота изображений.') from None
+    images = report['images']
+    for index in turns:
+        if not 0 <= index < len(images) or images[index].get('removed'):
+            raise EditError('Изображение для поворота не найдено. Обновите страницу и повторите правку.')
+    return turns
+
+
 def parse_collage_edits(report, payload):
     """Cuts as (record, boxes, old members, created); plus the ids confirmed or dismissed as one photo."""
     images = report['images']
@@ -592,16 +626,41 @@ def _decoded_picture(picture, pictures):
             pypdf.filters.ZLIB_MAX_OUTPUT_LENGTH = cap
 
 
+def _placement(pdf_page):
+    """The matrix the page draws its picture with, or None when it draws no picture."""
+    from pdfminer.utils import mult_matrix
+    contents = pdf_page.get_contents()
+    if contents is None:
+        return None
+    matrix, stack = (1, 0, 0, 1, 0, 0), []
+    for operands, operator in contents.operations:
+        if operator == b'q':
+            stack.append(matrix)
+        elif operator == b'Q' and stack:
+            matrix = stack.pop()
+        elif operator == b'cm' and len(operands) == 6:
+            matrix = mult_matrix(tuple(float(value) for value in operands), matrix)
+        elif operator == b'Do':
+            return matrix
+    return None
+
+
+def _shown_steps(pdf_page):
+    """Transposes that turn the stored pixels of a result page into the picture it shows."""
+    placement = _placement(pdf_page)
+    shown = shown_transpose(placement) if placement else None
+    rotation = pdf_page.rotation % 360
+    if shown is False or rotation % 90:
+        raise EditError('Картинка нарисована в PDF с наклоном: обрезать или разрезать её нельзя.')
+    return [step for step in (shown, TURNS.get(rotation)) if step is not None]
+
+
 def _collage_source(output, report, record):
     """The whole collage picture as a PIL image, its PDF page size in points and that page's bytes."""
     if record.get('file'):
         path, page = _backup_io_path(_safe_path(output, record['file'], must_exist=True)), 0
     else:
         path, page = entry_pdf_source(output, report, record['image'])
-    entry = report['images'][record['image']] if 'image' in record else None
-    for component in (entry or {}).get('components') or []:
-        if turned(component.get('matrix')):
-            raise EditError('Повёрнутую или отражённую картинку разрезать нельзя.')
     try:
         with PdfReader(path) as reader:
             pdf_page = reader.pages[page]
@@ -611,12 +670,21 @@ def _collage_source(output, report, record):
             # Frames are cut from the JPEG the PDF holds, not from the copy pypdf re-encodes on extraction.
             picture = _page_picture(pdf_page)
             data = native_jpeg(picture) if picture is not None else None
+            steps = _shown_steps(pdf_page)
             if data is not None:
                 image = Image.open(BytesIO(data))
                 image.load()
             else:
                 image = _decoded_picture(picture, pictures)
+            # Lines and frames are drawn on the picture as the PDF shows it: turned by its placement
+            # and by the turn of the page.
+            for step in steps:
+                shown = image.transpose(step)
+                image.close()
+                image = shown
             size = float(pdf_page.mediabox.width), float(pdf_page.mediabox.height)
+            if pdf_page.rotation % 180:
+                size = size[::-1]
             writer = PdfWriter()
             writer.add_page(pdf_page)
             buffer = BytesIO()
@@ -692,13 +760,18 @@ def _report_with_frames(report, cuts, start, output, aux):
         for number, (box, frame) in enumerate(zip(boxes, cut), 1):
             index = start+len(frames)
             preview = str(service/'Миниатюры'/f'кадр {identifier} r{revision} {number}.png')
-            aux[preview] = frame['preview']
             entry = copy.deepcopy(template)
             for key in ('removed', 'suppressed', 'copy_of', 'collage_replaced', 'sha256'):
                 entry.pop(key, None)
+            # The whole picture of a collage is kept as it was before any turn. The one frame that crops it
+            # again turns as its card was turned; a picture cut for the first time is read as shown.
+            if created or len(boxes) > 1 or len(members) != 1:
+                entry.pop('turn', None)
+            turn = entry.get('turn', 0)
+            aux[preview] = turned_png(frame['preview'], turn)
             entry.setdefault('original_location', original_location(template))
-            entry.update(collage=identifier, crop_px=box, size=frame['size'], method='manual_crop', manual=True,
-                         cut='manual', preview=preview, pdf_page=1,
+            entry.update(collage=identifier, crop_px=box, size=frame['size'][::-1] if turn % 180 else frame['size'],
+                         method='manual_crop', manual=True, cut='manual', preview=preview, pdf_page=1,
                          reason=('Склейка возвращена целиком вручную.' if whole else
                                  f'Кадр {number} из склейки на странице {record["page"]}, вырезан вручную.'))
             entry['components'] = [dict(component, crop_px=box) for component in (template.get('components') or [])[:1]]
@@ -777,7 +850,28 @@ def page_geometry(report):
             raise EditError('Исходный PDF не совпадает с результатом: другое число страниц.')
         _GEOMETRY.clear()
         _GEOMETRY[key] = pages
-    return _GEOMETRY[key]
+    return turned_pages(report, _GEOMETRY[key])
+
+
+def page_turn(report, number):
+    """Clockwise degrees a source page was read turned by: a scan of a sheet lying on its side."""
+    turn = (report.get('upright_pages') or {}).get(str(number), 0)
+    return turn % 360 if type(turn) is int and turn % 90 == 0 else 0
+
+
+def turned_pages(report, pages):
+    """Page boxes as the result reads the pages: a page read turned is as wide as it was tall."""
+    if not report.get('upright_pages'):
+        return pages
+    shown = []
+    for number, page in enumerate(pages, 1):
+        turn = page_turn(report, number)
+        if turn:
+            x0, top, x1, bottom = page['box']
+            box = [x0, top, x0+bottom-top, top+x1-x0] if turn % 180 else page['box']
+            page = {**page, 'box': box, 'turn': turn}
+        shown.append(page)
+    return shown
 
 
 def snapshot_scale(page):
@@ -803,9 +897,11 @@ def cutout_sources(report, geometry=None):
         page = entry.get('page')
         if (entry.get('removed') or 'copy_of' in entry or entry.get('cutout') or entry.get('method') == 'manual_crop'
                 or not isinstance(entry.get('bbox'), list) or len(entry['bbox']) != 4
-                or type(page) is not int or not 1 <= page <= len(geometry) or geometry[page-1]['rotation']):
+                or type(page) is not int or not 1 <= page <= len(geometry) or geometry[page-1]['rotation']
+                or geometry[page-1].get('turn')):
             continue
-        if any(turned(component.get('matrix')) for component in entry.get('components') or []):
+        # A card turned by hand no longer shows its picture as the page does: a frame on the page is a snapshot.
+        if entry.get('turn') or any(turned(component.get('matrix')) for component in entry.get('components') or []):
             continue
         area = picture_area(entry, geometry[page-1])
         if area[2]-area[0] > 0 and area[3]-area[1] > 0:
@@ -1013,6 +1109,7 @@ def _snapshot_frames(report, record, boxes, title=None):
     path = source_pdf(report)
     scale = record['scale']
     width, height = record['size']
+    turn = page_turn(report, record['page'])
     frames = []
     with tempfile.TemporaryDirectory(prefix='pdf-photos-cut-') as folder:
         with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
@@ -1025,7 +1122,7 @@ def _snapshot_frames(report, record, boxes, title=None):
                     # pixel of room kept on the right and below is cut off below.
                     crop = (max(0, box[0]-.5)/scale, max(0, height-box[3]-1)/scale, max(0, width-box[2]-1)/scale,
                             max(0, box[1]-.5)/scale)
-                    bitmap = page.render(scale=scale, crop=crop)
+                    bitmap = page.render(scale=scale, rotation=turn, crop=crop)
                     try:
                         with bitmap.to_pil() as rendered, rendered.crop((0, 0, box[2]-box[0], box[3]-box[1])) as image:
                             image.convert('RGB').save(raster, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
@@ -1092,7 +1189,7 @@ def _report_with_cutouts(report, cutouts, start, output, aux):
             if template is not None:
                 entry = copy.deepcopy(template)
                 for key in ('removed', 'suppressed', 'copy_of', 'collage', 'collage_replaced', 'cutout_replaced',
-                            'sha256', 'cut', 'crop_px', 'marks'):
+                            'sha256', 'cut', 'crop_px', 'marks', 'turn'):
                     entry.pop(key, None)
                 entry.setdefault('original_location', original_location(template))
                 entry['components'] = [dict(component, crop_px=box) for component in (template.get('components') or [])[:1]]
@@ -1173,10 +1270,13 @@ def apply_edits(output, payload):
     report = load_report(output)
     cuts, checked, dismissed = parse_collage_edits(report, payload)
     cutouts = parse_cutout_edits(report, payload)
+    turns = parse_turns(report, payload)
     frame_count = sum(len(cut[1]) for cut in cuts)
     variants, removed, current = parse_payload(report, payload,
                                                pieces=frame_count+sum(len(item['boxes']) for item in cutouts))
     names = parse_variant_names(report, variants, payload.get('variant_names'))
+    if set(turns) & set(removed):
+        raise EditError('Убранное изображение нельзя повернуть. Верните его и повторите поворот.')
     for record, boxes, members, created, trim in cuts:
         if any(index not in removed for index in members):
             raise EditError('Прежние кадры склейки не убраны из правки. Обновите страницу и повторите разрезание.')
@@ -1216,21 +1316,40 @@ def apply_edits(output, payload):
     images = working['images']
     misc = [int(index) for index in payload.get('misc', [])
             if int(index) >= copy_start or images[int(index)].get('removed') or entry_group(images[int(index)]) is not None]
-    changed = sorted((key for key, ids in variants.items() if ids != current.get(key, [])), key=variant_sort_key)
+    home = {index: key for key, ids in variants.items() for index in ids}
+    # A turned card rebuilds the PDF it lives in: its variant, or its own PDF outside variants.
+    changed = sorted({key for key, ids in variants.items() if ids != current.get(key, [])}
+                     | {home[index] for index in turns if index in home}, key=variant_sort_key)
+    # Pages turn as PDF pages do, the pixels stay as stored: cards turned now, and a frame that crops
+    # a turned card again.
+    rotations = dict(turns) | {index: images[index]['turn'] for index in frames if images[index].get('turn')}
     to_variant = [index for ids in variants.values() for index in ids]
     # Copies only borrow source references; they must never retire a live or recovery PDF.
     source_singles = [index for index in removed+to_variant
                       if index < copy_start and entry_group(images[index]) is None and not images[index].get('removed')]
-    if not changed and not source_singles and not misc and not cuts and not cutouts and not checked and not dismissed:
+    if (not changed and not source_singles and not misc and not cuts and not cutouts and not checked and not dismissed
+            and not turns):
         return report, None
     # Read every source before creating backups or replacing any live PDF.
-    built = {key: variant_pdf(output, working, variants[key], key, frames) for key in changed if variants[key]}
+    built = {key: variant_pdf(output, working, variants[key], key, frames, rotations) for key in changed if variants[key]}
+    # A turned card outside variants keeps its PDF and its place in it; the PDF is written anew.
+    in_place = {}
+    for index in turns:
+        if index in home or index in misc:
+            continue
+        relative = os.path.normcase(str(Path(images[index]['file'])))
+        in_place[relative] = sorted((other for other, entry in enumerate(images[:copy_start])
+                                     if not entry.get('removed') and entry_group(entry) is None
+                                     and os.path.normcase(str(Path(entry['file']))) == relative),
+                                    key=lambda other: images[other]['pdf_page'])
+    rewritten = {str(Path(images[ids[0]]['file'])): (ids, variant_pdf(output, working, ids, None, frames, rotations))
+                 for ids in in_place.values()}
     reserved = {str(group_file(working, key)).casefold() for key in variants}
     singles = {}
     folder_labels = dict(report.get('folder_labels') or {})
     for index in misc:
         target, location = _misc_target(output, working, index, reserved, folder_labels)
-        singles[index] = target, location, variant_pdf(output, working, [index], None, frames)
+        singles[index] = target, location, variant_pdf(output, working, [index], None, frames, rotations)
     # A removal is recoverable only if its source and page really exist.
     for index in removed:
         entry_pdf_source(output, report, index)
@@ -1242,7 +1361,10 @@ def apply_edits(output, payload):
         _update_collages(new, cut_summary, checked, dismissed)
     if cutouts:
         _update_cutouts(new, cutout_summary)
+    if turns:
+        _update_turns(new, turns, rewritten, output, aux)
     pdfs = {str(group_file(working, key)): data for key, data in built.items()}
+    pdfs.update({relative: data for relative, (_, data) in rewritten.items()})
     if 'folder_labels' in new:
         new['folder_labels'].update({name: name for name in names.values()})
     pdfs.update({value[0]: value[2] for value in singles.values()})
@@ -1272,6 +1394,38 @@ def apply_edits(output, payload):
         for path in written:
             _backup_io_path(path).unlink(missing_ok=True)
         raise
+
+
+def _update_turns(new, turns, rewritten, output, aux):
+    """Turned cards: their turn, their size as shown, a turned thumbnail and the PDF written in place."""
+    images = new['images']
+    revision = new['revision']
+    for index, turn in turns.items():
+        entry = images[index]
+        total = (entry.get('turn', 0)+turn) % 360
+        if total:
+            entry['turn'] = total
+        else:
+            entry.pop('turn', None)
+        if turn % 180:
+            entry['size'] = list(entry['size'])[::-1]
+        entry['manual'] = True
+        if entry.get('preview'):
+            try:
+                path = _safe_path(output, entry['preview'], must_exist=True)
+                data = turned_png(_backup_io_path(path).read_bytes(), turn)
+            except (EditError, OSError, ValueError):
+                # Without its old thumbnail the card shows the picture from its PDF.
+                entry['preview'] = None
+            else:
+                preview = str(Path(SERVICE_DIR)/'Миниатюры'/f'поворот {index} r{revision}.png')
+                aux[preview] = data
+                entry['preview'] = preview
+    for relative, (ids, data) in rewritten.items():
+        checksum = hashlib.sha256(data).hexdigest()
+        for position, index in enumerate(ids, 1):
+            images[index].update(pdf_page=position, sha256=checksum)
+    new['edits'][-1]['turns'] = [{'image': index, 'turn': turn} for index, turn in sorted(turns.items())]
 
 
 def _update_collages(new, cut_summary, checked, dismissed):

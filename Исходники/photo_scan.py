@@ -37,6 +37,93 @@ def turned(matrix):
     return abs(b) > 1e-4*abs(a) or abs(c) > 1e-4*abs(d) or a < 0 or d < 0
 
 
+# The PIL transpose that shows stored pixels as the page does, by where the page draws their rows and
+# columns: (the way a row runs, the way a column runs) in page coordinates with y down.
+_SHOWN = {
+    ((1, 0), (0, 1)): None,
+    ((0, -1), (1, 0)): Image.Transpose.ROTATE_90,
+    ((-1, 0), (0, -1)): Image.Transpose.ROTATE_180,
+    ((0, 1), (-1, 0)): Image.Transpose.ROTATE_270,
+    ((-1, 0), (0, 1)): Image.Transpose.FLIP_LEFT_RIGHT,
+    ((1, 0), (0, -1)): Image.Transpose.FLIP_TOP_BOTTOM,
+    ((0, 1), (1, 0)): Image.Transpose.TRANSPOSE,
+    ((0, -1), (-1, 0)): Image.Transpose.TRANSVERSE,
+}
+# Clockwise quarter turns of a picture as PIL transposes.
+TURNS = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180, 270: Image.Transpose.ROTATE_90}
+# Transposes that make a picture as wide as it was tall.
+SIDEWAYS = {Image.Transpose.ROTATE_90, Image.Transpose.ROTATE_270, Image.Transpose.TRANSPOSE, Image.Transpose.TRANSVERSE}
+
+
+def shown_transpose(matrix):
+    """The transpose that turns or flips stored pixels to the way the page shows them: None when they are
+    shown as stored, False for a slant no quarter turn or flip explains."""
+    a, b, c, d = (matrix or (1, 0, 0, 1))[:4]
+    scale = max(abs(a), abs(b), abs(c), abs(d)) or 1
+    def sign(value):
+        return 0 if abs(value) <= 1e-4*scale else 1 if value > 0 else -1
+    # PDF space has y up: a row runs along (a, b), a column downwards along (-c, -d).
+    return _SHOWN.get(((sign(a), sign(-b)), (sign(-c), sign(d))), False)
+
+
+def turned_matrix(matrix, turn):
+    """A placement matrix after its page is turned clockwise by `turn` degrees."""
+    a, b, c, d = matrix[:4]
+    return {0: [a, b, c, d], 90: [b, -a, d, -c], 180: [-a, -b, -c, -d], 270: [-b, a, -d, c]}[turn]
+
+
+def turn_frame(page, turn):
+    """Turn the coordinates of a page clockwise by `turn` degrees, as if the sheet were turned on the table:
+    its lines and pictures keep their places on it, the page becomes upright."""
+    left, top = page_start(page)
+    width, height = page['width'], page['height']
+    def point(x, y):
+        u, v = x-left, y-top
+        u, v = {90: (height-v, u), 180: (width-u, height-v), 270: (v, width-u)}[turn]
+        return left+u, top+v
+    for item in page['images']+page['lines']:
+        (x0, y0), (x1, y1) = point(item['x0'], item['top']), point(item['x1'], item['bottom'])
+        item.update(x0=min(x0, x1), x1=max(x0, x1), top=min(y0, y1), bottom=max(y0, y1))
+        if item.get('matrix'):
+            item['matrix'] = turned_matrix(item['matrix'], turn)
+    if turn in (90, 270):
+        page['width'], page['height'] = height, width
+    page['upright'] = (page.get('upright', 0)+turn) % 360
+
+
+# A word OCR reads from upright text: Cyrillic letters with an ordinary case. Text read upside down or
+# sideways comes back as short scraps or as «слова» with capitals in the middle.
+UPRIGHT_WORD = re.compile(r'[А-ЯЁ]?[а-яё]{2,}|[А-ЯЁ]{3,}')
+# Letters of real words that tell a page reads as it stands, without trying it in other turns.
+UPRIGHT_ENOUGH = 400
+# The fewest letters, and how many times more than in any other turn, that make a turn the upright one.
+UPRIGHT_LEAST = 30
+UPRIGHT_MARGIN = 2
+
+
+def text_score(result):
+    """Letters in the words OCR read as ordinary words."""
+    return sum(len(text) for row in result.get('lines') or [] for word in row.get('words') or []
+               if UPRIGHT_WORD.fullmatch(text := str(word.get('text', '')).strip('.,:;!?()«»"\'—–-')))
+
+
+def upright_turn(engine, image):
+    """The clockwise turn that stands the text of a scan upright, with the OCR answer read at that turn
+    (None after a turn). A page without text, or one no turn reads clearly better, stays as it is."""
+    first = engine.read(image)
+    scores = {0: text_score(first)}
+    if scores[0] >= UPRIGHT_ENOUGH:
+        return 0, first
+    for turn, transpose in TURNS.items():
+        with image.transpose(transpose) as turned_image:
+            scores[turn] = text_score(engine.read(turned_image))
+    best = max(scores, key=lambda turn: (scores[turn], -turn))
+    others = max(score for turn, score in scores.items() if turn != best)
+    if best and scores[best] >= UPRIGHT_LEAST and scores[best] >= UPRIGHT_MARGIN*others:
+        return best, None
+    return 0, first
+
+
 def is_large_raster(image):
     width, height = image['srcsize']
     return width*height > LARGE_RASTER_PIXELS
@@ -334,7 +421,8 @@ class WindowsOcr:
             raise RuntimeError(result['error'])
         return result
 
-    def recognise(self, image, box):
+    def read(self, image):
+        """What OCR answers for the picture: its lines of words in the pixels it read, and their size."""
         with image.copy() as reduced:
             reduced.thumbnail((self.limit, self.limit))
             # BitmapDecoder may retain a file handle even after stream.Dispose().
@@ -342,11 +430,16 @@ class WindowsOcr:
             self.counter += 1
             path = Path(self.workspace.name)/f'page-{self.counter}.png'
             reduced.save(path, compress_level=SCRATCH_PNG_LEVEL)
-            sx = (box['x1']-box['x0'])/reduced.width
-            sy = (box['bottom']-box['top'])/reduced.height
+            size = reduced.size
         self.process.stdin.write(json.dumps({'path': str(path)}, ensure_ascii=False)+'\n')
         self.process.stdin.flush()
-        result = self.response()
+        return self.response() | {'size': size}
+
+    def recognise(self, image, box, result=None):
+        """Lines of text in page coordinates of `box`; `result` is an answer already read for this picture."""
+        result = self.read(image) if result is None else result
+        sx = (box['x1']-box['x0'])/result['size'][0]
+        sy = (box['bottom']-box['top'])/result['size'][1]
         if abs(result.get('angle') or 0) > 2:
             raise RuntimeError('OCR обнаружил поворот текста; автоматическое разрезание отключено.')
         lines = []
@@ -806,9 +899,10 @@ def _compound_text(engine, image, original, panels, page_lines=()):
     return lines
 
 
-def _cut_problem(page, original, image, full_page):
-    """Why a raster must not be cut automatically, or None."""
-    if turned(original.get('matrix')):
+def _cut_problem(page, original, image, full_page, shown=False):
+    """Why a raster must not be cut automatically, or None. `shown`: the pixels are already turned
+    the way the page shows them."""
+    if not shown and turned(original.get('matrix')):
         return 'Поворот или отражение скана: OCR и разрезание отключены, исходная ориентация сохранена.'
     ratio = (original['x1']-original['x0'])/(original['bottom']-original['top'])
     if abs(image.width/image.height/ratio-1) > .025:
@@ -852,7 +946,14 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                         if not full_page:
                             continue
                         raise ValueError('Для скана не найден отдельный ресурс.')
-                    with scan_image(reader, pdf_page, path, original) as (image, factor):
+                    with scan_image(reader, pdf_page, path, original) as (image, factor), ExitStack() as views:
+                        # A scan stored on its side or upside down is read the way its page shows it;
+                        # `steps` turn the stored pixels into the pixels read here.
+                        steps = []
+                        shown = shown_transpose(original.get('matrix')) if full_page else None
+                        if shown:
+                            image = views.enter_context(image.transpose(shown))
+                            steps.append(shown)
                         # A normal photograph must not start OCR or produce scan warnings.
                         ocr = full_page or _area(original) >= page['width']*page['height']*.15
                         panels = None if full_page else photo_panels(image) if ocr else []
@@ -881,7 +982,7 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                         record = {'bbox': [original[k] for k in ('x0', 'top', 'x1', 'bottom')],
                                   'object_id': original['object_id'], 'panels': 0}
                         scan['sources'].append(record)
-                        problem = _cut_problem(page, original, image, full_page)
+                        problem = _cut_problem(page, original, image, full_page, shown=bool(steps))
                         if problem:
                             raise ValueError(problem)
                         if seam:
@@ -898,7 +999,18 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                                     startup_error = str(error)
                                     raise
                             try:
-                                lines = (engine.recognise(image, original) if full_page
+                                read = None
+                                if full_page:
+                                    # A sheet scanned on its side reads only when it stands upright; then the
+                                    # page is taken as turned, and its pictures come out upright.
+                                    turn, read = upright_turn(engine, image)
+                                    if turn:
+                                        image = views.enter_context(image.transpose(TURNS[turn]))
+                                        steps.append(TURNS[turn])
+                                        turn_frame(page, turn)
+                                        record['bbox'] = [original[k] for k in ('x0', 'top', 'x1', 'bottom')]
+                                        scan['upright'] = page['upright']
+                                lines = (engine.recognise(image, original, read) if full_page
                                          else _compound_text(engine, image, original, panels, page['lines']))
                             except RuntimeError as error:
                                 # A late response after a timeout must never name another page.
@@ -919,7 +1031,11 @@ def analyse_scans(source, pages, resource_paths, progress=None):
                                              top=original['top']+box[1]*sy, x1=original['x0']+box[2]*sx,
                                              bottom=original['top']+box[3]*sy,
                                              scan_crop_px=[round(value*factor) for value in box],
-                                             source_bbox=record['bbox'], **({'seam_cut': True} if seam else {}))
+                                             source_bbox=record['bbox'], **({'seam_cut': True} if seam else {}),
+                                             # A crop of turned pixels is upright: the page draws it as it is.
+                                             **({'scan_transpose': [int(step) for step in steps],
+                                                 'matrix': [(box[2]-box[0])*sx, 0, 0, (box[3]-box[1])*sy]}
+                                                if steps else {}))
                                         for box in panels]
                         position = next(i for i, im in enumerate(page['images']) if im is original)
                         page['images'][position:position+1] = replacements

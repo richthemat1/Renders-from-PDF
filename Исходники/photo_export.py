@@ -2,6 +2,7 @@
 import argparse
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager, ExitStack
 import hashlib
 import html
 from io import BytesIO
@@ -36,7 +37,7 @@ from photo_layout import (bounds, caption_for, caption_with_variant_context, cle
 from photo_scan import (analyse_scans, blank_layer_ink, BLANK_DRAWN_SHARE, column_caption, direct_image, drawn_share,
                         is_large_raster, LARGE_RASTER_PIXELS, last_filter, light_ground_share, native_jpeg,
                         open_large_raster, prepare_scan_continuations, pypdf_extract, pypdf_image, SCRATCH_PNG_LEVEL,
-                        seam_caption, turned, whole_scan_caption)
+                        seam_caption, shown_transpose, SIDEWAYS, turned, whole_scan_caption)
 
 # A single poster JPEG can exceed pypdf's 75 MB raw-stream default. A declared length can never
 # make pypdf read past the end of the file, so this cap does not admit inflation bombs; limits on
@@ -49,7 +50,7 @@ rl_config.useA85 = 0
 LARGE_WHOLE_PIXELS = 25_000_000
 _large_raster_cache = {}
 
-VERSION = '3.45'
+VERSION = '3.46'
 LAYOUT = 'variants-root'
 # 3.12 kept every variant inside «Варианты»; such results are still edited in place.
 GROUPED_LAYOUT = 'grouped'
@@ -820,13 +821,26 @@ def release_large_rasters():
     _large_raster_cache.clear()
 
 
+@contextmanager
+def shown_pixels(image, picture):
+    """The pixels a scan crop is measured in: the stored ones, turned as its page was read."""
+    steps = picture.get('scan_transpose') or []
+    if not steps:
+        yield image
+        return
+    with ExitStack() as views:
+        for step in steps:
+            image = views.enter_context(image.transpose(Image.Transpose(step)))
+        yield image
+
+
 def save_group(page, paths, group, base):
     if len(group) == 1 and is_large_raster(group[0]):
         crop = group[0].get('scan_crop_px')
         image, factor = _large_raster(page, group[0], LARGE_RASTER_PIXELS if crop else LARGE_WHOLE_PIXELS)
         if crop:
             target = base.with_suffix('.png')
-            with image.crop([round(value/factor) for value in crop]) as part:
+            with shown_pixels(image, group[0]) as shown, shown.crop([round(value/factor) for value in crop]) as part:
                 size = list(part.size)
                 part.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
             return target, size, 'reduced_scan_crop'
@@ -838,7 +852,7 @@ def save_group(page, paths, group, base):
         with Image.open(BytesIO(data)) if suffix else data as image:
             if 'scan_crop_px' in group[0]:
                 target = base.with_suffix('.png')
-                with image.crop(group[0]['scan_crop_px']) as crop:
+                with shown_pixels(image, group[0]) as shown, shown.crop(group[0]['scan_crop_px']) as crop:
                     size = list(crop.size)
                     crop.save(target, 'PNG', compress_level=SCRATCH_PNG_LEVEL)
                 return target, size, 'native_scan_crop'
@@ -898,12 +912,14 @@ def save_crop(pdfium_document, page, box, base):
 def _save_crop(pdfium_document, page, box, base):
     pdf_page = pdfium_document[page['number']-1]
     scale = 200/72
+    # A page read turned (an upright scan of a sheet lying on its side) is drawn turned the same way.
+    turn = page.get('upright', 0)
     left = max(0, box['x0']-page['origin'][0])
     top = max(0, box['top']-page['origin'][1])
     right = max(0, page['width']-(box['x1']-page['origin'][0]))
     bottom = max(0, page['height']-(box['bottom']-page['origin'][1]))
     try:
-        bitmap = pdf_page.render(scale=scale, crop=(left, bottom, right, top))
+        bitmap = pdf_page.render(scale=scale, rotation=turn, crop=(left, bottom, right, top))
         try:
             image = bitmap.to_pil()
             target = base.with_suffix('.png')
@@ -1757,8 +1773,12 @@ def extract(source, output=None, progress=None):
         try:
             with raster.open('rb') as stream:
                 image_checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-            matrix = group[0].get('matrix') if len(group) == 1 and method == 'original' else None
+            whole = len(group) == 1 and method in ('original', 'reduced_original')
+            matrix = group[0].get('matrix') if whole else None
             image_to_pdf(raster, target, bbox, title, matrix)
+            # A picture drawn on its side is as wide as its stored pixels are tall.
+            if whole and shown_transpose(matrix) in SIDEWAYS:
+                size = list(size)[::-1]
         except Exception as error:
             settled(target.unlink, missing_ok=True)
             return {'error': f'Не удалось сохранить PDF: {error}'}
@@ -1914,6 +1934,10 @@ def extract(source, output=None, progress=None):
                           'неуверенно распознанные коллажи сохраняются целиком. '
                           'Один исходный растр может упоминаться в компонентах нескольких вырезанных областей. '
                           'Векторная графика отдельно не экспортируется.'}
+        # Scanned sheets read upright only after a turn: the source page is shown turned the same way.
+        upright = {str(page['number']): page['upright'] for page in pages if page.get('upright')}
+        if upright:
+            report['upright_pages'] = upright
         if progress:
             progress({'stage': 'export', 'current': len(active), 'total': len(active), 'found': len(active)})
         render_previews(staging, report, progress)

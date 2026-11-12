@@ -132,7 +132,9 @@ class CollageQuality(unittest.TestCase):
                 original = source.read_bytes()
                 report = extract(source)
                 self.assertFalse(any(entry['method'] == 'native_scan_crop' for entry in report['images']))
-                self.assertTrue(any(entry['size'] == [1400, 1000] for entry in report['images']))
+                # The size is the picture's as the page shows it: turned a quarter, it stands tall.
+                shown = [1000, 1400] if transform == 'rotate' else [1400, 1000]
+                self.assertTrue(any(entry['size'] == shown for entry in report['images']))
                 self.assertTrue(any('OCR' in warning['reason'] for warning in report['warnings']))
                 self.assertEqual(source.read_bytes(), original)
 

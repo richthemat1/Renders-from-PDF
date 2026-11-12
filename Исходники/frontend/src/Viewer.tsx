@@ -34,6 +34,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  RotateCw,
   Save,
   Scan,
   Scissors,
@@ -89,6 +90,14 @@ import type { NoticeAction, Rect, Result, VariantExport } from "./types";
 import "./viewer-ux.css";
 import "./preview-visual.css";
 import "./review-fixes.css";
+
+/** Clockwise degrees a card turns by. */
+type Turn = 90 | 180 | 270;
+const TURN_ITEMS: ActionMenuItem[] = [
+  { value: "turn:90", label: "Вправо на 90°" },
+  { value: "turn:270", label: "Влево на 90°" },
+  { value: "turn:180", label: "На 180°" },
+];
 
 type Rename = {
   kind: "variant" | "folder" | "file";
@@ -395,6 +404,19 @@ export function Viewer({
     }
     if (await persist(next, "Изображение обрезано и записано в PDF. Резервная копия создана.")) setCropping(null);
   }
+  /** «Повернуть»: saved cards turn where they stand. Like a crop, the turn is written at once: the PDF page
+   * turns, its pixels stay as they were. */
+  async function turnImages(ids: number[], turn: Turn) {
+    if (saving || !ids.length) return;
+    if (dirty || ids.some((id) => id in draft.frames || id in draft.copies || id >= draft.sourceCount)) {
+      notify("Сначала сохраните или отмените правки: поворот сразу записывается в PDF.", true);
+      return;
+    }
+    await persist(draft, ids.length > 1
+      ? `Повёрнуто: ${ids.length} ${plural(ids.length, ["изображение", "изображения", "изображений"])}. PDF записаны, резервная копия создана.`
+      : "Изображение повёрнуто и записано в PDF. Резервная копия создана.",
+    { turns: Object.fromEntries(ids.map((id) => [String(id), turn])) });
+  }
   function applyCut(view: CollageView, boxes: Box[], targets: (string | null | "keep")[], trim: boolean,
     names: Record<string, string> = {}) {
     const replace = view.members.filter((id) => !(id in draft.frames));
@@ -619,14 +641,15 @@ export function Viewer({
       setSaving(false);
     }
   }, [notify, onResult]);
-  const persist = useCallback(async (data: Draft, done = "Правки сохранены. Резервная копия создана."): Promise<boolean> => {
+  const persist = useCallback(async (data: Draft, done = "Правки сохранены. Резервная копия создана.",
+    extra: Record<string, unknown> = {}): Promise<boolean> => {
     if (savingRef.current || savingState.current) return false;
     savingRef.current = true;
     setSaving(true);
     try {
       const value = await request<{ result: Result; message: string; delivery_errors?: string[] }>(
         `results/${result.id}/apply`,
-        payload(data, report.revision),
+        { ...payload(data, report.revision), ...extra },
       );
       onResult(value.result);
       setSelected([]);
@@ -959,6 +982,8 @@ export function Viewer({
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} />, disabled: !single },
       { value: "crop", label: "Вырезать…", icon: <Crop size={16} />, separator: true,
         disabled: saving || !single || !active.length },
+      { value: "turn", label: "Повернуть", icon: <RotateCw size={16} />, disabled: saving || !active.length,
+        children: TURN_ITEMS },
     ];
     if (editing) items.push(
       { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true,
@@ -1003,6 +1028,7 @@ export function Viewer({
         else if (value === "source") showPreview(id, true);
         else if (value === "pdf") open(row.image.file);
         else if (value === "caption") copyCaption(row.title);
+        else if (value.startsWith("turn:")) void turnImages(active, Number(value.slice(5)) as Turn);
         else if (value === "move:return-to-misc") change({ type: "return-to-misc", ids: active }, keep);
         else if (value.startsWith("move:")) change({ type: "move", ids: active, target: value.slice(5) }, keep);
         else if (value === "new") setNewVariant(active);
@@ -1032,6 +1058,8 @@ export function Viewer({
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />, separator: true,
         disabled: removedNow || !!row.image.removed },
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} /> },
+      { value: "turn", label: "Повернуть", icon: <RotateCw size={16} />, disabled: saving || removedNow || !!row.image.removed,
+        children: TURN_ITEMS },
     ];
     if (editing) items.push(
       { value: "move", label: "Перенести изображение", icon: <FolderInput size={16} />, separator: true, disabled: saving,
@@ -1054,6 +1082,7 @@ export function Viewer({
         else if (value === "zoom") setZoom((current) => Math.min(5, current * 2));
         else if (value === "pdf") open(row.image.file);
         else if (value === "caption") copyCaption(row.title);
+        else if (value.startsWith("turn:")) void turnImages([id], Number(value.slice(5)) as Turn);
         else if (value === "move:return") change({ type: "return-to-misc", ids: [id] });
         else if (value.startsWith("move:")) move(value.slice(5), [id]);
         else if (value === "cut") cutImage(id);

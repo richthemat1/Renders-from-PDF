@@ -11,7 +11,7 @@ from threading import Lock, RLock, Thread
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from photo_delivery import targets as delivery_targets
-from photo_edit import EditConflict, EditError, apply_edits, find_seams, pages_info, rename_item, source_pdf
+from photo_edit import EditConflict, EditError, apply_edits, find_seams, page_turn, pages_info, rename_item, source_pdf
 from photo_export import PDFIUM_LOCK
 from photo_jobs import normalized_report, read_result
 from photo_server import MAX_BODY, PreviewServer, handler as preview_handler
@@ -109,7 +109,7 @@ class DesktopServer(PreviewServer):
         page = report['images'][index].get('page')
         if type(page) is not int or not 1 <= page <= report['pages']:
             raise ValueError('Номер исходной страницы не указан в отчёте.')
-        return source_pdf(report), page - 1, 1600
+        return source_pdf(report), page - 1, 1600, page_turn(report, page)
 
     def source_preview(self, id, index):
         """Read the original slide belonging to a registered report entry."""
@@ -120,22 +120,22 @@ class DesktopServer(PreviewServer):
         report = read_result(self.folders[id])
         if not 1 <= number <= report['pages']:
             raise ValueError('В исходном PDF нет этой страницы.')
-        return source_pdf(report), number - 1, 240 if thumb else 2000
+        return source_pdf(report), number - 1, 240 if thumb else 2000, page_turn(report, number)
 
     def page_image(self, id, number, thumb=False):
         return self._render_page(*self.source_page(id, number, thumb))
 
-    def _render_page(self, path, page_index, limit=1600):
+    def _render_page(self, path, page_index, limit=1600, turn=0):
         """A PNG of the page, kept for repeat views: reopening the cutout editor or flipping back in the preview.
 
         The key holds the file's identity, size and time, so a rewritten PDF is rendered anew."""
         stat = Path(path).stat()
-        key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, page_index, limit)
+        key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, page_index, limit, turn)
         with self._renders_lock:
             if key in self._renders:
                 self._renders.move_to_end(key)
                 return self._renders[key]
-        image = render_page(path, page_index, limit)
+        image = render_page(path, page_index, limit, turn)
         with self._renders_lock:
             if key not in self._renders:
                 self._renders[key] = image
@@ -145,7 +145,8 @@ class DesktopServer(PreviewServer):
         return image
 
 
-def render_page(path, page_index, limit):
+def render_page(path, page_index, limit, turn=0):
+    """A PNG of the page within `limit` pixels, turned clockwise by `turn` degrees as the result reads it."""
     import pypdfium2
     with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
         if not 0 <= page_index < len(document):
@@ -153,7 +154,7 @@ def render_page(path, page_index, limit):
         page = document[page_index]
         try:
             scale = limit / max(page.get_width(), page.get_height())
-            bitmap = page.render(scale=scale)
+            bitmap = page.render(scale=scale, rotation=turn)
             try:
                 with bitmap.to_pil() as image:
                     image.thumbnail((limit, limit))

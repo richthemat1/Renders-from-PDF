@@ -37,6 +37,8 @@ interface OpenMenu extends ContextMenuSpec {
   /** Where the focus goes back: the control in focus inside the origin (Shift+F10 on a card's button), else the origin. */
   returnFocus: HTMLElement | null;
   container: Element;
+  /** Each opening is a menu of its own: one opened again at the same point starts at its first level. */
+  serial: number;
 }
 
 /**
@@ -47,6 +49,7 @@ interface OpenMenu extends ContextMenuSpec {
 export function useContextMenu() {
   const [current, setCurrent] = useState<OpenMenu | null>(null);
   const [shown, setShown] = useState(false);
+  const openings = useRef(0);
   const open = useCallback((event: ReactMouseEvent | MouseEvent, spec: ContextMenuSpec, target?: HTMLElement) => {
     event.preventDefault();
     event.stopPropagation();
@@ -60,11 +63,13 @@ export function useContextMenu() {
     }
     const focused = document.activeElement instanceof HTMLElement && origin?.contains(document.activeElement)
       ? document.activeElement : origin;
-    setCurrent({ ...spec, x, y, origin, returnFocus: focused, container: origin?.closest("dialog") ?? document.body });
+    openings.current += 1;
+    setCurrent({ ...spec, x, y, origin, returnFocus: focused, container: origin?.closest("dialog") ?? document.body,
+      serial: openings.current });
     setShown(true);
   }, []);
   const close = useCallback(() => setShown(false), []);
-  const menu = current && <ContextMenuPopup key={`${current.x}:${current.y}`} menu={current} shown={shown} onClose={close} />;
+  const menu = current && <ContextMenuPopup key={current.serial} menu={current} shown={shown} onClose={close} />;
   return { menu, open, close };
 }
 
