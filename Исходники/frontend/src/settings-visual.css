@@ -2,7 +2,7 @@
   max-width: 1440px;
   min-height: calc(100vh - var(--topbar-height));
   padding: 40px var(--content-gutter) 44px;
-  background: #f5f6fa;
+  background: var(--gray-50);
 }
 
 .settings-page {
@@ -136,17 +136,17 @@
 
 .settings-page .setting-option.selected {
   border-color: #aab4ee;
-  background: #f0f2ff;
+  background: var(--accent-100);
 }
 
 .settings-page .setting-option:hover:not(:has(input:disabled)) {
   border-color: #aab4ee;
-  background: #f8f9ff;
+  background: var(--accent-50);
 }
 
 .settings-page .setting-option.selected:hover:not(:has(input:disabled)) {
   border-color: #929fe8;
-  background: #e9edff;
+  background: var(--accent-100);
 }
 
 .setting-option-label {
@@ -228,7 +228,7 @@
 .settings-choose:hover:not(:disabled),
 .settings-log:hover:not(:disabled) {
   border-color: #aab4ee;
-  background: #f5f7ff;
+  background: var(--accent-50);
 }
 
 .settings-options:disabled .setting-option-label,
@@ -435,4 +435,4 @@
 
 /* «Масштаб интерфейса»: four scales in one row, the chosen one pressed. */
 .settings-zoom-choices { display: flex; flex-wrap: wrap; gap: 8px; }
-.settings-zoom-choices .btn[aria-pressed="true"] { border-color: var(--accent); background: #eef0fd; color: #3e4db9; }
+.settings-zoom-choices .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-100); color: var(--accent-600); }
