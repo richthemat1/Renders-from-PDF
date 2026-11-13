@@ -61,7 +61,7 @@
 }
 .variant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
 .variant-suggestion { min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius-full); background: var(--gray-0); color: var(--ink); font: inherit; font-size: var(--text-xs); cursor: pointer; }
-.variant-suggestion:hover { border-color: var(--accent-300); background: #f6f7ff; }
+.variant-suggestion:hover { border-color: var(--accent-300); background: var(--accent-50); }
 .variant-suggestion.is-chosen { border-color: var(--accent); background: var(--accent-100); color: var(--accent-dark); font-weight: 600; }
 .variant-suggestion:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .copy-variant-number .variant-suggestions { margin-bottom: 0; }
