@@ -220,6 +220,17 @@ export function App() {
   }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = !!target?.closest("input, textarea, [contenteditable=true]");
+      // Pages outside a result: Ctrl+A must not select the whole window's text, Ctrl+F finds in the history.
+      if ((event.ctrlKey || event.metaKey) && !typing && page !== "viewer") {
+        if (event.code === "KeyA") { event.preventDefault(); return; }
+        if (event.code === "KeyF" && page === "history") {
+          event.preventDefault();
+          document.querySelector<HTMLInputElement>(".history-search")?.focus();
+          return;
+        }
+      }
       if (
         (event.ctrlKey || event.metaKey) &&
         event.code === "KeyO" &&
@@ -231,7 +242,7 @@ export function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [choose]);
+  }, [choose, page]);
   async function openHistory(id: string) {
     await run(async () => {
       const next = await request<Result>("open", { id });

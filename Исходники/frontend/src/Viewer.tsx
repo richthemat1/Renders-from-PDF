@@ -557,6 +557,39 @@ export function Viewer({
   if (!filter.startsWith("variant:")) visible.sort((a, b) =>
     a.image.page - b.image.page || a.image.sequence - b.image.sequence || a.id - b.id);
   const visibleIds = visible.map((row) => row.id);
+  // The gallery is one stop of Tab: the card last focused (or the first one) takes it, arrows move between cards.
+  const [cursor, setCursor] = useState<number | null>(null);
+  const tabStop = cursor !== null && visibleIds.includes(cursor) ? cursor : visibleIds[0];
+  function cardKey(event: React.KeyboardEvent<HTMLButtonElement>, row: { id: number; variant: string | null }) {
+    const index = visibleIds.indexOf(row.id);
+    const cards = [...(grid.current?.querySelectorAll<HTMLElement>(".asset-card") ?? [])];
+    const columns = Math.max(1, cards.findIndex((card) => card.offsetTop !== cards[0]?.offsetTop) === -1
+      ? cards.length : cards.findIndex((card) => card.offsetTop !== cards[0].offsetTop));
+    const steps: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns };
+    let next: number | undefined;
+    if (event.key in steps) next = visibleIds[Math.min(visibleIds.length - 1, Math.max(0, index + steps[event.key]))];
+    else if (event.key === "Home") next = visibleIds[0];
+    else if (event.key === "End") next = visibleIds.at(-1);
+    if (next !== undefined) {
+      event.preventDefault();
+      const target = grid.current?.querySelector<HTMLElement>(`.asset-card[data-id="${next}"] .cover-button`);
+      target?.focus();
+      target?.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    if (event.key === "Enter" && editing) {
+      // Enter opens the card large in editing too; Space picks it.
+      event.preventDefault();
+      showPreview(row.id);
+    } else if (event.key === " " && editing) {
+      event.preventDefault();
+      setSelected((ids) => ids.includes(row.id) ? ids.filter((value) => value !== row.id) : [...ids, row.id]);
+      anchor.current = row.id;
+    } else if (event.key === "F2" && editing && row.variant === null && !removedSet.has(row.id) && !dirty && !saving) {
+      event.preventDefault();
+      renameFile(row.id);
+    }
+  }
   const visibleIdSet = new Set(visibleIds);
   const selectedIdSet = new Set(selected);
   const visibleSelected = visibleIds.filter((id) => selectedIdSet.has(id)).length;
@@ -798,9 +831,15 @@ export function Viewer({
     const key = (event: KeyboardEvent) => {
       const input = textEntry(event.target);
       if (event.defaultPrevented || document.querySelector("dialog[open], [role=menu]")) return;
-      if ((event.ctrlKey || event.metaKey) && event.code === "KeyK") {
+      // Ctrl+F as in Explorer and every Windows program, Ctrl+K as before.
+      if ((event.ctrlKey || event.metaKey) && (event.code === "KeyK" || event.code === "KeyF")) {
         event.preventDefault();
         search.current?.focus();
+        return;
+      }
+      // Outside editing Ctrl+A would select the text of the whole window; there is nothing to select there.
+      if (!editing && !input && (event.ctrlKey || event.metaKey) && event.code === "KeyA") {
+        event.preventDefault();
         return;
       }
       if (!editing || input || saving) return;
@@ -1564,6 +1603,10 @@ export function Viewer({
                   <button
                     className="cover-button"
                     aria-label={`${editing ? "Выбрать" : "Просмотреть"}: ${row.title}, страница ${row.image.page}`}
+                    aria-pressed={editing ? selected.includes(row.id) : undefined}
+                    tabIndex={row.id === tabStop ? 0 : -1}
+                    onFocus={() => setCursor(row.id)}
+                    onKeyDown={(event) => cardKey(event, row)}
                     disabled={saving}
                     onClick={(e) =>
                       editing ? select(row.id, e) : showPreview(row.id)
@@ -1601,6 +1644,7 @@ export function Viewer({
                     <label className="pick">
                       <input
                         type="checkbox"
+                        tabIndex={-1}
                         aria-label={`Выбрать изображение ${row.id + 1}`}
                         checked={selected.includes(row.id)}
                         disabled={saving}
@@ -1636,7 +1680,7 @@ export function Viewer({
                       <Crop size={13} />Вырезка {piece.number} со стр. {piece.view.page}</span> : null;
                   })()}
                   {editing && !saving && !removedSet.has(row.id) && !(row.id in draft.frames) && collageOf(row.id)?.state !== "suspected" &&
-                    <button className="btn compact secondary cutout-cut-button" onClick={() => startCutout(row.id)}>
+                    <button className="btn compact secondary cutout-cut-button" tabIndex={-1} onClick={() => startCutout(row.id)}>
                       <SquareScissors size={15} />Вырезать со страницы…</button>}
                   {editing && !removedSet.has(row.id) && (
                     <span className="drag-handle" title="Перетащите карточку">
@@ -1650,6 +1694,7 @@ export function Viewer({
                   </span>}
                   <div className="asset-title">
                     <button
+                      tabIndex={-1}
                       onClick={() => showPreview(row.id)}
                       title={row.title}
                     >
@@ -1658,8 +1703,9 @@ export function Viewer({
                     {editing && row.variant === null && !removedSet.has(row.id) && (
                       <button
                         className="icon-btn"
+                        tabIndex={-1}
                         aria-label={`Переименовать PDF ${row.id + 1}`}
-                        title={dirty ? "Сначала сохраните или сбросьте правки" : saving ? "Дождитесь завершения сохранения" : "Переименовать PDF"}
+                        title={dirty ? "Сначала сохраните или сбросьте правки" : saving ? "Дождитесь завершения сохранения" : "Переименовать PDF · F2"}
                         disabled={dirty || saving}
                         onClick={() => renameFile(row.id)}
                       >

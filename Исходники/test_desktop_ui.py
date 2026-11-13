@@ -151,6 +151,29 @@ class DesktopUI(unittest.TestCase):
         self.page.get_by_role('button', name='Снять выделение', exact=True).click()
         expect(self.page.locator('.selection-count')).to_contain_text('Выбрано: 0')
 
+    def test_gallery_is_one_tab_stop_and_arrows_move_between_cards(self):
+        covers = self.page.locator('.asset-card .cover-button')
+        self.assertEqual(self.page.locator('.asset-card .cover-button[tabindex="0"]').count(), 1)
+        covers.first.focus()
+        self.page.keyboard.press('ArrowRight')
+        expect(self.card(1).locator('.cover-button')).to_be_focused()
+        self.page.keyboard.press('End')
+        expect(self.card(3).locator('.cover-button')).to_be_focused()
+        # Tab leaves the gallery instead of walking through every card.
+        self.page.keyboard.press('Tab')
+        self.assertFalse(self.page.evaluate("document.activeElement.classList.contains('cover-button')"))
+        self.page.keyboard.press('Control+f')
+        expect(self.page.get_by_role('searchbox')).to_be_focused()
+        self.edit()
+        self.card(0).locator('.cover-button').focus()
+        self.page.keyboard.press(' ')
+        self.page.keyboard.press('ArrowRight')
+        self.page.keyboard.press(' ')
+        expect(self.page.locator('.selection-count')).to_contain_text('Выбрано: 2')
+        self.page.keyboard.press('Enter')
+        expect(self.page.get_by_role('dialog')).to_be_visible()
+        self.assertEqual(self.errors, [])
+
     def test_search_status_and_shift_selection_keep_files_outside_the_current_section(self):
         self.edit()
         self.card(2).get_by_role('checkbox').check()

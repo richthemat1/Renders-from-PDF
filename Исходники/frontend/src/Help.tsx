@@ -432,7 +432,10 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
         <h4>Везде</h4>
         <dl className="help-keymap">
           <div><dt>Выбрать PDF</dt><dd><Keys keys={["Ctrl", "O"]} /></dd></div>
-          <div><dt>Поиск по результату</dt><dd><Keys keys={["Ctrl", "K"]} /></dd></div>
+          <div><dt>Поиск по результату или истории</dt><dd><Keys keys={["Ctrl", "F"]} /> или <Keys keys={["Ctrl", "K"]} /></dd></div>
+          <div><dt>Перейти между карточками</dt><dd>стрелки, <Keys keys={["Home"]} />, <Keys keys={["End"]} /></dd></div>
+          <div><dt>Открыть карточку крупно</dt><dd><Keys keys={["Enter"]} /></dd></div>
+          <div><dt>Перейти к сообщению внизу окна</dt><dd><Keys keys={["F6"]} /></dd></div>
           <div><dt>Закрыть диалог или просмотр</dt><dd><Keys keys={["Esc"]} /></dd></div>
           <div><dt>Меню действий (как правой кнопкой мыши)</dt><dd><Keys keys={["Shift", "F10"]} /></dd></div>
         </dl>
@@ -441,6 +444,8 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
         <h4>Режим правки</h4>
         <dl className="help-keymap">
           <div><dt>Добавить карточку к выбору</dt><dd><Keys keys={["Ctrl"]} /> + щелчок</dd></div>
+          <div><dt>Выбрать карточку в фокусе или снять выбор</dt><dd><Keys keys={["Пробел"]} /></dd></div>
+          <div><dt>Переименовать PDF карточки в фокусе</dt><dd><Keys keys={["F2"]} /></dd></div>
           <div><dt>Выбрать диапазон</dt><dd><Keys keys={["Shift"]} /> + щелчок</dd></div>
           <div><dt>Выбрать все видимые</dt><dd><Keys keys={["Ctrl", "A"]} /></dd></div>
           <div><dt>Снять всё выделение</dt><dd><Keys keys={["Esc"]} /></dd></div>
