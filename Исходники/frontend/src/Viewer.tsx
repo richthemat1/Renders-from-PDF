@@ -1386,7 +1386,7 @@ export function Viewer({
             <button className="btn compact secondary" disabled={saving} onClick={() => setReset(true)}>
               <RotateCcw size={16} />{conflict ? "Обновить" : "Сбросить"}</button>
             <button className="btn compact primary editor-save" disabled={saving || !dirty} title="Сохранить · Ctrl+S" onClick={() => void save()}>
-              {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить распределение"}</button>
+              {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить"}</button>
           </section>
         )}
         <Presence>{editing && !sectionPage && (
