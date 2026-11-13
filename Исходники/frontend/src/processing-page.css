@@ -511,7 +511,7 @@
 }
 
 .processing-page .job-totals .processing-total-ready strong {
-  color: var(--accent);
+  color: var(--text);
 }
 
 .processing-review {

@@ -1164,7 +1164,7 @@ fieldset {
   display: block;
   font-size: var(--text-small);
   font-weight: 700;
-  color: #6e58b5;
+  color: var(--accent-600);
   letter-spacing: 0.035em;
   text-transform: uppercase;
   white-space: nowrap;

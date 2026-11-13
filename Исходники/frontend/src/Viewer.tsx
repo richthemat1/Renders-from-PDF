@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import {
+  ScanEye,
   ArrowDown,
   ArrowDownToLine,
   ArrowLeft,
@@ -12,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCopy,
-  Clock3,
   Copy,
   CopyCheck,
   Crop,
@@ -1329,7 +1329,7 @@ export function Viewer({
             "review",
             "На проверку",
             counts.review,
-            <Clock3 size={16} />,
+            <ScanEye size={16} />,
           )}
           {sidebar(
             "unsigned",
@@ -1656,7 +1656,7 @@ export function Viewer({
                   {/* A caption found is the usual case: only the cards that need attention carry a badge. */}
                   {(removedSet.has(row.id) || row.status !== "named") && <span className={`status-badge ${removedSet.has(row.id) ? "removed" : row.status}`}>
                     {removedSet.has(row.id) ? isService(row.id) ? <Shapes size={12} /> : <Trash2 size={12} /> : row.status === "review" ? (
-                      <Clock3 size={12} />
+                      <ScanEye size={12} />
                     ) : (
                       <Tag size={12} />
                     )}

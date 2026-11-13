@@ -1,7 +1,7 @@
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import {
-  Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Crop, Ellipsis, FileText, ImagePlus, Images,
+  Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Crop, Ellipsis, FileText, ImagePlus, Images,
   Keyboard, Layers, Lightbulb, Maximize2, Minus, Plus, Save, Scan, ScanEye, Scissors, Shapes, ShieldCheck, SquarePen,
   Tag, Trash2, TriangleAlert,
 } from "lucide-react";
@@ -155,7 +155,7 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
           <span className="hf-btn is-target">Разобрать<Pin n={1} /></span>
         </span>
         <span className="hf-cards">
-          <span className="hf-card"><span className="hf-img tone-1" /><span className="hf-tag review"><Clock3 size={12} />На проверку</span><Pin n={2} /></span>
+          <span className="hf-card"><span className="hf-img tone-1" /><span className="hf-tag review"><ScanEye size={12} />На проверку</span><Pin n={2} /></span>
           <span className="hf-card"><span className="hf-img tone-3" /><span className="hf-tag unsigned"><Tag size={12} />Без подписи</span></span>
           <span className="hf-card"><span className="hf-img tone-2" /><span className="hf-open"><Maximize2 size={12} /></span><Pin n={3} /></span>
         </span>
@@ -170,7 +170,7 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
         <p>Метка на карточке подсказывает, что не так:</p>
         <dl className="help-terms">
           <div>
-            <dt><span className="help-badge review"><Clock3 size={12} />На проверку</span></dt>
+            <dt><span className="help-badge review"><ScanEye size={12} />На проверку</span></dt>
             <dd>подпись найдена не наверняка — в просмотре видны возможные варианты</dd>
           </div>
           <div>

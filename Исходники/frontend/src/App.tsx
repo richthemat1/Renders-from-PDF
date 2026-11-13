@@ -364,7 +364,7 @@ export function App() {
       <button className="history-row history-card-main" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
         <span className="history-card-top">
           <span className="file-icon"><FileText size={20} /></span>
-          <span className={`history-card-state${!item.available || item.errors ? " needs-attention" : ""}`}>
+          <span className={`history-card-state${!item.available || item.errors ? " needs-attention" : item.review || item.unsigned ? " needs-review" : ""}`}>
             {!item.available || item.errors ? <AlertTriangle size={16} /> : item.review || item.unsigned ? <ScanEye size={16} /> : <Check size={16} />}
             {!item.available ? "Папка недоступна" : item.review || item.unsigned ? `Проверить: ${item.review + item.unsigned}` : item.errors ? `Ошибки: ${item.errors}` : "Готово"}
           </span>
