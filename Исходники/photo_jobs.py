@@ -370,11 +370,11 @@ class JobService:
             LOGGER.exception('Не удалось обновить готовые варианты: %s', report.get('output'))
             return {'saved': [], 'errors': [f'Готовые варианты не обновлены: {error}.']}
 
-    def set_sidebar(self, width, hidden):
+    def set_sidebar(self, width, hidden, zoom=None):
         with self._lock:
             if self._closing:
                 self._reject('Программа закрывается. Настройки недоступны.', RuntimeError)
-            if not self.workspace.set_sidebar(width, hidden):
+            if not self.workspace.set_sidebar(width, hidden, zoom):
                 self._append(self.workspace.warning, 'warn')
                 raise RuntimeError(self.workspace.warning)
             return dict(self.workspace.sidebar)

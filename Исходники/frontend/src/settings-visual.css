@@ -432,3 +432,7 @@
   .settings-page .settings-delivery-row .setting-option-copy { flex-basis: 100%; }
   .settings-delivery-row .settings-choose, .settings-delivery-row .settings-choose:last-child { margin: 0; }
 }
+
+/* «Масштаб интерфейса»: four scales in one row, the chosen one pressed. */
+.settings-zoom-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-zoom-choices .btn[aria-pressed="true"] { border-color: var(--accent); background: #eef0fd; color: #3e4db9; }

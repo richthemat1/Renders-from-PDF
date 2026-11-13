@@ -118,9 +118,11 @@ class WorkspaceState:
 
     @staticmethod
     def _valid_sidebar(sidebar):
-        return (isinstance(sidebar, dict) and set(sidebar) == {'width', 'hidden'}
+        # «zoom», the scale of the whole window, is kept beside the menu's look; files without it stay valid.
+        return (isinstance(sidebar, dict) and set(sidebar) in ({'width', 'hidden'}, {'width', 'hidden', 'zoom'})
                 and type(sidebar['width']) is int and 248 <= sidebar['width'] <= 520
-                and type(sidebar['hidden']) is bool)
+                and type(sidebar['hidden']) is bool
+                and sidebar.get('zoom', 1) in (1, 1.1, 1.25, 1.5) and type(sidebar.get('zoom', 1)) in (int, float))
 
     @staticmethod
     def _valid_failure(item):
@@ -236,8 +238,11 @@ class WorkspaceState:
         self._delivery_changed = True
         return self.save()
 
-    def set_sidebar(self, width, hidden):
-        sidebar = {'width': width, 'hidden': hidden}
+    def set_sidebar(self, width, hidden, zoom=None):
+        if zoom is not None and (type(zoom) not in (int, float) or zoom not in (1, 1.1, 1.25, 1.5)):
+            raise ValueError('Масштаб интерфейса: 100, 110, 125 или 150 %.')
+        # 100 % is the default and is not written down.
+        sidebar = {'width': width, 'hidden': hidden, **({'zoom': zoom} if zoom not in (None, 1) else {})}
         if not self._valid_sidebar(sidebar):
             raise ValueError('Ширина боковой панели должна быть целым числом от 248 до 520, а скрытие — true или false.')
         self.sidebar = sidebar

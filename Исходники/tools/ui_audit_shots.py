@@ -35,7 +35,8 @@ from photo_edit import load_report  # noqa: E402
 from photo_jobs import JobService  # noqa: E402
 from test_photos import make_pdf  # noqa: E402
 
-VIEWPORTS = [(780, 620), (960, 1040), (1380, 960), (1920, 1080)]
+# 640×560 is the window's minimum: half of a 1920 px screen at 150 % (Snap beside Explorer).
+VIEWPORTS = [(640, 560), (780, 620), (960, 1040), (1380, 960), (1920, 1080)]
 LONG = ('Вариант 12. Перспективное изображение со стороны набережной реки при вечернем освещении '
         'с благоустройством территории и малыми архитектурными формами')
 

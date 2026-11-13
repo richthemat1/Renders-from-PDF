@@ -356,9 +356,10 @@ def desktop_handler(server):
                             raise ValueError('Папку сохранения выбирают через диалог приложения.')
                         return self.reply(200, server.jobs.set_output(payload['mode']))
                     if operation == 'sidebar':
-                        if set(payload) != {'width', 'hidden'}:
+                        if set(payload) not in ({'width', 'hidden'}, {'width', 'hidden', 'zoom'}):
                             raise ValueError('Укажите ширину и состояние боковой панели.')
-                        return self.reply(200, server.jobs.set_sidebar(payload['width'], payload['hidden']))
+                        return self.reply(200, server.jobs.set_sidebar(payload['width'], payload['hidden'],
+                                                                       payload.get('zoom')))
                     if operation == 'confirm':
                         if set(payload) != {'token', 'proceed'}:
                             raise ValueError('Подтвердите повторную обработку выбранного PDF.')

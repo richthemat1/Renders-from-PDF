@@ -29,6 +29,7 @@ import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import { ProcessingPage } from "./ProcessingPage";
 import { canRetry, failureMessage } from "./processing-model";
+import { setSidebarPreferences, useSidebarPreferences, ZOOM_STEPS } from "./sidebar";
 import { HelpDialog } from "./Help";
 import type { HelpTopic } from "./Help";
 import "./app-ux.css";
@@ -91,6 +92,16 @@ export function App() {
     };
   }, [page, state?.busy]);
   const lastSnapshot = useRef("");
+  // The chosen scale of the whole window, applied by WebView2 itself: layouts in vh and fixed panels scale with it.
+  const { zoom } = useSidebarPreferences();
+  useEffect(() => {
+    const apply = () => {
+      if (window.pywebview?.api && "set_zoom" in window.pywebview.api) void native("set_zoom", zoom).catch(() => {});
+    };
+    apply();
+    window.addEventListener("pywebviewready", apply);
+    return () => window.removeEventListener("pywebviewready", apply);
+  }, [zoom]);
   useEffect(() => {
     let cancelled = false,
       timer: ReturnType<typeof setTimeout>;
@@ -222,6 +233,18 @@ export function App() {
     const key = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = !!target?.closest("input, textarea, [contenteditable=true]");
+      // Ctrl+плюс, Ctrl+минус and Ctrl+0 scale the window as in a browser, through the same steps as «Настройки».
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        const index = ZOOM_STEPS.indexOf(zoom);
+        const next = event.code === "Equal" || event.code === "NumpadAdd" ? ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, index + 1)]
+          : event.code === "Minus" || event.code === "NumpadSubtract" ? ZOOM_STEPS[Math.max(0, index - 1)]
+          : event.code === "Digit0" || event.code === "Numpad0" ? 1 : null;
+        if (next !== null) {
+          event.preventDefault();
+          if (next !== zoom) setSidebarPreferences({ zoom: next });
+          return;
+        }
+      }
       // Pages outside a result: Ctrl+A must not select the whole window's text, Ctrl+F finds in the history.
       if ((event.ctrlKey || event.metaKey) && !typing && page !== "viewer") {
         if (event.code === "KeyA") { event.preventDefault(); return; }
@@ -242,7 +265,7 @@ export function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [choose, page]);
+  }, [choose, page, zoom]);
   async function openHistory(id: string) {
     await run(async () => {
       const next = await request<Result>("open", { id });

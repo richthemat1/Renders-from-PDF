@@ -246,6 +246,8 @@ export interface NativeApi {
   reveal_variant(id: string, variant: string): Promise<boolean>;
   /** Closes the window after the page asked about unsaved edits itself. */
   close_window(): Promise<boolean>;
+  /** Scales the whole window as browser zoom does; false outside the desktop window. */
+  set_zoom(factor: number): Promise<boolean>;
 }
 declare global {
   interface Window {

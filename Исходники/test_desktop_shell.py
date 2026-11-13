@@ -50,6 +50,23 @@ class NativeBridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.bridge.close_window()
 
+    def test_zoom_takes_only_the_offered_steps_and_reaches_webview2(self):
+        applied = []
+        webview = Mock()
+        form = Mock()
+        form.webview = webview
+        form.Invoke.side_effect = lambda action: action()
+        self.window.native = form
+        import sys, types
+        fake = types.ModuleType('System')
+        fake.Action = lambda callback: callback
+        with patch.dict(sys.modules, {'System': fake}):
+            self.assertTrue(self.bridge.set_zoom(1.25))
+        self.assertEqual(webview.ZoomFactor, 1.25)
+        for bad in (2, 0.9, '1.25', True):
+            with self.assertRaises(ValueError):
+                self.bridge.set_zoom(bad)
+
     def test_paste_reads_the_windows_clipboard_only_for_the_app_window(self):
         # «Вставить» in a field's context menu: WebView2 would ask permission for navigator.clipboard every time.
         with patch('photo_desktop.clipboard_text', return_value='Вариант 4. Двор'):

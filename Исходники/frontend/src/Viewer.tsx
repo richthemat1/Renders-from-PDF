@@ -1426,7 +1426,7 @@ export function Viewer({
             <FolderOutput size={16} />
             <span>Варианты в папку…</span>
           </button>}
-          <button className="btn secondary" onClick={() => open()}>
+          <button className="btn secondary result-folder" onClick={() => open()} aria-label="Папка результата" title="Открыть папку результата в Проводнике">
             <FolderOpen size={16} />
             <span>Папка результата</span>
           </button>

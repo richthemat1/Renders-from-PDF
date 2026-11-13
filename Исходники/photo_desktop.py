@@ -12,6 +12,8 @@ from photo_jobs import JobService
 from photo_native import app_icon_path, clipboard_text, configure_logging, enable_dpi_awareness
 
 LOGGER = logging.getLogger('pdf-photos')
+# Scales of the whole window offered in «Настройки» and by Ctrl+плюс / Ctrl+минус.
+ZOOM_FACTORS = (1, 1.1, 1.25, 1.5)
 
 
 def dev_overrides():
@@ -227,6 +229,19 @@ class NativeBridge:
         Thread(target=self._close, daemon=False, name='pdf-photos-close').start()
         return True
 
+    def set_zoom(self, factor):
+        """Scale the whole window as browser zoom does: 100, 110, 125 or 150 %, chosen in the app."""
+        self._guard()
+        if type(factor) not in (int, float) or factor not in ZOOM_FACTORS:
+            raise ValueError('Масштаб интерфейса: 100, 110, 125 или 150 %.')
+        form = self._window.native
+        webview = getattr(form, 'webview', None) if form is not None else None
+        if webview is None:
+            return False
+        from System import Action
+        form.Invoke(Action(lambda: setattr(webview, 'ZoomFactor', float(factor))))
+        return True
+
     def set_unsaved(self, value, sequence=None):
         self._guard()
         if type(value) is not bool:
@@ -334,7 +349,7 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
     try:
         import webview
         window = webview.create_window(f'Фото из PDF · {VERSION}', server.url, js_api=bridge,
-                                       width=1380, height=960, min_size=(780, 620),
+                                       width=1380, height=960, min_size=(640, 560),
                                        background_color='#f4f6f8', text_select=True)
         bridge._window = window
 

@@ -1,4 +1,5 @@
-import { FileText, Files, FolderOpen, FolderOutput, Info, ShieldCheck, X } from "lucide-react";
+import { FileText, Files, FolderOpen, FolderOutput, Info, ShieldCheck, X, ZoomIn } from "lucide-react";
+import { setSidebarPreferences, useSidebarPreferences, ZOOM_STEPS } from "./sidebar";
 import type { Snapshot } from "./types";
 import "./settings-visual.css";
 
@@ -16,6 +17,7 @@ interface SettingsProps {
 
 export function Settings({ state, waiting, onModeChange, onChooseFolder, onChooseDelivery, onClearDelivery, onOpenLog }: SettingsProps) {
   const delivery = state.settings.delivery || "";
+  const { zoom } = useSidebarPreferences();
   const options: { mode: OutputMode; label: string; detail: string }[] = [
     { mode: "nearby", label: "Рядом с исходным PDF", detail: "…\\Папка с PDF\\Название — PDF" },
     { mode: "results", label: "В подпапке «Результаты»", detail: "…\\Папка с PDF\\Результаты\\Название — PDF" },
@@ -90,6 +92,20 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onChoos
           <button type="button" className="settings-choose" disabled={waiting} aria-describedby="settings-delivery-description" onClick={onChooseDelivery}>
             <FolderOpen size={16} aria-hidden="true" />{delivery ? "Изменить" : "Выбрать папку"}
           </button>
+        </div>
+      </section>
+
+      <section className="settings-panel settings-zoom" aria-labelledby="settings-zoom-title">
+        <div className="settings-section-heading">
+          <ZoomIn size={21} aria-hidden="true" />
+          <div>
+            <h2 id="settings-zoom-title">Масштаб интерфейса</h2>
+            <p>Крупнее текст, кнопки и карточки во всём окне. Также Ctrl+плюс, Ctrl+минус и Ctrl+0.</p>
+          </div>
+        </div>
+        <div className="settings-zoom-choices" role="group" aria-labelledby="settings-zoom-title">
+          {ZOOM_STEPS.map((step) => <button key={step} type="button" className="btn compact secondary" aria-pressed={zoom === step}
+            onClick={() => setSidebarPreferences({ zoom: step })}>{Math.round(step * 100)} %</button>)}
         </div>
       </section>
 

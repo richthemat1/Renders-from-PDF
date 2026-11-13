@@ -540,8 +540,9 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   .app-shell .viewer-content .viewer-heading { flex-wrap: wrap; }
   .app-shell .viewer-content .viewer-heading > div:first-child { flex-basis: 100%; }
 }
-/* Between a phone and a wide window the title keeps its one line: «Варианты в папку…» becomes its icon. */
+/* Between a phone and a wide window the title keeps its one line: «Папка результата» becomes its icon, while
+   «Варианты в папку…», the last step of the main path, keeps its words. */
 @media (min-width: 721px) and (max-width: 960px) {
-  .viewer-heading .export-all span { display: none; }
-  .viewer-heading .export-all { padding-inline: 10px; }
+  .viewer-heading .result-folder span { display: none; }
+  .viewer-heading .result-folder { padding-inline: 10px; }
 }

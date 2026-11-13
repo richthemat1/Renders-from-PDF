@@ -10,7 +10,11 @@ const STORAGE_KEY = "pdf-photos.sidebar";
 interface SidebarPreferences {
   width: number;
   hidden: boolean;
+  /** Scale of the whole window (browser zoom of WebView2), kept with the menu's look. */
+  zoom: number;
 }
+/** The scales «Настройки» offer and Ctrl+плюс / Ctrl+минус step through. */
+export const ZOOM_STEPS = [1, 1.1, 1.25, 1.5];
 interface SidebarState extends SidebarPreferences {
   problem: string;
 }
@@ -27,6 +31,7 @@ function parsePreferences(value: unknown): SidebarPreferences {
       ? Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, candidate.width)))
       : SIDEBAR_MIN_WIDTH,
     hidden: candidate.hidden === true,
+    zoom: typeof candidate.zoom === "number" && ZOOM_STEPS.includes(candidate.zoom) ? candidate.zoom : 1,
   };
 }
 
@@ -51,7 +56,7 @@ function snapshot(): SidebarState {
 function publish(next: SidebarState) {
   state = next;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ width: next.width, hidden: next.hidden, pending }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ width: next.width, hidden: next.hidden, zoom: next.zoom, pending }));
   } catch { /* The desktop state file still preserves preferences. */ }
   listeners.forEach(listener => listener());
 }
@@ -60,9 +65,9 @@ async function savePreferences() {
   if (saving) { saveAgain = true; return; }
   saving = true;
   const sentRevision = revision;
-  const { width, hidden } = snapshot();
+  const { width, hidden, zoom } = snapshot();
   try {
-    await request<SidebarPreferences>("sidebar", { width, hidden });
+    await request<SidebarPreferences>("sidebar", { width, hidden, zoom });
     if (sentRevision === revision) {
       pending = false;
       publish({ ...snapshot(), problem: "" });
@@ -109,9 +114,9 @@ export function useSidebarPreferences(): SidebarState {
     hydrate();
     const flushPending = () => {
       if (!pending) return;
-      const { width, hidden } = snapshot();
+      const { width, hidden, zoom } = snapshot();
       const url = new URL("api/sidebar", document.baseURI);
-      const body = JSON.stringify({ width, hidden });
+      const body = JSON.stringify({ width, hidden, zoom });
       // Navigation or closing the native window may abort a normal fetch.
       const sent = navigator.sendBeacon?.(url, new Blob([body], { type: "application/json" }));
       if (!sent) void fetch(url, { method: "POST", keepalive: true,

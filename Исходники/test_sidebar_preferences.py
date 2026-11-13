@@ -50,6 +50,16 @@ class SidebarPreferencesTests(SidebarFixture):
         self.assertEqual(first.snapshot()['sidebar'], {'width': 420, 'hidden': True})
         self.assertEqual(self.service().snapshot()['sidebar'], {'width': 420, 'hidden': True})
 
+    def test_window_scale_is_kept_with_the_menu_and_only_offered_steps_pass(self):
+        first = self.service()
+        self.assertEqual(first.set_sidebar(300, False, 1.25), {'width': 300, 'hidden': False, 'zoom': 1.25})
+        self.assertEqual(self.service().snapshot()['sidebar'], {'width': 300, 'hidden': False, 'zoom': 1.25})
+        # 100 % is the default and is not written down.
+        self.assertEqual(first.set_sidebar(300, False, 1), {'width': 300, 'hidden': False})
+        for bad in (2, 0.5, '1.25', True):
+            with self.assertRaises(Exception):
+                first.set_sidebar(300, False, bad)
+
     def test_legacy_and_invalid_sidebar_records_keep_history_failures_and_output_settings(self):
         state = WorkspaceState(self.path)
         state.set_output('results')
