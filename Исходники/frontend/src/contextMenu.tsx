@@ -181,7 +181,7 @@ function ContextMenuPopup({ menu, shown, onClose }: { menu: OpenMenu; shown: boo
       {submenu ? (
         <button type="button" className="menu-back" role="menuitem" tabIndex={-1}
           aria-label="Назад к действиям" onClick={() => setSubmenu(null)}>
-          <ArrowLeft size={14} /><span>{submenu.label}</span>
+          <ArrowLeft size={16} /><span>{submenu.label}</span>
         </button>
       ) : menu.heading && <div className="action-menu-heading" title={menu.heading}>{menu.heading}</div>}
       {(submenu?.children ?? menu.items).map((item) => (
@@ -198,7 +198,7 @@ function ContextMenuPopup({ menu, shown, onClose }: { menu: OpenMenu; shown: boo
             if (item.children?.length) { setSubmenu(item); return; }
             close(true); menu.onAction(item.value);
           }}>
-          {item.icon}<span>{item.label}</span>{item.children?.length ? <ChevronRight size={14} /> : null}
+          {item.icon}<span>{item.label}</span>{item.children?.length ? <ChevronRight size={16} /> : null}
         </button>
       ))}
     </div>, menu.container,

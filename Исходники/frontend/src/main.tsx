@@ -1,5 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
+import { LucideProvider } from "lucide-react";
 import "@fontsource-variable/manrope";
 import { App } from "./App";
 import "./tokens.css";
@@ -32,8 +33,11 @@ class AppBoundary extends React.Component<
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AppBoundary>
-      <App />
-    </AppBoundary>
+    {/* One line weight for every icon; sizes come from the five steps 12/16/18/20/32. */}
+    <LucideProvider strokeWidth={1.75}>
+      <AppBoundary>
+        <App />
+      </AppBoundary>
+    </LucideProvider>
   </React.StrictMode>,
 );

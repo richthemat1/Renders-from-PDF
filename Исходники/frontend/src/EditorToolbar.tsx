@@ -184,7 +184,7 @@ export function EditorToolbar(props: Props) {
                 title={allSelected ? "Снять выделение только с видимых карточек" : "Добавить видимые карточки к выделению"}
                 aria-pressed={allSelected} disabled={props.saving || !props.visible} onClick={props.onSelectVisible}>
                 <span className={`toolbar-checkbox${allSelected ? " checked" : ""}`} aria-hidden="true">
-                  {allSelected && <Check size={11} />}
+                  {allSelected && <Check size={12} />}
                 </span>
                 <span>{allSelected ? "Снять выделение" : "Выбрать видимые"}</span>
               </button>
@@ -241,7 +241,7 @@ export function EditorToolbar(props: Props) {
             Убрано из результата: {props.removed}. <button className="text-btn" onClick={props.onShowRemoved}>Показать и вернуть</button>
           </span>}
           {props.conflict && <div className="inline-warning editor-conflict" role="alert">
-            <TriangleAlert size={17} /><span>Результат изменён в другом окне. Загрузите актуальную версию и повторите правки.</span>
+            <TriangleAlert size={16} /><span>Результат изменён в другом окне. Загрузите актуальную версию и повторите правки.</span>
             <button className="text-btn" onClick={props.onReset}>Обновить</button>
           </div>}
         </section>

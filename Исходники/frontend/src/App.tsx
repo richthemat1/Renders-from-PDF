@@ -329,8 +329,8 @@ export function App() {
           {failureMessage(item) !== item.reason && <details className="failure-details"><summary>Технические подробности</summary><p>{item.reason}</p></details>}
           <small>{dateLabel(item.failed_at)}</small></div>
         <div className="failure-actions">
-          {canRetry(item) && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={15} />Обработать заново</button>}
-          {item.action === "choose_output" && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку…</button>}
+          {canRetry(item) && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={16} />Обработать заново</button>}
+          {item.action === "choose_output" && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={16} />Выбрать другую папку…</button>}
           <button className="icon-btn" disabled={waiting} aria-label={`Убрать ошибку из истории: ${item.name}`} title="Убрать запись из истории" onClick={() => failureAction(item, "forget")}><X size={16} /></button>
         </div>
       </article>)}
@@ -363,29 +363,29 @@ export function App() {
     return <article className="history-entry history-card" key={item.id} onContextMenu={(event) => openHistoryMenu(event, item)}>
       <button className="history-row history-card-main" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
         <span className="history-card-top">
-          <span className="file-icon"><FileText size={21} /></span>
+          <span className="file-icon"><FileText size={20} /></span>
           <span className={`history-card-state${!item.available || item.errors ? " needs-attention" : ""}`}>
-            {!item.available || item.errors ? <AlertTriangle size={14} /> : item.review || item.unsigned ? <ScanEye size={14} /> : <Check size={14} />}
+            {!item.available || item.errors ? <AlertTriangle size={16} /> : item.review || item.unsigned ? <ScanEye size={16} /> : <Check size={16} />}
             {!item.available ? "Папка недоступна" : item.review || item.unsigned ? `Проверить: ${item.review + item.unsigned}` : item.errors ? `Ошибки: ${item.errors}` : "Готово"}
           </span>
           <time dateTime={item.finished_at}>{dateLabel(item.finished_at)}</time>
         </span>
         <strong className="history-card-title" title={item.name}>{item.name}</strong>
         <span className="history-card-metrics">
-          <span><span>Изображения<Images size={15} /></span><strong>{item.images}</strong></span>
-          <span><span>PDF<Files size={15} /></span><strong>{item.documents}</strong></span>
+          <span><span>Изображения<Images size={16} /></span><strong>{item.images}</strong></span>
+          <span><span>PDF<Files size={16} /></span><strong>{item.documents}</strong></span>
         </span>
         <span className="history-card-location">
-          <span><FolderOutput size={14} />Папка результата</span>
+          <span><FolderOutput size={16} />Папка результата</span>
           <span className="history-path" title={item.output}>{item.output}</span>
           {!item.available && <span className="history-unavailable">Папка не найдена — нажмите «Указать папку…»</span>}
           {repeats && <span className="history-repeat-note">Есть другие выгрузки этого PDF</span>}
         </span>
       </button>
       <div className="history-actions">
-        {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку результата: ${item.name}`}><FolderOpen size={15} /><span>Открыть папку</span></button>
-          : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={15} />Указать папку…</button>}
-        <button className="btn compact secondary" disabled={waiting || state?.busy} aria-label={`Обработать заново: ${item.name}`} onClick={() => historyAction(item, "repeat")}><RotateCcw size={15} /><span>Заново</span></button>
+        {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку результата: ${item.name}`}><FolderOpen size={16} /><span>Открыть папку</span></button>
+          : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={16} />Указать папку…</button>}
+        <button className="btn compact secondary" disabled={waiting || state?.busy} aria-label={`Обработать заново: ${item.name}`} onClick={() => historyAction(item, "repeat")}><RotateCcw size={16} /><span>Заново</span></button>
         <button className="icon-btn" disabled={waiting} aria-label={`Убрать из истории: ${item.name}`} title="Убрать запись из истории, сохранив файлы" onClick={() => historyAction(item, "forget")}><Trash2 size={18} /></button>
       </div>
     </article>;
@@ -412,10 +412,10 @@ export function App() {
         onClick={() => navigate("work")}
       >
         <span>
-          <ImagePlus size={17} />
+          <ImagePlus size={16} />
           Обработка PDF
         </span>
-        {state?.busy && <LoaderCircle size={14} className="spin" />}
+        {state?.busy && <LoaderCircle size={16} className="spin" />}
       </button>
       <button
         aria-current={page === "history" ? "page" : undefined}
@@ -424,7 +424,7 @@ export function App() {
         onClick={() => navigate("history")}
       >
         <span>
-          <History size={17} />
+          <History size={16} />
           История обработки
         </span>
       </button>
@@ -439,13 +439,13 @@ export function App() {
         onClick={() => navigate("settings")}
       >
         <span>
-          <SlidersHorizontal size={17} />
+          <SlidersHorizontal size={16} />
           Настройки
         </span>
       </button>
       <button className="project-link" title="Как пользоваться" onClick={() => setHelp(page === "viewer" ? helpTopic.current : "start")}>
         <span>
-          <CircleHelp size={17} />
+          <CircleHelp size={16} />
           Как пользоваться
         </span>
       </button>
@@ -617,7 +617,7 @@ export function App() {
                     const record = state.history.find((item) => item.output.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase() === output);
                     if (record) void openHistory(record.id);
                     else notify("Результат не найден в истории. Откройте его папку вручную.", true,
-                      { label: "Открыть прошлый результат…", icon: <FolderOpen size={16} strokeWidth={2} absoluteStrokeWidth />, run: previous });
+                      { label: "Открыть прошлый результат…", icon: <FolderOpen size={16} />, run: previous });
                   }}
                   onHistory={() => navigate("history")}
                   onOpenHistory={(item) => void openHistory(item.id)}
@@ -638,7 +638,7 @@ export function App() {
                       onClick={previous}
                       disabled={waiting}
                     >
-                      <FolderOpen size={17} />
+                      <FolderOpen size={16} />
                       Открыть прошлый результат…
                     </button>
                   </div>
@@ -656,14 +656,14 @@ export function App() {
                   {failureList(matchingFailures)}
                   {!state.history.length && !(state.failures?.length) ? (
                     <Empty icon={<History size={32} />} title="Здесь появятся ваши результаты"
-                      action={<button className="btn primary" onClick={() => navigate("work")}>Обработать первый PDF<ArrowRight size={17} /></button>}>
+                      action={<button className="btn primary" onClick={() => navigate("work")}>Обработать первый PDF<ArrowRight size={16} /></button>}>
                       Обработайте презентацию или откройте папку с прошлым результатом.
                     </Empty>
                   ) : (
                     <div className="history-list">{matchingHistory.map(historyRow)}</div>
                   )}
                   {!!(state.history.length || state.failures?.length) && !matchingHistory.length && !matchingFailures.length && (
-                    <Empty icon={<History size={30} />} title="Результат не найден">
+                    <Empty icon={<History size={32} />} title="Результат не найден">
                       Попробуйте часть названия или откройте нужную папку вручную.
                     </Empty>
                   )}

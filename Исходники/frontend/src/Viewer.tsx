@@ -712,7 +712,7 @@ export function Viewer({
       // The undo asks the same question as in «Ещё»: it throws away what this save wrote.
       const failed = value.delivery_errors?.length ? ` ${value.delivery_errors.join(" ")}` : "";
       notify(failed ? `Правки сохранены.${failed}` : done, Boolean(failed), {
-        label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => setConfirmUndoSave(true),
+        label: "Отменить сохранение", icon: <Undo2 size={16} />, run: () => setConfirmUndoSave(true),
       });
       return true;
     } catch (error) {
@@ -1293,20 +1293,20 @@ export function Viewer({
             </span>
           </button>
           <div className="nav-label">Проект</div>
-          {sidebar("all", "Все изображения", rows.length, <Images size={17} />)}
-          {sidebar("removed", "Убранные", removed.length, <Trash2 size={17} />)}
+          {sidebar("all", "Все изображения", rows.length, <Images size={16} />)}
+          {sidebar("removed", "Убранные", removed.length, <Trash2 size={16} />)}
           {!!report.images.some((image) => image.suppressed || image.suppression_code) &&
-            sidebar("service", "Служебные", service.length, <Shapes size={17} />)}
+            sidebar("service", "Служебные", service.length, <Shapes size={16} />)}
           {/* Always listed: any picture can be cut by hand, even when the program found no collage. */}
           {sidebar("collages", "Склейки", collageViews.length,
             <span className={`nav-icon-attention${collageCheck ? " has-attention" : ""}`}
-              title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={17} /></span>)}
-          {sidebar("cutouts", "Вырезки", cutoutCount, <Crop size={17} />)}
+              title={collageCheck ? `Нужно проверить: ${collageCheck}` : undefined}><Scissors size={16} /></span>)}
+          {sidebar("cutouts", "Вырезки", cutoutCount, <Crop size={16} />)}
           {/* Counted as in the heading of the result: whole variants, their subvariants are listed under them. */}
           <button className="nav-group-toggle" aria-label={variantSummary} title={variantSummary}
             aria-expanded={variantsOpen} aria-controls="variant-navigation"
             onClick={(event) => { event.stopPropagation(); setVariantsOpen((value) => !value); }}>
-            <Layers3 size={16} /><span>Варианты</span><b>{variantCount}</b><ChevronDown size={14} />
+            <Layers3 size={16} /><span>Варианты</span><b>{variantCount}</b><ChevronDown size={16} />
           </button>
           <Collapsible id="variant-navigation" open={variantsOpen}>
           {variants.map((key) =>
@@ -1329,20 +1329,20 @@ export function Viewer({
             "review",
             "На проверку",
             counts.review,
-            <Clock3 size={17} />,
+            <Clock3 size={16} />,
           )}
           {sidebar(
             "unsigned",
             "Без подписи",
             counts.unsigned,
-            <Tag size={17} />,
+            <Tag size={16} />,
           )}
           {!!folders.length && (
             <>
               <button className="nav-group-toggle" aria-label={`Подписи: ${folders.length}`} title={`Подписи: ${folders.length}`}
                 aria-expanded={foldersOpen} aria-controls="folder-navigation"
                 onClick={(event) => { event.stopPropagation(); setFoldersOpen((value) => !value); }}>
-                <Tags size={16} /><span>Подписи</span><b>{folders.length}</b><ChevronDown size={14} />
+                <Tags size={16} /><span>Подписи</span><b>{folders.length}</b><ChevronDown size={16} />
               </button>
               <Collapsible id="folder-navigation" className="category-list" open={foldersOpen}>
                 {folders.map((folder, i) =>
@@ -1363,7 +1363,7 @@ export function Viewer({
       header={
         <>
           <label className="searchbox">
-            <Search size={17} />
+            <Search size={16} />
             <input
               ref={search}
               type="search"
@@ -1542,7 +1542,7 @@ export function Viewer({
                   disabled={dirty || saving}
                   onClick={renameGroup}
                 >
-                  <Pencil size={15} />
+                  <Pencil size={16} />
                 </button>
               )}
             {filter.startsWith("variant:") && <button className="btn compact secondary variant-export"
@@ -1552,14 +1552,14 @@ export function Viewer({
                 : "Положить PDF этого варианта в выбранную папку — сразу файлом, без вложенной папки"}
               disabled={saving || !savedVariants.has(filter.slice(8))}
               onClick={() => void exportVariants([filter.slice(8)])}>
-              <FolderOutput size={15} /><span>В папку…</span>
+              <FolderOutput size={16} /><span>В папку…</span>
             </button>}
           </div>
           {editing && filter.startsWith("variant:") && <button className="btn compact secondary"
             aria-label="Создать копию PDF варианта" title="Создать копию всего PDF варианта"
             disabled={saving || !draft.variants[filter.slice(8)]?.length}
             onClick={() => startCopy(draft.variants[filter.slice(8)] || [], true)}>
-            <Copy size={15} /><span>Копия PDF</span>
+            <Copy size={16} /><span>Копия PDF</span>
           </button>}
           {showStatusTabs && <div
             className="filter-tabs"
@@ -1635,7 +1635,7 @@ export function Viewer({
                       />
                     ) : (
                       <span className="no-preview">
-                        <ImageOff size={30} />
+                        <ImageOff size={32} />
                         Без миниатюры
                       </span>
                     )}
@@ -1666,22 +1666,22 @@ export function Viewer({
                     const collage = removedSet.has(row.id) ? undefined : collageOf(row.id);
                     if (!collage) return null;
                     if (collage.state === "suspected") return <>
-                      <span className="collage-chip amber collage-badge"><TriangleAlert size={13} />Возможно, склейка</span>
+                      <span className="collage-chip amber collage-badge"><TriangleAlert size={12} />Возможно, склейка</span>
                       {editing && <button className="btn compact secondary collage-cut-button" disabled={saving}
-                        onClick={() => startCut(collage)}><Scissors size={15} />Разрезать…</button>}
+                        onClick={() => startCut(collage)}><Scissors size={16} />Разрезать…</button>}
                     </>;
                     const number = collage.members.indexOf(row.id) + 1;
                     return number > 0 && collage.boxes.length > 1 ? <span className="collage-chip dark collage-badge">
-                      <Scissors size={13} />Кадр {number} из склейки</span> : null;
+                      <Scissors size={12} />Кадр {number} из склейки</span> : null;
                   })()}
                   {(() => {
                     const piece = removedSet.has(row.id) ? undefined : cutoutOf(row.id);
                     return piece ? <span className="collage-chip dark collage-badge">
-                      <Crop size={13} />Вырезка {piece.number} со стр. {piece.view.page}</span> : null;
+                      <Crop size={12} />Вырезка {piece.number} со стр. {piece.view.page}</span> : null;
                   })()}
                   {editing && !saving && !removedSet.has(row.id) && !(row.id in draft.frames) && collageOf(row.id)?.state !== "suspected" &&
                     <button className="btn compact secondary cutout-cut-button" tabIndex={-1} onClick={() => startCutout(row.id)}>
-                      <SquareScissors size={15} />Вырезать со страницы…</button>}
+                      <SquareScissors size={16} />Вырезать со страницы…</button>}
                   {editing && !removedSet.has(row.id) && (
                     <span className="drag-handle" title="Перетащите карточку">
                       <GripVertical size={16} />
@@ -1709,17 +1709,17 @@ export function Viewer({
                         disabled={dirty || saving}
                         onClick={() => renameFile(row.id)}
                       >
-                        <Pencil size={13} />
+                        <Pencil size={12} />
                       </button>
                     )}
                   </div>
                   <div className="asset-meta">
-                    <span>{row.image.copy_of !== undefined && <span className="copy-label"><Copy size={11} />Копия · </span>}Страница {row.image.page}</span>
+                    <span>{row.image.copy_of !== undefined && <span className="copy-label"><Copy size={12} />Копия · </span>}Страница {row.image.page}</span>
                     <span>{row.image.size?.join(" × ")}</span>
                   </div>
                   {removedSet.has(row.id) && <button className="btn compact secondary restore-image" disabled={saving}
                     onClick={() => { setEditing(true); change({ type: "restore", ids: [row.id] }); }}>
-                    <RotateCcw size={15} />Вернуть изображение
+                    <RotateCcw size={16} />Вернуть изображение
                   </button>}
                 </div>
               </article>
@@ -1780,7 +1780,7 @@ export function Viewer({
               disabled={removedSet.has(previewRow.id) || !!previewRow.image.removed}
               title={removedSet.has(previewRow.id) ? "Верните изображение и сохраните результат, чтобы открыть PDF" : previewRow.image.removed ? "Сохраните восстановление, чтобы открыть PDF" : "Открыть сохранённый PDF результата"}
               onClick={() => open(previewRow.image.file)}>
-              <FileText size={16} /><span>Открыть готовый PDF</span><ArrowUpRight size={14} />
+              <FileText size={16} /><span>Открыть готовый PDF</span><ArrowUpRight size={16} />
             </button>
             <span className="preview-action-separator" aria-hidden="true" />
           </div>}
@@ -1788,17 +1788,17 @@ export function Viewer({
           <div className="preview-taskbar">
             <div className="preview-view-switch" role="group" aria-label="Что показать">
               <button className="btn compact secondary" aria-pressed={!sourcePage} data-autofocus
-                onClick={() => setSourcePage(false)}><Images size={15} />Извлечённое изображение</button>
+                onClick={() => setSourcePage(false)}><Images size={16} />Извлечённое изображение</button>
               <button className="btn compact secondary" aria-pressed={sourcePage}
-                onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={15} />Исходная страница {previewRow.image.page}</button>
+                onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={16} />Исходная страница {previewRow.image.page}</button>
             </div>
             <div className="preview-image-actions" aria-label="Изображение">
-              <ActionMenu label="Повернуть" icon={<RotateCw size={15} />} items={TURN_ITEMS}
+              <ActionMenu label="Повернуть" icon={<RotateCw size={16} />} items={TURN_ITEMS}
                 disabled={saving || dirty || removedSet.has(previewRow.id) || !!previewRow.image.removed}
                 onAction={(value) => void turnImages([previewRow.id], Number(value.slice(5)) as Turn)} />
               <button className="btn compact secondary" disabled={saving || dirty || removedSet.has(previewRow.id) || !!previewRow.image.removed}
                 title={dirty ? "Обрезка сразу записывается в PDF: сначала сохраните правки" : "Обрезать изображение рамкой на месте"}
-                onClick={() => { const id = previewRow.id; setPreview(null); cropImage(id); }}><Crop size={15} />Обрезать…</button>
+                onClick={() => { const id = previewRow.id; setPreview(null); cropImage(id); }}><Crop size={16} />Обрезать…</button>
             </div>
             {editing && <div className="preview-edit-actions" aria-label="Правки открытого изображения">
               <ActionMenu label="Перенести в вариант" disabled={saving}
@@ -1808,13 +1808,13 @@ export function Viewer({
                 onAction={(target) => target === "return"
                   ? change({ type: "return-to-misc", ids: [previewRow.id] }) : move(target, [previewRow.id])} />
               <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
-                onClick={() => cutImage(previewRow.id)}><Scissors size={15} />Разрезать…</button>
+                onClick={() => cutImage(previewRow.id)}><Scissors size={16} />Разрезать…</button>
               <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
-                onClick={() => { const id = previewRow.id; setPreview(null); startCutout(id); }}><SquareScissors size={15} />Вырезать со страницы…</button>
+                onClick={() => { const id = previewRow.id; setPreview(null); startCutout(id); }}><SquareScissors size={16} />Вырезать со страницы…</button>
               <button className="btn compact secondary" disabled={saving}
                 aria-label={removedSet.has(previewRow.id) ? "Вернуть изображение" : "Убрать изображение"}
                 onClick={() => change({ type: removedSet.has(previewRow.id) ? "restore" : "remove", ids: [previewRow.id] })}>
-                {removedSet.has(previewRow.id) ? <RotateCcw size={15} /> : <Trash2 size={15} />}
+                {removedSet.has(previewRow.id) ? <RotateCcw size={16} /> : <Trash2 size={16} />}
                 {removedSet.has(previewRow.id) ? "Вернуть" : "Убрать"}
               </button>
             </div>}
@@ -1907,8 +1907,8 @@ export function Viewer({
             </div>
             <span className={`preview-location${removedSet.has(previewRow.id) ? " is-removed" : ""}`}
               title={removedSet.has(previewRow.id) ? isService(previewRow.id) ? "Пропущено автоматически" : "Убрано из результата" : previewRow.label}>
-              {removedSet.has(previewRow.id) ? isService(previewRow.id) ? <Shapes size={14} /> : <Trash2 size={14} />
-                : previewRow.variant !== null ? <Layers2 size={14} /> : <Tag size={14} />}
+              {removedSet.has(previewRow.id) ? isService(previewRow.id) ? <Shapes size={16} /> : <Trash2 size={16} />
+                : previewRow.variant !== null ? <Layers2 size={16} /> : <Tag size={16} />}
               <span>{removedSet.has(previewRow.id) ? isService(previewRow.id) ? "Служебный" : "Убрано" : previewRow.label}</span>
             </span>
           </div>

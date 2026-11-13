@@ -188,7 +188,7 @@ export function Shell({
         onFocus={event => showTip(event.target)} onBlur={hideTip} onScroll={hideTip}>
         <div className="brand">
           <span className={`brand-mark${APP_ICON_AVAILABLE ? " custom-logo" : ""}`}>
-            {APP_ICON_AVAILABLE ? <img src={`${import.meta.env.BASE_URL}app-icon.ico`} alt="" width={36} height={36} /> : <Layers3 size={22} />}
+            {APP_ICON_AVAILABLE ? <img src={`${import.meta.env.BASE_URL}app-icon.ico`} alt="" width={36} height={36} /> : <Layers3 size={20} />}
           </span>
           <div className="brand-copy">
             <strong>Фото из PDF</strong>
@@ -376,8 +376,8 @@ export function Toast({ notice, busy, onAction, onClose, onHold }: {
       onFocus={() => onHold?.(true)}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onHold?.(false); }}>
       <span className="toast-mark" aria-hidden="true">
-        {notice.error ? <AlertTriangle size={16} strokeWidth={2} absoluteStrokeWidth />
-          : <Check size={16} strokeWidth={2} absoluteStrokeWidth />}
+        {notice.error ? <AlertTriangle size={16} />
+          : <Check size={16} />}
       </span>
       <div className="toast-body">
         <p className="toast-message"><strong>{title}</strong>{detail && <span>{detail}</span>}</p>
@@ -385,7 +385,7 @@ export function Toast({ notice, busy, onAction, onClose, onHold }: {
           {notice.action.icon}{notice.action.label}</button>}
       </div>
       <button className="toast-close" aria-label="Скрыть сообщение" onClick={onClose}>
-        <X size={16} strokeWidth={2} absoluteStrokeWidth />
+        <X size={16} />
       </button>
     </div>
   );
@@ -538,7 +538,7 @@ export function ActionMenu({
           {submenu ? (
             <button type="button" className="menu-back" role="menuitem" tabIndex={-1}
               aria-label="Назад к действиям" onClick={() => setSubmenu(null)}>
-              <ArrowLeft size={14} /><span>{submenu.label}</span>
+              <ArrowLeft size={16} /><span>{submenu.label}</span>
             </button>
           ) : heading && <div className="action-menu-heading">{heading}</div>}
           {(submenu?.children ?? items).map((item) => (
@@ -555,7 +555,7 @@ export function ActionMenu({
                 if (item.children?.length) { setSubmenu(item); return; }
                 close(true); onAction(item.value);
               }}>
-              {item.icon}<span>{item.label}</span>{item.children?.length ? <ChevronRight size={14} /> : null}
+              {item.icon}<span>{item.label}</span>{item.children?.length ? <ChevronRight size={16} /> : null}
             </button>
           ))}
         </div>, trigger.current?.closest("dialog") ?? document.body,
@@ -717,7 +717,7 @@ export function Select({ value, options, onChange, label, placeholder = "Выб�
         }}>
         {current?.dot && <span className={`variant-dot ${current.dot}`} aria-hidden="true" />}
         <span className={current ? "select-value" : "select-value is-placeholder"}>{current?.label ?? placeholder}</span>
-        <ChevronDown size={14} aria-hidden="true" />
+        <ChevronDown size={16} aria-hidden="true" />
       </button>
       {listShown && createPortal(
         <div ref={list} id={id} role="listbox" aria-label={label} className="action-menu select-menu" style={position}
@@ -748,7 +748,7 @@ export function Select({ value, options, onChange, label, placeholder = "Выб�
               {option.dot && <span className={`variant-dot ${option.dot}`} aria-hidden="true" />}
               {option.icon}
               <span>{option.label}</span>
-              {option.value === value && <Check size={14} aria-hidden="true" />}
+              {option.value === value && <Check size={16} aria-hidden="true" />}
             </button>
           ))}
         </div>, trigger.current?.closest("dialog") ?? document.body,
@@ -780,7 +780,7 @@ export function StatusNote({
 }: PropsWithChildren<{ busy?: boolean; dirty?: boolean; undone?: boolean }>) {
   return (
     <span className={`status-note${dirty && !busy ? " dirty" : ""}`}>
-      {busy ? <LoaderCircle size={14} className="spin" /> : dirty ? <Pencil size={14} /> : undone ? <Undo2 size={14} /> : <Check size={14} />}
+      {busy ? <LoaderCircle size={16} className="spin" /> : dirty ? <Pencil size={16} /> : undone ? <Undo2 size={16} /> : <Check size={16} />}
       {children}
     </span>
   );

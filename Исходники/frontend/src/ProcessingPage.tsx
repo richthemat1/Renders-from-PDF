@@ -51,19 +51,19 @@ function UploadZone({ fileDrag, waiting, quiet = false, onChoose }: {
   onChoose(): void;
 }) {
   return <section className={`upload-zone processing-upload${fileDrag ? " is-drag-over" : ""}`} aria-labelledby="upload-title">
-    <span className="processing-upload-icon"><FileInput size={30} strokeWidth={1.7} /></span>
+    <span className="processing-upload-icon"><FileInput size={32} /></span>
     <div className="processing-upload-copy">
       <h3 id="upload-title">{fileDrag ? "Отпустите PDF для обработки" : "Перетащите PDF сюда"}</h3>
       <p>Один файл, несколько презентаций или папка из Проводника</p>
     </div>
     <button className={`btn ${quiet ? "secondary" : "primary"}`} onClick={onChoose} disabled={waiting} aria-keyshortcuts="Control+O">
-      <FilePlus2 size={17} />Выбрать PDF<kbd aria-hidden="true">Ctrl O</kbd>
+      <FilePlus2 size={16} />Выбрать PDF<kbd aria-hidden="true">Ctrl O</kbd>
     </button>
   </section>;
 }
 
 function OriginalsNote() {
-  return <p className="processing-originals"><LockKeyhole size={14} /><span>Исходные файлы не изменяются</span></p>;
+  return <p className="processing-originals"><LockKeyhole size={16} /><span>Исходные файлы не изменяются</span></p>;
 }
 
 export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious, onCancel, onResume, onSettings, onOpenResult, onHistory, onOpenHistory, onHistoryMenu, failures }: ProcessingPageProps) {
@@ -108,7 +108,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
         {view.showJob ? <>
           <div className="processing-operation-header">
             <span className="processing-status-icon">
-              {processing ? <LoaderCircle size={25} className="spin" /> : complete ? <BadgeCheck size={25} /> : view.outcome === "cancelled" ? <CircleStop size={25} /> : <TriangleAlert size={25} />}
+              {processing ? <LoaderCircle size={20} className="spin" /> : complete ? <BadgeCheck size={20} /> : view.outcome === "cancelled" ? <CircleStop size={20} /> : <TriangleAlert size={20} />}
             </span>
             <div className="processing-status-copy">
               <div role="status"><h2 id="job-status">{view.title}</h2></div>
@@ -126,16 +126,16 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
           {processing && (view.activeFiles.length > 0 || view.waiting.length > 0) ? <ul className="processing-file-panel processing-file-list" aria-label="Файлы очереди">
             {view.activeFiles.map((file) => <li className="processing-active-file" key={file.index}>
-              <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{file.name}</span>
+              <p className="processing-file-line"><FileText size={16} /><span className="processing-file-name">{file.name}</span>
                 <span className="processing-file-percent">{file.progress}%</span></p>
               {file.phase && <p className="processing-phase">{file.phase}</p>}
             </li>)}
             {view.waiting.map((name, index) => <li className="processing-active-file is-waiting" key={`waiting-${index}`}>
-              <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{name}</span>
+              <p className="processing-file-line"><FileText size={16} /><span className="processing-file-name">{name}</span>
                 <span className="processing-file-percent">в очереди</span></p>
             </li>)}
           </ul> : processing ? (view.fileName || view.phase) && <div className="processing-file-panel">
-            {view.fileName && <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>}
+            {view.fileName && <p className="processing-file-line"><FileText size={16} /><span className="processing-file-name">{view.fileName}</span></p>}
             {view.phase && <p className="processing-phase">{view.phase}</p>}
           </div> : view.batch.length > 1 ? <div className="processing-finished-file processing-batch">
             <p className="processing-file-context">Файлы очереди — у каждого свой результат</p>
@@ -144,7 +144,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
                 const check = item.unsigned + item.review;
                 return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}
                   onContextMenu={(event) => onHistoryMenu(event, item)}>
-                  <span className="file-icon"><FileText size={21} /></span>
+                  <span className="file-icon"><FileText size={20} /></span>
                   <span className="history-name"><strong>{item.name}</strong>
                     <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.variants ? `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}` : `${item.documents} готовых PDF`}{check > 0 && ` · проверить: ${check}`}</small>
                   </span>
@@ -154,7 +154,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
             </div>
           </div> : view.fileName && <div className="processing-finished-file">
             {(!complete || (state.job?.total ?? 0) > 1) && <p className="processing-file-context">Последний сохранённый результат</p>}
-            <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>
+            <p className="processing-file-line"><FileText size={16} /><span className="processing-file-name">{view.fileName}</span></p>
           </div>}
 
           <div className="processing-progress">
@@ -166,7 +166,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
           <div className="job-totals">
             {totals.map(({ label, value, Icon }, index) => <div key={label} className={complete && index === 1 ? "processing-total-ready" : ""}>
-              <span className="processing-total-label"><span>{label}</span><Icon size={15} /></span>
+              <span className="processing-total-label"><span>{label}</span><Icon size={16} /></span>
               <strong>{value}</strong>
             </div>)}
           </div>
@@ -178,7 +178,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
           </div>}
           <div className="processing-body-footer">
             <OriginalsNote />
-            {(processing || view.remaining > 0) && view.canOpenResult && <button className="text-btn processing-live-result" onClick={onOpenResult} disabled={waiting}><ArrowUpRight size={15} />Открыть сохранённый результат</button>}
+            {(processing || view.remaining > 0) && view.canOpenResult && <button className="text-btn processing-live-result" onClick={onOpenResult} disabled={waiting}><ArrowUpRight size={16} />Открыть сохранённый результат</button>}
           </div>
         </> : <>
           <div className="processing-new-title"><h2 id="new-processing-title">Новая обработка</h2><p>PDF → изображения и варианты</p></div>
@@ -205,7 +205,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
 
     {state.logs.length > 0 && <section className="events processing-events" aria-label="События обработки">
       <details open={eventsOpen}>
-        <summary><ListCollapse size={17} /><strong>События обработки</strong><span className="processing-events-count">{state.logs.length}</span><ChevronUp className="processing-events-chevron" size={16} /></summary>
+        <summary><ListCollapse size={16} /><strong>События обработки</strong><span className="processing-events-count">{state.logs.length}</span><ChevronUp className="processing-events-chevron" size={16} /></summary>
         <ol className="processing-log">
           {state.logs.map((item) => <li key={item.id} className={`log-${["head", "ok", "warn", "error", "muted"].includes(item.level) ? item.level : "muted"}`}>
             {item.level === "head" && <FileText size={16} />}<span>{item.text}</span>
@@ -215,12 +215,12 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
     </section>}
 
     {state.history.length > 0 && <section className="recent processing-recent" aria-labelledby="recent-results-title">
-      <div className="section-title"><h2 id="recent-results-title">Последние результаты</h2><button className="text-btn" onClick={onHistory}>Вся история<ArrowRight size={14} /></button></div>
+      <div className="section-title"><h2 id="recent-results-title">Последние результаты</h2><button className="text-btn" onClick={onHistory}>Вся история<ArrowRight size={16} /></button></div>
       <div className="processing-recent-list">
         {state.history.slice(0, 3).map((item) => {
           return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}
                   onContextMenu={(event) => onHistoryMenu(event, item)}>
-            <span className="file-icon"><FileText size={21} /></span>
+            <span className="file-icon"><FileText size={20} /></span>
             <span className="history-name"><strong>{item.name}</strong>
               <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.variants ? `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}` : `${item.documents} готовых PDF`} · {dateLabel(item.finished_at)}</small>
               {!item.available && <small className="history-unavailable">Папка недоступна — нажмите «Указать папку…» в истории</small>}

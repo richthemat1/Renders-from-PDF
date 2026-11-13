@@ -37,7 +37,7 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onChoos
 
       <section className="settings-panel settings-output" aria-labelledby="settings-output-title">
         <div className="settings-section-heading">
-          <FolderOutput size={21} aria-hidden="true" />
+          <FolderOutput size={20} aria-hidden="true" />
           <div>
             <h2 id="settings-output-title">Папка результатов</h2>
             <p id="settings-output-description">Каждая презентация сохраняется в отдельную папку. Уже готовые результаты не перемещаются.</p>
@@ -75,7 +75,7 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onChoos
 
       <section className="settings-panel settings-delivery" aria-labelledby="settings-delivery-title">
         <div className="settings-section-heading">
-          <Files size={21} aria-hidden="true" />
+          <Files size={20} aria-hidden="true" />
           <div>
             <h2 id="settings-delivery-title">Готовые варианты</h2>
             <p id="settings-delivery-description">Чистые PDF вариантов без служебных файлов и вложенных папок. Программа кладёт их в эту папку после обработки и обновляет после каждого «Сохранить».</p>
@@ -97,7 +97,7 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onChoos
 
       <section className="settings-panel settings-zoom" aria-labelledby="settings-zoom-title">
         <div className="settings-section-heading">
-          <ZoomIn size={21} aria-hidden="true" />
+          <ZoomIn size={20} aria-hidden="true" />
           <div>
             <h2 id="settings-zoom-title">Масштаб интерфейса</h2>
             <p>Крупнее текст, кнопки и карточки во всём окне. Также Ctrl+плюс, Ctrl+минус и Ctrl+0.</p>
@@ -111,7 +111,7 @@ export function Settings({ state, waiting, onModeChange, onChooseFolder, onChoos
 
       <section className="settings-panel settings-about" aria-labelledby="settings-about-title">
         <div className="settings-section-heading">
-          <Info size={21} aria-hidden="true" />
+          <Info size={20} aria-hidden="true" />
           <h2 id="settings-about-title">О приложении</h2>
         </div>
         <dl className="settings-details">

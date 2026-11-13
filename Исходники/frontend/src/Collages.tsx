@@ -82,12 +82,12 @@ function CollagePicture({ view, maxHeight }: { view: CollageView; maxHeight: num
 function status(view: CollageView): { tone: string; icon: ReactNode; label: string } {
   const count = view.boxes.length;
   const frames = `${count} ${plural(count, ["кадр", "кадра", "кадров"])}`;
-  if (view.state === "suspected") return { tone: "amber", icon: <TriangleAlert size={14} />, label: "Возможно, склейка" };
-  if (view.state === "whole") return { tone: "neutral", icon: <Layers size={14} />, label: view.pending ? "Целиком · не сохранено" : "Целиком" };
-  if (view.pending) return { tone: "blue", icon: <Scissors size={14} />, label: `Разрезано · ${frames} · не сохранено` };
-  if (view.state === "auto" && !view.checked) return { tone: "blue", icon: <Scissors size={14} />, label: `Разрезано автоматически · ${frames}` };
-  if (view.state === "auto") return { tone: "green", icon: <Check size={14} />, label: `Проверено · ${frames}` };
-  return { tone: "green", icon: <Scissors size={14} />, label: `Разрезано вручную · ${frames}` };
+  if (view.state === "suspected") return { tone: "amber", icon: <TriangleAlert size={16} />, label: "Возможно, склейка" };
+  if (view.state === "whole") return { tone: "neutral", icon: <Layers size={16} />, label: view.pending ? "Целиком · не сохранено" : "Целиком" };
+  if (view.pending) return { tone: "blue", icon: <Scissors size={16} />, label: `Разрезано · ${frames} · не сохранено` };
+  if (view.state === "auto" && !view.checked) return { tone: "blue", icon: <Scissors size={16} />, label: `Разрезано автоматически · ${frames}` };
+  if (view.state === "auto") return { tone: "green", icon: <Check size={16} />, label: `Проверено · ${frames}` };
+  return { tone: "green", icon: <Scissors size={16} />, label: `Разрезано вручную · ${frames}` };
 }
 
 export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole, onBrowse }: {
@@ -164,7 +164,7 @@ export function CollagesPage({ views, saving, onCut, onCheck, onDismiss, onWhole
                 <div className="collage-body">
                   <div className="collage-chips">
                     <span className={`collage-chip ${chip.tone}`}>{chip.icon}{chip.label}</span>
-                    {variantless && <span className="collage-chip amber"><TriangleAlert size={14} />Вариант не определён</span>}
+                    {variantless && <span className="collage-chip amber"><TriangleAlert size={16} />Вариант не определён</span>}
                     <span className="collage-chip neutral">Стр. {view.page}{view.variantLabel ? ` · ${view.variantLabel}` : ""}</span>
                   </div>
                   <h3 title={view.title}>{view.title}</h3>
@@ -323,7 +323,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   const options = [...new Set([...variants, ...extra])].sort(compareVariants);
   const choices: SelectOption[] = [{ value: "__keep", label: "На место склейки" },
     ...options.map((key) => ({ value: key, label: label(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
-    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
+    { value: "__new", label: "Новый вариант…", icon: <Plus size={16} />, separator: true }];
   function choose(indices: number[], value: string) {
     if (value === "__new") { setNaming(indices); return; }
     const target: Target = value === "__keep" ? "keep" : value === "__misc" ? null : value;
@@ -640,7 +640,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
                         const next = new Set(skipped);
                         if (off) next.delete(index); else next.add(index);
                         setSkipped(next);
-                      }}>{off ? <><Eye size={15} />Сохранить кадр</> : <><EyeOff size={15} />Не сохранять</>}</button>}
+                      }}>{off ? <><Eye size={16} />Сохранить кадр</> : <><EyeOff size={16} />Не сохранять</>}</button>}
                     </div>
                   </li>
                 );

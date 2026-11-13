@@ -57,24 +57,24 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
       {/* A shortcut into editing, not a separate mode: «Редактировать» stays the main button of the page. */}
       {!!reviewCount && <button className="btn secondary review-summary-start" onClick={onReview}
         title="Открыть спорные изображения в режиме правки">
-        Разобрать<ArrowRight size={14} />
+        Разобрать<ArrowRight size={16} />
       </button>}
     </div>
     {diagnostics && <div className="review-summary-diagnostics">
       {!!warnings.length && <button className="review-summary-warnings" aria-expanded={open}
         aria-controls={`${id}-issues`} onClick={() => setOpen((value) => !value)}>
-        <TriangleAlert size={14} />Предупреждения: {warnings.length}<ChevronDown size={14} />
+        <TriangleAlert size={16} />Предупреждения: {warnings.length}<ChevronDown size={16} />
       </button>}
       {!!errors.length && <button className="review-summary-errors" aria-expanded={open}
         aria-controls={`${id}-issues`} onClick={() => setOpen((value) => !value)}>
-        <TriangleAlert size={14} />Ошибки: {errors.length}<ChevronDown size={14} />
+        <TriangleAlert size={16} />Ошибки: {errors.length}<ChevronDown size={16} />
       </button>}
       {!!collages?.total && <span className={`review-summary-collages${collages.check ? " needs-check" : ""}`}>
-        <Scissors size={14} /><span>Склейки: {collages.total}{collages.check ? `, проверить ${collages.check}` : ""}</span>
+        <Scissors size={16} /><span>Склейки: {collages.total}{collages.check ? `, проверить ${collages.check}` : ""}</span>
         {onCollages && <button className="text-btn" onClick={onCollages}>{collages.check ? "Проверить склейки" : "Открыть склейки"}</button>}
       </span>}
       {!!serviceCount && <span className="review-summary-services">
-        <Layers size={14} /><span>Пропущены служебные элементы: <strong>{serviceCount}</strong></span>
+        <Layers size={16} /><span>Пропущены служебные элементы: <strong>{serviceCount}</strong></span>
         {canRestoreService && <button className="text-btn" onClick={onService}>Посмотреть и вернуть</button>}
       </span>}
     </div>}
@@ -88,12 +88,12 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
             <span className="review-issue-message">{issue.message}</span>
             <div className="review-issue-actions">
               {issue.page && <button className="text-btn review-issue-find" onClick={() => onReveal(issue.page!, issue.image)}>
-                <ScanSearch size={14} />Найти изображение
+                <ScanSearch size={16} />Найти изображение
               </button>}
               {issue.detail && <button className="text-btn review-issue-toggle"
                 aria-label={`Подробности ${issue.error ? "ошибки" : "предупреждения"}${issue.page ? ` на странице ${issue.page}` : ` ${index + 1}`}`}
                 aria-expanded={expanded.has(index)} aria-controls={`${id}-detail-${index}`} onClick={() => toggle(index)}>
-                Подробности<ChevronDown size={14} />
+                Подробности<ChevronDown size={16} />
               </button>}
             </div>
           </div>

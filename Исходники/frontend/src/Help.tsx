@@ -315,19 +315,19 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
         <p>Метка показывает, что программа уже сделала:</p>
         <dl className="help-terms">
           <div>
-            <dt><span className="collage-chip blue"><Scissors size={14} />Разрезано автоматически</span></dt>
+            <dt><span className="collage-chip blue"><Scissors size={16} />Разрезано автоматически</span></dt>
             <dd>посмотрите кадры и нажмите <Ui>Всё верно</Ui> или <Ui>Проверить разрезку</Ui></dd>
           </div>
           <div>
-            <dt><span className="collage-chip amber"><TriangleAlert size={14} />Возможно, склейка</span></dt>
+            <dt><span className="collage-chip amber"><TriangleAlert size={16} />Возможно, склейка</span></dt>
             <dd>программа не уверена: <Ui>Разрезать…</Ui> или <Ui>Это одно фото</Ui></dd>
           </div>
           <div>
-            <dt><span className="collage-chip green"><Check size={14} />Проверено</span></dt>
+            <dt><span className="collage-chip green"><Check size={16} />Проверено</span></dt>
             <dd>готово; разрезку можно изменить или <Ui>Вернуть целиком</Ui></dd>
           </div>
           <div>
-            <dt><span className="collage-chip neutral"><Layers size={14} />Целиком</span></dt>
+            <dt><span className="collage-chip neutral"><Layers size={16} />Целиком</span></dt>
             <dd>оставлена одной картинкой</dd>
           </div>
         </dl>

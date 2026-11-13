@@ -210,9 +210,9 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
                 <div className="collage-body">
                   <div className="collage-chips">
                     {view.kind === "image"
-                      ? <span className="collage-chip blue"><Crop size={14} />{count} {plural(count, ["вырезка", "вырезки", "вырезок"])}</span>
-                      : <span className="collage-chip amber"><Scan size={14} />Снимок страницы{count > 1 ? ` · ${count}` : ""}</span>}
-                    {view.pieces.some((piece) => piece.marks) && <span className="collage-chip blue"><Shapes size={14} />с пометками</span>}
+                      ? <span className="collage-chip blue"><Crop size={16} />{count} {plural(count, ["вырезка", "вырезки", "вырезок"])}</span>
+                      : <span className="collage-chip amber"><Scan size={16} />Снимок страницы{count > 1 ? ` · ${count}` : ""}</span>}
+                    {view.pieces.some((piece) => piece.marks) && <span className="collage-chip blue"><Shapes size={16} />с пометками</span>}
                     {view.pending && <span className="collage-chip blue">не сохранено</span>}
                     <span className="collage-chip neutral">Стр. {view.page}{view.variantLabel ? ` · ${view.variantLabel}` : ""}</span>
                   </div>
@@ -261,7 +261,7 @@ type Drag =
 const HANDLES: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 
 // The page editor draws its 16 px icons with a 2 px line, as in its Figma design.
-const LINE: LucideProps = { size: 16, strokeWidth: 2, absoluteStrokeWidth: true };
+const LINE: LucideProps = { size: 16 };
 
 export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, start, variants, labelOf, dotOf, onApply, onClose, onHelp }: {
   resultId: string;
@@ -711,7 +711,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   // A page snapshot replaces no picture, so it has no place of its own to keep.
   const choices = (keep: boolean): SelectOption[] => [...(keep ? [{ value: "__keep", label: "На место картинки" }] : []),
     ...options.map((key) => ({ value: key, label: label(key), dot: dotOf(key) })), { value: "__misc", label: "Без варианта" },
-    { value: "__new", label: "Новый вариант…", icon: <Plus size={14} />, separator: true }];
+    { value: "__new", label: "Новый вариант…", icon: <Plus size={16} />, separator: true }];
   function choose(uids: number[], value: string) {
     if (value === "__new") setNaming(uids); else setTarget(uids, parse(value));
   }
@@ -772,7 +772,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
 
   return (
     <Dialog title="Вырезки со страниц PDF" wide className="cut-editor cutout-editor" onClose={requestClose}
-      icon={<Crop size={22} strokeWidth={2.75} absoluteStrokeWidth />}
+      icon={<Crop size={20} />}
       headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Вырезки" title="Как пользоваться: Вырезки"
         onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle"><span>{title}</span>
@@ -940,11 +940,11 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
                         </span>
                         <div>
                           <strong>Вырезка {number} <span>стр. {frame.page}</span>
-                            {small && !open && <TriangleAlert className="cutout-warning" size={13} aria-label={`Меньше ${MIN_PIXELS} px`} />}</strong>
+                            {small && !open && <TriangleAlert className="cutout-warning" size={12} aria-label={`Меньше ${MIN_PIXELS} px`} />}</strong>
                           {open ? <>
                             <span>{box[2] - box[0]} × {box[3] - box[1]} px · {source.kind === "page" ? "снимок страницы"
                               : marked(frame, source) ? "с пометками" : "из картинки"}</span>
-                            {small && <span className="cutout-warning"><TriangleAlert size={13} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
+                            {small && <span className="cutout-warning"><TriangleAlert size={12} />Меньше {MIN_PIXELS} px — увеличьте рамку</span>}
                             {hasMarks(frame, source) && <label className="cut-toggle cutout-marks">
                               <Shapes {...LINE} />С пометками
                               <input type="checkbox" checked={marked(frame, source)} aria-label={`Вырезка ${number} с пометками поверх картинки`}
