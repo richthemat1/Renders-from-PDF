@@ -1,19 +1,19 @@
 /* «Обрезать…»: one frame over one picture. The frame and its handles are those of the page editor. */
-.crop-dialog .crop-note { margin: 0 0 12px; color: #556377; font-size: var(--text-sm); line-height: 1.45; }
-.crop-area { display: flex; justify-content: center; padding: 14px; border: 1px solid var(--gray-300); border-radius: 10px; background: var(--gray-50); }
+.crop-dialog .crop-note { margin: 0 0 var(--space-3); color: #556377; font-size: var(--text-sm); line-height: 1.45; }
+.crop-area { display: flex; justify-content: center; padding: var(--space-4); border: 1px solid var(--gray-300); border-radius: 10px; background: var(--gray-50); }
 .crop-stage { position: relative; flex-shrink: 0; overflow: hidden; background: var(--gray-0); box-shadow: 0 3px 16px #18202e12;
   user-select: none; touch-action: none; }
 .crop-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
 /* What the frame leaves out is dimmed, so the result is seen before it is saved. */
 .crop-stage .crop-frame { background: transparent; box-shadow: 0 0 0 9999px #17202b8c; }
-.crop-footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.crop-footer { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); }
 .crop-footer .crop-size { color: var(--gray-900); font-size: var(--text-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
 .crop-footer .crop-spacer { flex: 1; }
 /* The heading as in the page editor: the mark at the left, the title and the picture's name beside it. */
-.dialog.crop-dialog > .dialog-heading { align-items: center; gap: 14px; }
+.dialog.crop-dialog > .dialog-heading { align-items: center; gap: var(--space-3); }
 .crop-dialog .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px;
   background: var(--accent-100); color: var(--gray-500); }
-.crop-dialog > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0;
+.crop-dialog > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: var(--space-1); min-width: 0;
   text-align: left; }
 .crop-dialog > .dialog-heading h2 { padding: 0; }
 .crop-dialog .crop-subtitle { overflow: hidden; margin: 0; color: var(--gray-500); font-size: var(--text-sm); text-overflow: ellipsis; white-space: nowrap; }

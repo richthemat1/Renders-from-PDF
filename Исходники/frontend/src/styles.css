@@ -195,7 +195,7 @@ html:has(.is-resizing-sidebar) * {
 .brand-mark.custom-logo img { width: 36px; height: 36px; object-fit: contain; }
 .brand div > span {
   display: block;
-  margin-top: 3px;
+  margin-top: var(--space-1);
   font-size: var(--text-small);
   color: #9aa5b6;
   white-space: nowrap;
@@ -207,7 +207,7 @@ html:has(.is-resizing-sidebar) * {
 }
 .nav-label {
   padding: 0 var(--space-2);
-  margin: 0 0 7px;
+  margin: 0 0 var(--space-2);
   font-size: var(--text-small);
   font-weight: 700;
   text-transform: uppercase;
@@ -215,7 +215,7 @@ html:has(.is-resizing-sidebar) * {
   color: #9aa5b6;
 }
 .nav-label.spaced {
-  margin-top: 24px;
+  margin-top: var(--space-6);
 }
 .project-link {
   width: 100%;
@@ -278,14 +278,14 @@ html:has(.is-resizing-sidebar) * {
 }
 .back-link {
   color: #b8c2d2;
-  margin: 0 0 25px;
+  margin: 0 0 var(--space-6);
 }
 .variant-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #9293ff;
-  margin: 0 5px;
+  margin: 0 var(--space-1);
   flex-shrink: 0;
 }
 .variant-dot.color-1 {
@@ -322,12 +322,12 @@ html:has(.is-resizing-sidebar) * {
   background: #63b99d;
 }
 .sidebar-tip {
-  margin: 32px 10px;
+  margin: var(--space-8) var(--space-3);
   color: #a7b4c9;
 }
 .sidebar-tip p {
   font-size: var(--text-small);
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .workspace-main {
   grid-column: 2;
@@ -472,7 +472,7 @@ kbd {
   font-size: var(--text-small);
 }
 .btn kbd {
-  margin-left: 10px;
+  margin-left: var(--space-3);
   color: var(--accent-200);
   background: #ffffff14;
   border-color: #ffffff40;
@@ -522,11 +522,11 @@ kbd {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-6);
-  margin: 10px 0 28px;
+  margin: var(--space-3) 0 var(--space-8);
 }
 .page-heading p {
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: var(--space-2);
   font-size: var(--text-small);
 }
 .page-heading > div {
@@ -555,19 +555,19 @@ kbd {
   height: 60px;
   background: var(--accent-100);
   border-radius: var(--radius-panel);
-  margin-bottom: 18px;
+  margin-bottom: var(--space-5);
 }
 .upload-zone h2 {
   font-size: var(--text-xl);
 }
 .upload-zone p {
   color: var(--gray-500);
-  margin: 8px 0 20px;
+  margin: var(--space-2) 0 var(--space-5);
   font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 .upload-note {
-  margin-top: 15px;
+  margin-top: var(--space-4);
   font-size: var(--text-small);
   color: var(--gray-500);
 }
@@ -611,7 +611,7 @@ kbd {
   height: 5px;
   border-radius: var(--radius-sm);
   background: var(--gray-100);
-  margin: 20px 0;
+  margin: var(--space-5) 0;
   overflow: hidden;
 }
 .progress-track > div {
@@ -648,10 +648,10 @@ kbd {
   font-size: var(--text-small);
 }
 .job-panel > .btn {
-  margin-top: 22px;
+  margin-top: var(--space-6);
 }
 .events {
-  margin: 20px 0;
+  margin: var(--space-5) 0;
 }
 summary {
   cursor: pointer;
@@ -660,7 +660,7 @@ summary {
   padding: var(--space-3) 0;
 }
 .events summary span {
-  margin-left: 9px;
+  margin-left: var(--space-2);
   color: #8490a2;
 }
 .events ol {
@@ -694,10 +694,10 @@ summary {
   color: var(--gray-500);
 }
 .recent {
-  margin-top: 30px;
+  margin-top: var(--space-8);
 }
 .recent .section-title {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .history-list {
   border-top: 1px solid var(--line);
@@ -732,7 +732,7 @@ summary {
 }
 .history-name small {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--space-1_5);
   font-size: var(--text-small);
   color: var(--muted);
 }
@@ -772,7 +772,7 @@ summary {
   border-radius: var(--radius-control);
   padding: 0 var(--space-3);
   font-size: var(--text-small);
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
 }
 .settings-section {
   max-width: 860px;
@@ -780,12 +780,12 @@ summary {
   border-top: 1px solid var(--line);
 }
 .settings-section > p {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 fieldset {
   border: 0;
   padding: 0;
-  margin: 18px 0 0;
+  margin: var(--space-5) 0 0;
 }
 .setting-option {
   display: flex;
@@ -795,7 +795,7 @@ fieldset {
   background: white;
   border-radius: var(--radius-control);
   padding: var(--space-4);
-  margin-top: 10px;
+  margin-top: var(--space-3);
   cursor: pointer;
 }
 .setting-option.selected {
@@ -830,7 +830,7 @@ fieldset {
   display: block;
   color: var(--muted);
   font-size: var(--text-small);
-  margin-top: 6px;
+  margin-top: var(--space-1_5);
   overflow-wrap: anywhere;
 }
 .about-row {
@@ -842,7 +842,7 @@ fieldset {
   font-size: var(--text-small);
 }
 .settings-section > .btn {
-  margin-top: 20px;
+  margin-top: var(--space-5);
 }
 .breadcrumbs {
   display: flex;
@@ -850,7 +850,7 @@ fieldset {
   gap: var(--space-2);
   color: var(--gray-500);
   font-size: var(--text-small);
-  margin-bottom: 18px;
+  margin-bottom: var(--space-5);
 }
 .breadcrumbs button {
   background: none;
@@ -877,7 +877,7 @@ fieldset {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-2);
-  margin-top: 25px;
+  margin-top: var(--space-6);
 }
 .stats > div,
 .stats > button {
@@ -904,7 +904,7 @@ fieldset {
 }
 .stats small {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--space-1_5);
   font-size: var(--text-small);
   white-space: nowrap;
   color: var(--gray-500);
@@ -943,7 +943,7 @@ fieldset {
   gap: var(--space-3);
   min-height: 66px;
   padding: var(--space-3);
-  margin-top: 16px;
+  margin-top: var(--space-4);
   background: var(--review-bg);
   border: 1px solid #f0dcae;
   border-radius: var(--radius-panel);
@@ -965,7 +965,7 @@ fieldset {
 }
 .review-banner span:not(.review-icon) {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   font-size: var(--text-small);
   color: #87683b;
 }
@@ -987,7 +987,7 @@ fieldset {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-4);
-  margin-top: 32px;
+  margin-top: var(--space-8);
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--line);
 }
@@ -1176,7 +1176,7 @@ fieldset {
   align-items: center;
   gap: var(--space-1);
   min-height: 34px;
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .asset-title > button:first-child {
   display: -webkit-box;
@@ -1207,7 +1207,7 @@ fieldset {
   justify-content: space-between;
   gap: var(--space-1);
   border-top: 1px solid var(--gray-100);
-  margin-top: 10px;
+  margin-top: var(--space-3);
   padding-top: var(--space-2);
   font-size: var(--text-small);
   color: var(--gray-500);
@@ -1224,7 +1224,7 @@ fieldset {
 }
 .editor-tools-anchor {
   position: relative;
-  margin-top: 22px;
+  margin-top: var(--space-6);
   container-type: inline-size;
 }
 .editor-dock-sentinel {
@@ -1261,12 +1261,12 @@ fieldset {
 .edit-panel > p {
   font-size: var(--text-small);
   color: var(--gray-500);
-  margin: 10px 0 13px;
+  margin: var(--space-3) 0 var(--space-3);
 }
 .edit-panel > .muted {
   display: block;
   font-size: var(--text-small);
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .selection-tools {
   display: flex;
@@ -1420,7 +1420,7 @@ fieldset {
   color: #30313d;
 }
 .edit-panel.is-floating .editor-remove {
-  margin-left: 4px;
+  margin-left: var(--space-1);
   color: #b94761;
 }
 .edit-panel.is-floating .editor-primary-action:hover:not(:disabled),
@@ -1548,7 +1548,7 @@ fieldset {
   outline-offset: -2px;
 }
 .action-menu > button.menu-separated {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   border-top: 1px solid #dcdde5;
   border-radius: 0 0 var(--radius-control) var(--radius-control);
 }
@@ -1583,10 +1583,10 @@ fieldset {
 .select-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1_5);
   min-width: 0;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-md);
   background: var(--gray-0);
@@ -1662,7 +1662,7 @@ fieldset {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-3);
-  margin: 12px 0;
+  margin: var(--space-3) 0;
   color: #825619;
   background: #fff7e5;
   border: 1px solid #eddbb3;
@@ -1670,7 +1670,7 @@ fieldset {
   font-size: var(--text-small);
 }
 .report-notes {
-  margin-top: 12px;
+  margin-top: var(--space-3);
 }
 .report-notes summary {
   color: #825619;
@@ -1687,7 +1687,7 @@ summary::after {
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-left: 10px;
+  margin-left: var(--space-3);
   border: solid currentColor;
   border-width: 0 1.5px 1.5px 0;
   transform: translateY(-2px) rotate(45deg);
@@ -1696,7 +1696,7 @@ details[open] > summary::after {
   transform: translateY(2px) rotate(225deg);
 }
 .report-notes summary svg {
-  margin-right: 6px;
+  margin-right: var(--space-1_5);
 }
 .report-notes p {
   font-size: var(--text-small);
@@ -1719,7 +1719,7 @@ details[open] > summary::after {
 }
 .empty-icon {
   color: #8795b9;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 .empty h2 {
   font-size: var(--text-xl);
@@ -1727,14 +1727,14 @@ details[open] > summary::after {
 .empty p {
   color: var(--muted);
   font-size: var(--text-small);
-  margin: 10px 0 22px;
+  margin: var(--space-3) 0 var(--space-6);
   max-width: 58ch;
 }
 /* A dialog is a card (Figma 75:703): title, a short explanation, one main action and the alternatives under it. */
 .dialog {
   border: 1px solid #e7e7ef;
   border-radius: var(--radius-xl);
-  padding: 28px;
+  padding: var(--space-8);
   width: min(544px, calc(100vw - 40px));
   color: var(--ink);
   background: var(--gray-0);
@@ -1760,7 +1760,7 @@ details[open] > summary::after {
   align-items: flex-start;
   gap: var(--space-4);
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
 }
 .dialog-heading h2 {
   padding-top: var(--space-1);
@@ -1774,19 +1774,19 @@ details[open] > summary::after {
 .dialog p {
   font-size: var(--text-small);
   color: #5d6b80;
-  margin: 10px 0;
+  margin: var(--space-3) 0;
 }
 .dialog-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
-  margin-top: 25px;
+  margin-top: var(--space-6);
 }
 .dialog:not(.preview-dialog) .dialog-heading {
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 .dialog:not(.preview-dialog) .dialog-heading h2 {
   padding-top: 0;
@@ -1813,7 +1813,7 @@ details[open] > summary::after {
   height: 18px;
 }
 .dialog:not(.preview-dialog) p {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   color: #737584;
   font-size: var(--text-md);
   line-height: 22px;
@@ -1827,7 +1827,7 @@ details[open] > summary::after {
   line-height: 18px;
 }
 .dialog:not(.preview-dialog) .form-label {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 .dialog:not(.preview-dialog) form > .form-label:first-child {
   margin-top: 0;
@@ -1836,8 +1836,8 @@ details[open] > summary::after {
 .dialog-choices {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 24px;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
 }
 .dialog-choices > .btn {
   width: 100%;
@@ -1848,7 +1848,7 @@ details[open] > summary::after {
 .dialog-alternatives {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .dialog-alternatives > .btn {
   flex: 1 1 180px;
@@ -1882,7 +1882,7 @@ details[open] > summary::after {
   display: block;
   font-size: var(--text-small);
   font-weight: 600;
-  margin-bottom: 9px;
+  margin-bottom: var(--space-2);
 }
 .form-input {
   width: 100%;
@@ -1917,7 +1917,7 @@ details[open] > summary::after {
   max-height: calc(100vh - 48px);
 }
 .preview-dialog > .dialog-heading {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .preview-stage {
   display: flex;
@@ -1944,13 +1944,13 @@ details[open] > summary::after {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-4);
-  margin-top: 18px;
+  margin-top: var(--space-5);
   font-size: var(--text-small);
   color: #5e6d84;
 }
 .preview-footer small {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--space-1_5);
   font-size: var(--text-small);
   line-height: 1.6;
   max-width: 70ch;
@@ -1966,10 +1966,10 @@ details[open] > summary::after {
   margin-inline: auto;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   box-sizing: border-box;
   width: min(420px, calc(100vw - 32px));
-  padding: 16px;
+  padding: var(--space-4);
   border: 1px solid #e7e7ef;
   border-radius: var(--radius-lg);
   background: var(--gray-0);
@@ -1994,13 +1994,13 @@ details[open] > summary::after {
   flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--space-1_5);
   min-width: 0;
 }
 .toast-message {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   margin: 0;
   line-height: 20px;
   overflow-wrap: anywhere;
@@ -2017,9 +2017,9 @@ details[open] > summary::after {
 .toast .toast-action {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1_5);
   height: 28px;
-  padding: 0 4px 0 0;
+  padding: 0 var(--space-1) 0 0;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -2078,14 +2078,14 @@ body:has(.edit-panel.is-floating) .toast {
   border-top: 1px solid #e6ce9a;
 }
 .connection svg {
-  margin-right: 6px;
+  margin-right: var(--space-1_5);
 }
 .startup {
   padding: var(--space-18);
   max-width: 800px;
 }
 .startup p {
-  margin: 20px 0;
+  margin: var(--space-5) 0;
 }
 .sr-only {
   position: absolute;
@@ -2267,7 +2267,7 @@ kbd,
 .editor-removed .text-btn,
 .editor-conflict .text-btn {
   margin-inline: 0;
-  padding-inline: 6px;
+  padding-inline: var(--space-1_5);
 }
 .recent-result:hover:not(:disabled),
 .history-row:hover:not(:disabled) {
@@ -2487,7 +2487,7 @@ kbd,
     min-height: 32px;
   }
   .library-header {
-    margin-top: 25px;
+    margin-top: var(--space-6);
   }
 }
 @media (max-width: 440px) {

@@ -5,7 +5,7 @@
   color: #a36b1b;
 }
 .failure-panel {
-  margin: 22px 0;
+  margin: var(--space-6) 0;
   padding: var(--space-4) var(--space-4);
   border: 1px solid #ebd4c6;
   border-radius: var(--radius-panel);
@@ -18,7 +18,7 @@
   color: #885031;
 }
 .failure-panel > p {
-  margin-top: 6px;
+  margin-top: var(--space-1_5);
   color: #7c6357;
   font-size: var(--text-small);
 }
@@ -44,7 +44,7 @@
   overflow-wrap: anywhere;
 }
 .failure-row p {
-  margin: 5px 0;
+  margin: var(--space-1) 0;
   font-size: var(--text-small);
   color: #79543e;
   overflow-wrap: anywhere;
@@ -83,20 +83,20 @@
   line-height: 1.5;
 }
 .repeat-list {
-  margin: 16px 0;
+  margin: var(--space-4) 0;
   padding-left: var(--space-4);
   max-height: 260px;
   overflow-y: auto;
   font-size: var(--text-small);
 }
 .repeat-list li {
-  margin: 10px 0;
+  margin: var(--space-3) 0;
   overflow-wrap: anywhere;
 }
 .repeat-list span {
   display: block;
   color: var(--muted);
-  margin-top: 3px;
+  margin-top: var(--space-1);
   font-size: var(--text-small);
 }
 .dialog .dialog-error {

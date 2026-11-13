@@ -1,7 +1,7 @@
 .app-shell .content.settings-content {
   max-width: 1440px;
   min-height: calc(100vh - var(--topbar-height));
-  padding: 40px var(--content-gutter) 44px;
+  padding: var(--space-10) var(--content-gutter) 44px;
   background: var(--gray-50);
 }
 
@@ -11,7 +11,7 @@
   --settings-line: #e1e4ee;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--space-8);
   color: var(--settings-ink);
 }
 
@@ -24,11 +24,11 @@
 
 .settings-heading {
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--space-5);
 }
 
 .settings-heading-main {
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .settings-heading-main > div {
@@ -43,7 +43,7 @@
 }
 
 .settings-heading p {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   color: var(--settings-muted);
   font-size: var(--text-sm);
   line-height: 1.6;
@@ -52,9 +52,9 @@
 .settings-version {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--settings-line);
   border-radius: var(--radius-md);
   background: var(--gray-0);
@@ -77,13 +77,13 @@
 }
 
 .settings-output {
-  padding: 28px;
+  padding: var(--space-8);
 }
 
 .settings-section-heading {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .settings-section-heading > svg {
@@ -103,7 +103,7 @@
 }
 
 .settings-section-heading p {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   color: var(--settings-muted);
   font-size: var(--text-sm);
   line-height: 1.6;
@@ -113,8 +113,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 10px;
-  margin: 22px 0 0;
+  gap: var(--space-2);
+  margin: var(--space-6) 0 0;
   padding: 0;
   border: 0;
 }
@@ -155,8 +155,8 @@
   flex: 1;
   min-width: 0;
   min-height: 80px;
-  gap: 14px;
-  padding: 18px;
+  gap: var(--space-3);
+  padding: var(--space-5);
   cursor: pointer;
 }
 
@@ -195,7 +195,7 @@
 
 .settings-page .setting-option small {
   display: block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--settings-muted);
   font-size: var(--text-xs);
   line-height: 1.5;
@@ -208,9 +208,9 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 34px;
-  padding: 7px 12px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--settings-line);
   border-radius: var(--radius-md);
   background: var(--gray-0);
@@ -222,7 +222,7 @@
 }
 
 .settings-choose {
-  margin-right: 18px;
+  margin-right: var(--space-5);
 }
 
 .settings-choose:hover:not(:disabled),
@@ -241,14 +241,14 @@
 }
 
 .settings-busy-note {
-  margin-top: 16px;
+  margin-top: var(--space-4);
   color: var(--settings-muted);
   font-size: var(--text-xs);
 }
 
 .settings-about .settings-section-heading {
   align-items: center;
-  padding: 24px 28px 18px;
+  padding: var(--space-6) var(--space-8) var(--space-5);
 }
 
 .settings-about .settings-section-heading > svg {
@@ -257,7 +257,7 @@
 
 .settings-details {
   margin: 0;
-  padding: 0 28px;
+  padding: 0 var(--space-8);
 }
 
 .settings-detail-row {
@@ -265,15 +265,15 @@
   align-items: center;
   justify-content: space-between;
   min-height: 49px;
-  gap: 12px 20px;
-  padding: 12px 0;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) 0;
   font-size: var(--text-sm);
   line-height: 1.5;
 }
 
 .settings-detail-row:first-child {
   min-height: 42px;
-  padding-top: 8px;
+  padding-top: var(--space-2);
   border-bottom: 1px solid var(--settings-line);
 }
 
@@ -295,7 +295,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .settings-local > svg {
@@ -303,13 +303,13 @@
 }
 
 .settings-about-footer {
-  padding: 18px 28px;
+  padding: var(--space-5) var(--space-8);
   border-top: 1px solid var(--settings-line);
 }
 
 .settings-log {
   min-height: 36px;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--settings-ink);
   font-weight: 600;
 }
@@ -320,7 +320,7 @@
 
 @media (max-width: 1100px) {
   .app-shell .content.settings-content {
-    padding: 32px var(--content-gutter) 40px;
+    padding: var(--space-8) var(--content-gutter) var(--space-10);
   }
 }
 
@@ -328,7 +328,7 @@
   .settings-heading {
     align-items: flex-start;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: var(--space-4);
   }
 
   .settings-heading-main {
@@ -342,8 +342,8 @@
   .settings-detail-row:last-child {
     align-items: flex-start;
     flex-direction: column;
-    gap: 8px;
-    padding: 14px 0;
+    gap: var(--space-2);
+    padding: var(--space-4) 0;
   }
 
   .settings-local {
@@ -357,11 +357,11 @@
 
 @media (max-width: 560px) {
   .app-shell .content.settings-content {
-    padding: 24px 16px 32px;
+    padding: var(--space-6) var(--space-4) var(--space-8);
   }
 
   .settings-page {
-    gap: 24px;
+    gap: var(--space-6);
   }
 
   .settings-page h1 {
@@ -369,16 +369,16 @@
   }
 
   .settings-output {
-    padding: 22px 18px;
+    padding: var(--space-6) var(--space-5);
   }
 
   .settings-section-heading {
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .setting-option-label {
-    gap: 12px;
-    padding: 16px;
+    gap: var(--space-3);
+    padding: var(--space-4);
   }
 
   .settings-page .setting-option-custom {
@@ -390,19 +390,19 @@
   }
 
   .settings-choose {
-    margin: 0 16px 16px 46px;
+    margin: 0 var(--space-4) var(--space-4) 46px;
   }
 
   .settings-about .settings-section-heading {
-    padding: 22px 18px 16px;
+    padding: var(--space-6) var(--space-5) var(--space-4);
   }
 
   .settings-details {
-    padding-inline: 18px;
+    padding-inline: var(--space-5);
   }
 
   .settings-about-footer {
-    padding: 16px 18px;
+    padding: var(--space-4) var(--space-5);
   }
 
   .settings-log {
@@ -420,19 +420,19 @@
 }
 
 /* «Готовые варианты»: one row with the folder and its buttons, laid out as a save option without a radio. */
-.settings-delivery { padding: 28px; }
-.settings-page .settings-delivery-row { margin-top: 20px; padding: 18px 0 18px 18px; gap: 12px; }
+.settings-delivery { padding: var(--space-8); }
+.settings-page .settings-delivery-row { margin-top: var(--space-5); padding: var(--space-5) 0 var(--space-5) var(--space-5); gap: var(--space-3); }
 .settings-page .settings-delivery-row .setting-option-copy { flex: 1; }
 .settings-delivery-row .settings-choose { margin-right: 0; }
-.settings-delivery-row .settings-choose:last-child { margin-right: 18px; }
+.settings-delivery-row .settings-choose:last-child { margin-right: var(--space-5); }
 .settings-delivery-off { color: var(--settings-muted); }
 @media (max-width: 640px) {
-  .settings-delivery { padding: 22px 18px; }
-  .settings-page .settings-delivery-row { flex-wrap: wrap; padding: 16px; }
+  .settings-delivery { padding: var(--space-6) var(--space-5); }
+  .settings-page .settings-delivery-row { flex-wrap: wrap; padding: var(--space-4); }
   .settings-page .settings-delivery-row .setting-option-copy { flex-basis: 100%; }
   .settings-delivery-row .settings-choose, .settings-delivery-row .settings-choose:last-child { margin: 0; }
 }
 
 /* «Масштаб интерфейса»: four scales in one row, the chosen one pressed. */
-.settings-zoom-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-zoom-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .settings-zoom-choices .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-100); color: var(--accent-600); }

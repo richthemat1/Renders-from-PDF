@@ -2,49 +2,49 @@
 .cutout-picture { background: var(--gray-100); }
 .collage-card.cutout-card .collage-frame.cutout-card-frame { border-color: var(--accent-500); background: #5969db14; }
 .collage-card.cutout-card .collage-frame.cutout-card-frame b { border: 2px solid var(--gray-0); background: var(--accent-500); }
-.cutouts-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; border: 1px solid var(--line);
+.cutouts-empty { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); padding: var(--space-8) var(--space-6); border: 1px solid var(--line);
   border-radius: 14px; background: var(--gray-0); text-align: center; }
 .cutouts-empty strong { color: var(--ink); font-size: var(--text-md); }
 .cutouts-empty p { max-width: 520px; margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 18px; }
-.cutouts-empty .btn { margin-top: 4px; }
+.cutouts-empty .btn { margin-top: var(--space-1); }
 .cutouts-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-2xl); background: var(--gray-100); color: var(--gray-500); }
 
 /* Page editor — Figma 81:5036. It takes the whole window: header 80, tools 56, pages 128, list 344, footer 76. */
 .dialog.cut-editor.cutout-editor { width: calc(100vw - 32px); height: calc(100vh - 32px); border-radius: 14px; }
-.dialog.cutout-editor > .dialog-heading { box-sizing: border-box; height: 80px; align-items: center; gap: 14px; margin: 0; padding: 0 24px;
+.dialog.cutout-editor > .dialog-heading { box-sizing: border-box; height: 80px; align-items: center; gap: var(--space-3); margin: 0; padding: 0 var(--space-6);
   border-bottom-color: var(--gray-300); }
 .cutout-editor .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-100);
   color: var(--gray-500); }
-.cutout-editor > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
+.cutout-editor > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .cutout-editor > .dialog-heading h2 { padding: 0; color: var(--gray-900); font-size: var(--text-xl); font-weight: 700; line-height: normal; }
-.cutout-editor .cut-editor-subtitle { display: flex; align-items: center; gap: 12px; margin: 0 !important; color: var(--gray-500) !important;
+.cutout-editor .cut-editor-subtitle { display: flex; align-items: center; gap: var(--space-3); margin: 0 !important; color: var(--gray-500) !important;
   font-size: var(--text-xs) !important; line-height: normal; }
 .cutout-editor .cut-editor-subtitle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cutout-editor .cut-editor-subtitle i { flex-shrink: 0; width: 3px; height: 3px; border-radius: 50%; background: #939ba9; }
 .cutout-editor > .dialog-heading .icon-btn { width: 32px; height: 32px; margin: 0; color: var(--gray-500); }
-.cutout-loading { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px;
+.cutout-loading { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-8);
   color: var(--muted); text-align: center; }
 .cutout-loading strong { color: var(--ink); font-size: var(--text-md); }
 .cutout-loading p { max-width: 520px; margin: 0; }
 
 /* Tools */
-.cutout-editor .cut-tools { box-sizing: border-box; flex-wrap: nowrap; gap: 16px; height: 56px; padding: 0 24px; border-bottom-color: var(--gray-300); }
+.cutout-editor .cut-tools { box-sizing: border-box; flex-wrap: nowrap; gap: var(--space-4); height: 56px; padding: 0 var(--space-6); border-bottom-color: var(--gray-300); }
 .cutout-editor .cut-divider { flex-shrink: 0; height: 22px; background: var(--gray-300); }
 .cutout-pager, .cutout-zoom { display: inline-flex; flex-shrink: 0; align-items: center; color: var(--gray-500); font-size: var(--text-xs); white-space: nowrap; }
-.cutout-pager { gap: 12px; }
+.cutout-pager { gap: var(--space-3); }
 .cutout-pager b + span { margin-left: -5px; }
-.cutout-zoom { gap: 14px; }
+.cutout-zoom { gap: var(--space-3); }
 .cutout-pager button, .cutout-zoom button { display: grid; place-items: center; width: 24px; height: 24px; margin: -4px; padding: 0; border: 0;
   border-radius: var(--radius-sm); background: transparent; color: var(--gray-500); cursor: pointer; }
 .cutout-pager button:hover:not(:disabled), .cutout-zoom button:hover:not(:disabled) { background: var(--gray-100); color: var(--gray-900); }
 .cutout-pager button:disabled, .cutout-zoom button:disabled { opacity: .4; cursor: default; }
-.cutout-pager b { display: grid; place-items: center; box-sizing: border-box; min-width: 30px; height: 28px; padding: 0 6px; border: 1px solid var(--gray-300);
+.cutout-pager b { display: grid; place-items: center; box-sizing: border-box; min-width: 30px; height: 28px; padding: 0 var(--space-1_5); border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm); color: var(--gray-900); font-size: var(--text-xs); font-weight: 700; }
 .cutout-zoom b { min-width: 32px; color: var(--gray-900); font-weight: 600; text-align: center; }
-.cutout-editor .cut-tools .btn.text-action { flex-shrink: 0; gap: 8px; height: var(--control-sm); min-height: var(--control-sm); padding: 0 14px; border-radius: var(--radius-md);
+.cutout-editor .cut-tools .btn.text-action { flex-shrink: 0; gap: var(--space-2); height: var(--control-sm); min-height: var(--control-sm); padding: 0 var(--space-4); border-radius: var(--radius-md);
   color: var(--accent-600); font-size: var(--text-sm); font-weight: 600; }
 .cutout-editor .cut-tools .btn.text-action:disabled { color: var(--gray-400); }
-.cutout-editor .cut-toggle { flex-shrink: 0; gap: 8px; color: var(--gray-900); font-size: var(--text-xs); font-weight: 400; white-space: nowrap; }
+.cutout-editor .cut-toggle { flex-shrink: 0; gap: var(--space-2); color: var(--gray-900); font-size: var(--text-xs); font-weight: 400; white-space: nowrap; }
 .cutout-editor .cut-toggle > svg { color: var(--gray-500); }
 .cutout-editor .cut-toggle span { width: 28px; height: 16px; border-radius: var(--radius-md); background: var(--gray-300); }
 .cutout-editor .cut-toggle span::after { top: 2px; left: 2px; width: 12px; height: 12px; border-radius: var(--radius-sm); }
@@ -53,12 +53,12 @@
 
 /* Pages */
 .cutout-pages { display: flex; flex: 0 0 128px; flex-direction: column; min-height: 0; border-right: 1px solid var(--gray-300); background: var(--gray-25); }
-.cutout-pages h3 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; padding: 18px 12px 0; color: var(--gray-900);
+.cutout-pages h3 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; padding: var(--space-5) var(--space-3) 0; color: var(--gray-900);
   font-size: var(--text-xs); font-weight: 700; }
 .cutout-pages h3 span { color: var(--gray-500); font-size: var(--text-xs); font-weight: 400; }
-.cutout-pages ol { display: flex; flex-direction: column; gap: 21px; margin: 0; padding: 21px 12px 18px; overflow: auto; overscroll-behavior: contain;
+.cutout-pages ol { display: flex; flex-direction: column; gap: var(--space-5); margin: 0; padding: var(--space-5) var(--space-3) var(--space-5); overflow: auto; overscroll-behavior: contain;
   list-style: none; }
-.cutout-pages button { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0; background: transparent;
+.cutout-pages button { display: flex; flex-direction: column; align-items: center; gap: var(--space-1_5); width: 100%; padding: 0; border: 0; background: transparent;
   color: var(--gray-500); font: inherit; cursor: pointer; }
 .cutout-sheet { display: block; box-sizing: border-box; width: 104px; max-height: 140px; overflow: hidden; border: 1px solid var(--gray-300); border-radius: var(--radius-xs);
   background: var(--gray-0); }
@@ -67,20 +67,20 @@
 .cutout-pages button.is-current .cutout-sheet { border: 2px solid #6260da; }
 .cutout-pages button:focus-visible { outline: none; }
 .cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.cutout-sheet-caption { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 600; }
-.cutout-sheet-caption b { padding: 1px 6px; border-radius: var(--radius-md); background: #6260da; color: var(--gray-0); font-size: var(--text-xs); font-weight: 700; line-height: 15px; }
+.cutout-sheet-caption { display: inline-flex; align-items: center; gap: var(--space-1_5); font-size: var(--text-xs); font-weight: 600; }
+.cutout-sheet-caption b { padding: 1px var(--space-1_5); border-radius: var(--radius-md); background: #6260da; color: var(--gray-0); font-size: var(--text-xs); font-weight: 700; line-height: 15px; }
 
 /* Page */
-.cutout-center { display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; padding-bottom: 12px; background: var(--gray-100); }
+.cutout-center { display: flex; flex: 1; flex-direction: column; gap: var(--space-3); min-width: 0; padding-bottom: var(--space-3); background: var(--gray-100); }
 /* The side room holds the number of a frame at the left edge of the page. */
-.cutout-scroller { display: flex; flex: 1; min-height: 0; padding: 18px 36px 0; overflow: hidden; }
+.cutout-scroller { display: flex; flex: 1; min-height: 0; padding: var(--space-5) var(--space-10) 0; overflow: hidden; }
 .cutout-scroller.is-zoomed { overflow: auto; overscroll-behavior: contain; }
 .cutout-stage { position: relative; flex-shrink: 0; margin: auto; background: var(--gray-0); box-shadow: 0 3px 16px #18202e12; cursor: crosshair;
   outline: none; user-select: none; touch-action: none; }
 .cutout-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cutout-found { position: absolute; box-sizing: border-box; border: 1px dashed #8b95a5; border-radius: var(--radius-xs); pointer-events: none; }
 .cutout-found .collage-chip { position: absolute; left: -1px; bottom: calc(100% + 4px); box-sizing: border-box; max-width: calc(100% + 2px);
-  min-height: 20px; padding: 1px 6px; font-size: var(--text-xs); white-space: nowrap; pointer-events: auto; }
+  min-height: 20px; padding: 1px var(--space-1_5); font-size: var(--text-xs); white-space: nowrap; pointer-events: auto; }
 .cutout-found .collage-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cutout-frame { position: absolute; z-index: 2; box-sizing: border-box; border: 1.5px solid #6260da; border-radius: 2px; background: #6260da05;
   cursor: move; }
@@ -91,8 +91,8 @@
   border: 2px solid var(--gray-0); border-radius: var(--radius-lg); background: var(--accent-500); color: var(--gray-0); font-size: var(--text-xs); font-weight: 700; pointer-events: none; }
 /* Where the frame goes, once chosen: inside its bottom left corner, clear of the handle and of the labels of found
    pictures, which stand over their top edges. */
-.cutout-frame-target { position: absolute; bottom: 7px; left: 7px; display: inline-flex; align-items: center; gap: 5px; box-sizing: border-box;
-  max-width: calc(100% - 14px); height: 20px; padding: 0 6px; border: 1px solid var(--gray-300); border-radius: var(--radius-xs); background: #ffffffeb;
+.cutout-frame-target { position: absolute; bottom: 7px; left: 7px; display: inline-flex; align-items: center; gap: var(--space-1); box-sizing: border-box;
+  max-width: calc(100% - 14px); height: 20px; padding: 0 var(--space-1_5); border: 1px solid var(--gray-300); border-radius: var(--radius-xs); background: #ffffffeb;
   color: var(--gray-900); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; pointer-events: none; }
 .cutout-frame-target > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cutout-handle { position: absolute; box-sizing: border-box; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 2px solid var(--accent-500);
@@ -105,38 +105,38 @@
 .cutout-handle.s { left: 50%; top: 100%; cursor: ns-resize; }
 .cutout-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
 .cutout-handle.w { left: 0; top: 50%; cursor: ew-resize; }
-.cutout-callout { z-index: 4; box-sizing: border-box; height: 29px; margin: 0 0 0 34px; padding: 0 10px; border-radius: var(--radius-sm); background: #4946bd;
+.cutout-callout { z-index: 4; box-sizing: border-box; height: 29px; margin: 0 0 0 var(--space-8); padding: 0 var(--space-3); border-radius: var(--radius-sm); background: #4946bd;
   color: #e4e2ff; font-size: var(--text-xs); }
 .cutout-callout b { color: var(--gray-0); font-weight: 700; }
-.cutout-callout.above { margin-bottom: 9px; }
-.cutout-callout.below { margin-top: 9px; }
+.cutout-callout.above { margin-bottom: var(--space-2); }
+.cutout-callout.below { margin-top: var(--space-2); }
 /* Under the page, at its left edge; the note keeps its room, so the page does not jump when it changes. */
-.cutout-editor .cut-hints { display: flex; flex-direction: column; align-items: stretch; gap: 5px; box-sizing: border-box; width: 100%;
+.cutout-editor .cut-hints { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-1); box-sizing: border-box; width: 100%;
   margin: 0 auto; padding: 0; }
 .cutout-editor .cut-hints p { margin: 0 !important; color: #556377 !important; font-size: var(--text-xs); line-height: normal; text-align: left; }
 .cutout-editor .cut-hints .cut-note { min-height: 14px; color: var(--gray-600) !important; }
 
 /* Cutouts list */
 .cutout-editor .cutout-panel { flex: 0 0 344px; border-left-color: var(--gray-300); background: var(--gray-25); }
-.cutout-editor .cut-panel-head { gap: 14px; padding: 18px; border-bottom-color: var(--gray-300); }
+.cutout-editor .cut-panel-head { gap: var(--space-3); padding: var(--space-5); border-bottom-color: var(--gray-300); }
 .cutout-editor .cut-panel-head h3 { color: var(--gray-900); font-size: var(--text-lg); font-weight: 700; }
-.cutout-editor .cut-panel-head h3 b { padding: 3px 8px; border-radius: var(--radius-sm); background: var(--gray-100); color: var(--gray-600); font-size: var(--text-xs); font-weight: 600;
+.cutout-editor .cut-panel-head h3 b { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--gray-100); color: var(--gray-600); font-size: var(--text-xs); font-weight: 600;
   line-height: 17px; }
 .cutout-editor .cut-bulk { color: var(--gray-500); font-weight: 400; }
 .cutout-editor .cut-bulk .select-field { border-color: var(--gray-300); }
 .cutout-editor .cut-subvariants { color: #4946bd; font-size: var(--text-xs); font-weight: 600; }
-.cutout-list { display: flex; flex-direction: column; gap: 10px; padding: 18px; overflow: auto; overscroll-behavior: contain; }
+.cutout-list { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-5); overflow: auto; overscroll-behavior: contain; }
 .cutout-list-empty { margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 18px; }
-.cutout-group { display: flex; flex-direction: column; gap: 6px; }
-.cutout-group + .cutout-group { margin-top: 10px; }
-.cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 2px; color: var(--gray-500); }
+.cutout-group { display: flex; flex-direction: column; gap: var(--space-1_5); }
+.cutout-group + .cutout-group { margin-top: var(--space-3); }
+.cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 var(--space-0_5); color: var(--gray-500); }
 .cutout-group h4 b { font-size: var(--text-xs); font-weight: 700; }
 .cutout-group h4 span { font-size: var(--text-xs); font-weight: 400; }
 /* A short row — thumbnail, number and where the cutout goes — so a dozen fit in sight; the frame in hand opens its row
    with the controls. The whole row is a button under its content; only the controls of an open row take the pointer. */
-.cutout-row { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--gray-200);
+.cutout-row { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--gray-200);
   border-radius: 10px; background: var(--gray-0); }
-.cutout-row.is-open { align-items: flex-start; gap: 12px; padding: 10px; }
+.cutout-row.is-open { align-items: flex-start; gap: var(--space-3); padding: var(--space-3); }
 .cutout-row:not(.is-selected):hover { border-color: #cdd4ee; background: var(--gray-25); }
 .cutout-row.is-selected { border-color: #6260da; background: var(--accent-100); box-shadow: inset 0 0 0 .5px #6260da; }
 .cutout-row:has(> .cutout-row-hit:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
@@ -145,20 +145,20 @@
 .cutout-row-hit:focus-visible { outline: none; }
 .cutout-row > .cut-thumb, .cutout-row > div { position: relative; pointer-events: none; }
 .cutout-row .select-field, .cutout-row .cut-toggle, .cutout-row .text-action { pointer-events: auto; }
-.cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
-.cutout-row.is-open > div { gap: 6px; }
-.cutout-row strong { display: flex; align-items: baseline; gap: 8px; color: var(--gray-900); font-size: var(--text-sm); font-weight: 700; }
+.cutout-row > div { display: flex; flex: 1; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.cutout-row.is-open > div { gap: var(--space-1_5); }
+.cutout-row strong { display: flex; align-items: baseline; gap: var(--space-2); color: var(--gray-900); font-size: var(--text-sm); font-weight: 700; }
 .cutout-row strong span, .cutout-row > div > span { color: var(--gray-500); font-size: var(--text-xs); font-weight: 400; }
 .cutout-row strong > svg.cutout-warning { align-self: center; margin-left: auto; }
 .cutout-row .select-field { width: 100%; }
 /* Where a cutout goes: the dot of its variant, or a ring while it keeps the place of its picture. */
-.cutout-row > div > .cutout-target { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--gray-900); font-weight: 600; }
+.cutout-row > div > .cutout-target { display: flex; align-items: center; gap: var(--space-1_5); min-width: 0; color: var(--gray-900); font-weight: 600; }
 .cutout-row > div > .cutout-target.is-keep { color: var(--gray-500); font-weight: 400; }
 .cutout-target > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cutout-editor .variant-dot { margin: 0; }
 .cutout-editor .variant-dot.is-keep { box-sizing: border-box; border: 1.5px solid var(--gray-400); background: transparent; }
 .cutout-editor .variant-dot.is-misc { background: var(--gray-400); }
-.cutout-pick-hint { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: -4px 0 -4px !important; color: var(--gray-500) !important;
+.cutout-pick-hint { display: flex; align-items: center; gap: var(--space-2); min-height: 22px; margin: -4px 0 -4px !important; color: var(--gray-500) !important;
   font-size: var(--text-xs); line-height: normal; }
 .cutout-pick-hint .cut-subvariants { margin: 0 0 0 auto; }
 /* A crop of any shape sits whole in its slot: 36 × 36 in a short row, 56 × 100 in the open one. */
@@ -167,21 +167,21 @@
 .cutout-editor .cutout-row.is-open .cut-thumb { flex-basis: 56px; align-self: flex-start; width: 56px; height: 100px; }
 .cutout-editor .cut-thumb .cropped-image { width: 100%; }
 .cutout-editor .cut-thumb.is-tall .cropped-image { width: auto; height: 100%; }
-.cutout-row-actions { display: flex; gap: 2px; }
-.cutout-row-actions .text-action { gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--radius-md); color: var(--accent-600); font-size: var(--text-sm); font-weight: 600; }
-.cutout-warning { display: inline-flex; align-items: center; gap: 4px; color: #8a5a12 !important; }
-.cutout-kind-note { display: flex; gap: 8px; padding: 4px 2px; color: var(--gray-500); }
+.cutout-row-actions { display: flex; gap: var(--space-0_5); }
+.cutout-row-actions .text-action { gap: var(--space-2); height: 36px; padding: 0 var(--space-4); border-radius: var(--radius-md); color: var(--accent-600); font-size: var(--text-sm); font-weight: 600; }
+.cutout-warning { display: inline-flex; align-items: center; gap: var(--space-1); color: #8a5a12 !important; }
+.cutout-kind-note { display: flex; gap: var(--space-2); padding: var(--space-1) var(--space-0_5); color: var(--gray-500); }
 .cutout-kind-note > svg { flex-shrink: 0; }
-.cutout-kind-note p { display: flex; flex-direction: column; gap: 4px; margin: 0 !important; color: var(--gray-500) !important; font-size: var(--text-xs); line-height: 1.6; }
+.cutout-kind-note p { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 !important; color: var(--gray-500) !important; font-size: var(--text-xs); line-height: 1.6; }
 .cutout-kind-note b { font-weight: 600; line-height: normal; }
 
 /* Footer */
-.cutout-editor .cut-footer { box-sizing: border-box; gap: 12px; height: 76px; padding: 0 24px; border-top-color: var(--gray-300); }
+.cutout-editor .cut-footer { box-sizing: border-box; gap: var(--space-3); height: 76px; padding: 0 var(--space-6); border-top-color: var(--gray-300); }
 .cutout-editor .cut-footer > svg { flex-shrink: 0; color: var(--gray-500); }
-.cutout-editor .cut-footer p { flex-direction: column; gap: 4px; min-width: 0; line-height: normal; }
+.cutout-editor .cut-footer p { flex-direction: column; gap: var(--space-1); min-width: 0; line-height: normal; }
 .cutout-editor .cut-footer p b { color: var(--gray-900); font-size: var(--text-xs); font-weight: 600; }
 .cutout-editor .cut-footer p span { color: var(--gray-500); font-size: var(--text-xs); }
-.cutout-editor .cut-footer .btn { height: var(--control-md); min-height: var(--control-md); padding: 0 14px; font-size: var(--text-sm); }
+.cutout-editor .cut-footer .btn { height: var(--control-md); min-height: var(--control-md); padding: 0 var(--space-4); font-size: var(--text-sm); }
 .cutout-editor .cut-footer .btn.secondary { border-color: var(--gray-300); color: var(--gray-900); }
 
 /* Gallery hooks */
@@ -194,16 +194,16 @@
   .cutout-sheet { width: 88px; }
   .cutout-editor .cutout-panel { flex-basis: 300px; }
   /* The tools wrap instead of running out of the window. */
-  .cutout-editor .cut-tools { flex-wrap: wrap; height: auto; padding-block: 8px; row-gap: 8px; }
+  .cutout-editor .cut-tools { flex-wrap: wrap; height: auto; padding-block: var(--space-2); row-gap: var(--space-2); }
 }
 /* A narrow window keeps the page at least about 400 px wide: «‹ N из M ›» in the tools turns the pages,
    so the strip of pages goes, and the list of cutouts gets narrower. */
 @media (max-width: 900px) {
   .cutout-pages { display: none; }
   .cutout-editor .cutout-panel { flex-basis: 260px; }
-  .cutout-editor .cut-tools { gap: 10px; padding-inline: 16px; }
+  .cutout-editor .cut-tools { gap: var(--space-2); padding-inline: var(--space-4); }
   .cutout-editor .cut-tools .cut-divider { display: none; }
-  .cutout-scroller { padding-inline: 32px; }
+  .cutout-scroller { padding-inline: var(--space-8); }
   /* The tip on Ctrl and Shift is in the help; the narrow list keeps its room for rows. */
   .cutout-pick-hint.is-tip { display: none; }
 }
@@ -217,8 +217,8 @@
   .cutout-editor .cut-footer p span { display: none; }
   .cutout-editor .cut-hints p:not(.cut-note) { display: none; }
   .cutout-pick-hint.is-tip { display: none; }
-  .cutout-scroller { padding-top: 12px; }
-  .cutout-center { gap: 8px; padding-bottom: 8px; }
+  .cutout-scroller { padding-top: var(--space-3); }
+  .cutout-center { gap: var(--space-2); padding-bottom: var(--space-2); }
 }
 
 /* «С пометками» in a cutout row: whether the frame keeps what is drawn over its picture; the switch at the right. */

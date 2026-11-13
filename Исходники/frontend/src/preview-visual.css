@@ -19,10 +19,10 @@
 .viewer-preview-dialog.dialog .dialog-heading {
   flex: 0 0 auto;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   min-height: 88px;
   margin: 0;
-  padding: 18px 24px;
+  padding: var(--space-5) var(--space-6);
 }
 .viewer-preview-dialog .dialog-heading-copy {
   flex: 1;
@@ -43,8 +43,8 @@
 .viewer-preview-dialog .preview-source-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 7px;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-2);
   color: var(--muted);
   font-size: var(--text-xs);
   line-height: 1.4;
@@ -54,13 +54,13 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
 }
 .viewer-preview-dialog .preview-open-pdf {
   height: 36px;
   min-height: 36px;
-  padding: 0 14px;
-  gap: 8px;
+  padding: 0 var(--space-4);
+  gap: var(--space-2);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -127,10 +127,10 @@
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--space-0_5);
   height: 40px;
   margin: 0;
-  padding: 4px;
+  padding: var(--space-1);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--gray-0);
@@ -164,14 +164,14 @@
   flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 124px;
   margin: 0;
-  padding: 24px 32px;
+  padding: var(--space-6) var(--space-8);
 }
 .viewer-preview-dialog .preview-info-icon {
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: var(--space-0_5);
   color: var(--muted);
 }
 .viewer-preview-dialog .preview-explanation {
@@ -189,7 +189,7 @@
   line-height: 1.5;
 }
 .viewer-preview-dialog .preview-explanation p {
-  margin: 7px 0 0;
+  margin: var(--space-2) 0 0;
   max-width: 75ch;
   color: var(--muted);
   font-size: var(--text-sm);
@@ -209,11 +209,11 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1_5);
   min-width: 0;
   max-width: min(30%, 280px);
   min-height: 28px;
-  padding: 5px 10px;
+  padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--accent-100);
   color: var(--accent-dark);
@@ -235,24 +235,24 @@
     max-height: calc(100dvh - 32px);
     border-radius: var(--radius-xl);
   }
-  .viewer-preview-dialog.dialog .dialog-heading { min-height: 80px; padding: 14px 16px; gap: 12px; }
+  .viewer-preview-dialog.dialog .dialog-heading { min-height: 80px; padding: var(--space-4) var(--space-4); gap: var(--space-3); }
   .viewer-preview-dialog .dialog-heading-copy h2 { font-size: var(--text-xl); }
-  .viewer-preview-dialog .preview-footer { min-height: 104px; padding: 18px 20px; }
+  .viewer-preview-dialog .preview-footer { min-height: 104px; padding: var(--space-5) var(--space-5); }
 }
 @media (max-width: 600px) {
-  .viewer-preview-dialog.dialog .dialog-heading { gap: 8px; padding: 12px; }
+  .viewer-preview-dialog.dialog .dialog-heading { gap: var(--space-2); padding: var(--space-3); }
   .viewer-preview-dialog .dialog-heading-copy h2 { font-size: var(--text-lg); }
   .viewer-preview-dialog .preview-header-actions { gap: 0; }
   .viewer-preview-dialog .preview-action-separator,
   .viewer-preview-dialog .preview-open-pdf > span,
   .viewer-preview-dialog .preview-open-pdf > svg:last-child { display: none; }
   .viewer-preview-dialog .preview-open-pdf { width: 36px; padding: 0; justify-content: center; }
-  .viewer-preview-dialog .preview-source-meta { gap: 2px 6px; }
+  .viewer-preview-dialog .preview-source-meta { gap: var(--space-0_5) var(--space-1_5); }
   .viewer-preview-dialog .preview-image-scroll { inset: 12px 48px 64px; }
   .viewer-preview-dialog .preview-page-button { width: 32px; height: 36px; border-radius: var(--radius-md); }
   .viewer-preview-dialog .preview-previous { left: 8px; }
   .viewer-preview-dialog .preview-next { right: 8px; }
-  .viewer-preview-dialog .preview-footer { flex-wrap: wrap; min-height: 112px; gap: 8px; padding: 16px; }
+  .viewer-preview-dialog .preview-footer { flex-wrap: wrap; min-height: 112px; gap: var(--space-2); padding: var(--space-4); }
   .viewer-preview-dialog .preview-explanation { flex-basis: calc(100% - 24px); max-height: 23dvh; }
-  .viewer-preview-dialog .preview-location { margin-left: 24px; max-width: calc(100% - 24px); }
+  .viewer-preview-dialog .preview-location { margin-left: var(--space-6); max-width: calc(100% - 24px); }
 }
