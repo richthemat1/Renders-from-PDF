@@ -114,7 +114,7 @@
 .help-center .help-tab:focus-visible,
 .help-center .help-guide:focus-visible,
 .help-center .help-panel:focus-visible {
-  outline: 2px solid #8190f0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 

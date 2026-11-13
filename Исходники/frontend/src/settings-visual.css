@@ -177,7 +177,7 @@
 }
 
 .settings-page .setting-option input:focus-visible {
-  outline: 3px solid #8190f0;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 

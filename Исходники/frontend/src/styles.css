@@ -7,6 +7,8 @@
   -webkit-font-smoothing: antialiased;
   --accent: #5969db;
   --accent-dark: #4050be;
+  /* Focus ring: 3:1 and more against the page, white cards and the drop zone (WCAG 1.4.11). */
+  --focus-ring: #4050be;
   --line: #e4e8ed;
   --muted: #647184;
   --ink: #17202b;
@@ -65,7 +67,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline: 3px solid #8190f0;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 /* Controls that stand side by side keep the ring to themselves, so it never covers the neighbour. */
@@ -388,7 +390,9 @@ html:has(.is-resizing-sidebar) * {
   color: #718096;
 }
 .searchbox:focus-within {
-  border-color: #8997e8;
+  border-color: var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .searchbox input {
   width: 100%;
@@ -400,7 +404,7 @@ html:has(.is-resizing-sidebar) * {
   font-size: var(--text-small);
 }
 input::placeholder {
-  color: #6d7a8e;
+  color: #5f6b7e;
 }
 kbd {
   font:
@@ -1545,11 +1549,11 @@ fieldset {
 .collage-card[data-context-target],
 .history-card[data-context-target],
 .processing-history-row[data-context-target] {
-  outline: 2px solid #8190f0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .project-link[data-context-target] {
-  outline: 2px solid #8190f0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 .action-menu > button.menu-separated {
@@ -1611,7 +1615,7 @@ fieldset {
   background: #f5f6fe;
 }
 .select-field:focus-visible {
-  outline: 2px solid #8190f0;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .select-field:disabled {
@@ -1900,9 +1904,9 @@ details[open] > summary::after {
 }
 /* A text field marks focus inside its own border: the common outer ring would cover the hints right under it. */
 .form-input:focus-visible {
-  border-color: #8190f0;
+  border-color: var(--focus-ring);
   outline: none;
-  box-shadow: inset 0 0 0 1px #8190f0;
+  box-shadow: inset 0 0 0 1px var(--focus-ring);
 }
 .rename-dialog {
   width: min(680px, calc(100vw - 40px));
@@ -2557,5 +2561,47 @@ kbd,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Windows contrast themes: states drawn with background colours and shadows vanish there, so each one gets
+   a system colour of its own — the checked box, the selected card, the open section, the active tab, progress. */
+@media (forced-colors: active) {
+  .pick input:checked {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+  }
+  .pick input:checked::after {
+    background: HighlightText;
+  }
+  .viewer-content .asset-card.selected-card {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+  .project-link.active,
+  .filter-tabs button.active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .variant-dot:not(.is-keep) {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  .progress-track > div {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  button:disabled {
+    color: GrayText;
+  }
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  .searchbox:focus-within {
+    outline-color: Highlight;
   }
 }

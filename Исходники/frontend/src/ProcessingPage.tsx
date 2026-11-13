@@ -113,7 +113,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
               {processing ? <LoaderCircle size={25} className="spin" /> : complete ? <BadgeCheck size={25} /> : view.outcome === "cancelled" ? <CircleStop size={25} /> : <TriangleAlert size={25} />}
             </span>
             <div className="processing-status-copy">
-              <h2 id="job-status" role="status">{view.title}</h2>
+              <div role="status"><h2 id="job-status">{view.title}</h2></div>
               {view.subtitle && <p>{view.subtitle}</p>}
             </div>
             {processing ? <button className="btn secondary processing-main-action" onClick={onCancel} disabled={waiting || state.cancelling}>

@@ -270,7 +270,7 @@ export function Shell({
           </div>
         </header>}
         {preferences.problem && <p className="sidebar-save-warning" role="status">{preferences.problem}</p>}
-        {children}
+        <main className="workspace-content">{children}</main>
       </div>
       {tip && createPortal(<div className="sidebar-tooltip" role="tooltip" style={{ top: tip.top, left: tip.left }}>
         <span>{tip.text}</span>{tip.count && <b>{tip.count}</b>}
@@ -313,7 +313,13 @@ export function Dialog({
     el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => {
       el.close();
-      previous?.focus();
+      // The action may have changed the page under the window: the button that opened it is then gone, and the
+      // focus goes to the new page's heading instead of the document body.
+      if (previous?.isConnected) previous.focus();
+      else {
+        const heading = document.querySelector<HTMLElement>("main h1, h1");
+        if (heading) { heading.tabIndex = -1; heading.focus(); }
+      }
     };
   }, []);
   // Under <Presence> the window fades in and, once closed, out again; its backdrop follows in CSS (data-leaving).
@@ -362,7 +368,8 @@ export function Toast({ notice, busy, onAction, onClose }: {
   useRefreshMotion(ref, notice);
   const { title, detail } = noticeParts(notice.text);
   return (
-    <div ref={ref} className={`toast${notice.error ? " error" : ""}`} role={notice.error ? "alert" : "status"}>
+    // Read out by the live region it appears in (App); an error interrupts as an alert.
+    <div ref={ref} className={`toast${notice.error ? " error" : ""}`} role={notice.error ? "alert" : undefined}>
       <span className="toast-mark" aria-hidden="true">
         {notice.error ? <AlertTriangle size={16} strokeWidth={2} absoluteStrokeWidth />
           : <Check size={16} strokeWidth={2} absoluteStrokeWidth />}

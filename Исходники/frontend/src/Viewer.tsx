@@ -1175,6 +1175,7 @@ export function Viewer({
     return (
       <button
         key={key}
+        aria-current={filter === key ? "page" : undefined}
         className={`project-link ${filter === key ? "active" : ""}${variant?.includes(".") ? " is-subvariant" : ""}${drag?.place?.kind === "variant" && drag.place.key === variant ? " is-drop-target" : ""}`}
         title={title}
         onClick={() => {
@@ -1455,7 +1456,7 @@ export function Viewer({
         <div className="library-header">
           <div>
             <h2>{activeTitle}</h2>
-            <span>
+            <span aria-live="polite">
               {visible.length} из {filter === "removed" ? removed.length : filter === "service" ? service.length : rows.length}
             </span>
             {editing &&
@@ -1710,7 +1711,7 @@ export function Viewer({
         >
           <div className="preview-taskbar">
             <div className="preview-view-switch" role="group" aria-label="Что показать">
-              <button className="btn compact secondary" aria-pressed={!sourcePage}
+              <button className="btn compact secondary" aria-pressed={!sourcePage} data-autofocus
                 onClick={() => setSourcePage(false)}><Images size={15} />Извлечённое изображение</button>
               <button className="btn compact secondary" aria-pressed={sourcePage}
                 onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={15} />Исходная страница {previewRow.image.page}</button>

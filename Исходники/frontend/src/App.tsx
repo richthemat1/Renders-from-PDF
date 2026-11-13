@@ -320,6 +320,7 @@ export function App() {
   const workNavigation = (
     <>
       <button
+        aria-current={page === "work" ? "page" : undefined}
         className={`project-link ${page === "work" ? "active" : ""}`}
         title="Обработка PDF"
         onClick={() => navigate("work")}
@@ -331,6 +332,7 @@ export function App() {
         {state?.busy && <LoaderCircle size={14} className="spin" />}
       </button>
       <button
+        aria-current={page === "history" ? "page" : undefined}
         className={`project-link ${page === "history" ? "active" : ""}`}
         title="История обработки"
         onClick={() => navigate("history")}
@@ -345,6 +347,7 @@ export function App() {
   const appUtilities = (
     <>
       <button
+        aria-current={page === "settings" ? "page" : undefined}
         className={`project-link ${page === "settings" ? "active" : ""}`}
         title="Настройки"
         onClick={() => navigate("settings")}
@@ -373,6 +376,8 @@ export function App() {
           Связь с приложением потеряна. Восстанавливаю… {connection}
         </MotionDiv>
       )}</Presence>
+      {/* The region stays in the window, so a message that appears in it is read out (WCAG 4.1.3). */}
+      <div className="toast-live" aria-live="polite">
       <Presence>{notice && <Toast notice={notice} busy={waiting} onClose={() => setNotice(null)} onAction={() => {
         const action = notice.action;
         if (action) void run(async () => {
@@ -380,6 +385,7 @@ export function App() {
           setNotice((current) => current === notice ? null : current);
         });
       }} />}</Presence>
+      </div>
       <Presence>{pending && (
         <Dialog
           title="Есть несохранённые изменения"
@@ -395,7 +401,7 @@ export function App() {
               {leaving && <LoaderCircle size={16} className="spin" />}Сохранить и продолжить
             </button>
             <div className="dialog-alternatives">
-              <button className="btn secondary" disabled={leaving} onClick={() => setPending(null)}>
+              <button className="btn secondary" data-autofocus disabled={leaving} onClick={() => setPending(null)}>
                 Вернуться к правкам
               </button>
               <button
@@ -430,9 +436,9 @@ export function App() {
             {fresh.map((name, index) => <li key={`new-${index}`} className="is-new"><strong>{name}</strong><span>Новый — ещё не обработан</span></li>)}
           </ul>
           <div className="dialog-choices">
-            {fresh.length ? <button className="btn primary" disabled={waiting} onClick={() =>
+            {fresh.length ? <button className="btn primary" data-autofocus disabled={waiting} onClick={() =>
               void run(async () => { setState(await confirm("new")); setPage("work"); })}>Обработать только новые</button>
-              : <button className="btn primary" disabled={waiting} onClick={() =>
+              : <button className="btn primary" data-autofocus disabled={waiting} onClick={() =>
                 void run(async () => { setState(await confirm(true)); setPage("work"); })}>Обработать заново</button>}
             <div className="dialog-alternatives">
               {!!fresh.length && <button className="btn secondary" disabled={waiting} onClick={() =>

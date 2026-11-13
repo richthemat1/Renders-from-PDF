@@ -66,7 +66,7 @@
 .cutout-pages button:hover .cutout-sheet { border-color: #a4aabd; }
 .cutout-pages button.is-current .cutout-sheet { border: 2px solid #6260da; }
 .cutout-pages button:focus-visible { outline: none; }
-.cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid #8190f0; outline-offset: 2px; }
+.cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .cutout-sheet-caption { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
 .cutout-sheet-caption b { padding: 1px 6px; border-radius: 8px; background: #6260da; color: #fff; font-size: 11px; font-weight: 700; line-height: 15px; }
 
@@ -139,7 +139,7 @@
 .cutout-row.is-open { align-items: flex-start; gap: 12px; padding: 10px; }
 .cutout-row:not(.is-selected):hover { border-color: #cdd4ee; background: #fbfcff; }
 .cutout-row.is-selected { border-color: #6260da; background: #f4f3ff; box-shadow: inset 0 0 0 .5px #6260da; }
-.cutout-row:has(> .cutout-row-hit:focus-visible) { outline: 2px solid #8190f0; outline-offset: 1px; }
+.cutout-row:has(> .cutout-row-hit:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .cutout-row-hit { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: inherit;
   background: transparent; cursor: pointer; }
 .cutout-row-hit:focus-visible { outline: none; }
