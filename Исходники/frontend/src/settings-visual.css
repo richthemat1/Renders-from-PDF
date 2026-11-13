@@ -434,5 +434,9 @@
 }
 
 /* «Масштаб интерфейса»: four scales in one row, the chosen one pressed. */
-.settings-zoom-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.settings-zoom { padding: var(--space-8); }
+.settings-zoom-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-5); }
+@media (max-width: 640px) {
+  .settings-zoom { padding: var(--space-6) var(--space-5); }
+}
 .settings-zoom-choices .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-100); color: var(--accent-600); }
