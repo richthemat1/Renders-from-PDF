@@ -66,6 +66,11 @@
   /* Page titles (h1 of every page) and the large totals of processing. */
   --text-page: clamp(24px, 2vw, 28px);
 
+  /* Control heights: compact and tool bars, regular, the main action of a window */
+  --control-sm: 32px;
+  --control-md: 40px;
+  --control-lg: 44px;
+
   /* Radii */
   --radius-xs: 4px;
   --radius-sm: 6px;

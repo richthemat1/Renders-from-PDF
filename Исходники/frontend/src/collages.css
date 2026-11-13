@@ -55,7 +55,7 @@
 .collage-chip.neutral { background: var(--gray-100); color: var(--gray-600); }
 .collage-chip.dark { background: #17202bd9; color: var(--sidebar-text); }
 .collage-actions { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
-.collage-actions .btn { min-height: 36px; border-radius: var(--radius-md); }
+.collage-actions .btn { min-height: var(--control-sm); border-radius: var(--radius-md); }
 .btn.text-action, .text-action { border: 0; background: transparent; color: var(--accent-dark); }
 .btn.text-action:hover:not(:disabled) { background: var(--accent-50); }
 button.text-action { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: var(--radius-sm); font: inherit; font-size: var(--text-xs); font-weight: 600; cursor: pointer; }
@@ -86,7 +86,7 @@ button.text-action:disabled { color: var(--muted); cursor: default; }
 .cut-stepper b { min-width: 24px; color: var(--ink); font-size: var(--text-sm); text-align: center; }
 .cut-divider { width: 1px; height: 24px; background: var(--line); }
 .cut-spacer { flex: 1; }
-.cut-tools .btn { min-height: 34px; }
+.cut-tools .btn { min-height: var(--control-sm); }
 .cut-toggle { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: var(--text-xs); font-weight: 600; cursor: pointer; }
 .cut-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .cut-toggle span { position: relative; width: 34px; height: 20px; border-radius: 10px; background: #cfd5df; transition: background .15s; }

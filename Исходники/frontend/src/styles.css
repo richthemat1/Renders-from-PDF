@@ -418,10 +418,10 @@ kbd {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 40px;
+  min-height: var(--control-md);
   padding: 0 var(--space-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   font-size: var(--text-small);
   font-weight: 600;
   text-decoration: none;
@@ -467,7 +467,7 @@ kbd {
   background: #fce2e5;
 }
 .btn.compact {
-  min-height: 34px;
+  min-height: var(--control-sm);
   padding: 0 var(--space-3);
   font-size: var(--text-small);
 }
@@ -1296,10 +1296,10 @@ fieldset {
 .toolbar-checkbox {
   display: grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border: 1px solid #8994a6;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: var(--gray-0);
   flex-shrink: 0;
 }
@@ -1375,8 +1375,8 @@ fieldset {
 .edit-panel.is-floating .icon-btn {
   flex-shrink: 0;
   flex-grow: 0;
-  min-height: 36px;
-  height: 36px;
+  min-height: var(--control-sm);
+  height: var(--control-sm);
   font-size: var(--text-small);
   font-weight: 400;
 }
@@ -1841,7 +1841,7 @@ details[open] > summary::after {
 }
 .dialog-choices > .btn {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--control-lg);
   border-radius: var(--radius-md);
   font-size: var(--text-md);
 }
@@ -1852,7 +1852,7 @@ details[open] > summary::after {
 }
 .dialog-alternatives > .btn {
   flex: 1 1 180px;
-  min-height: 40px;
+  min-height: var(--control-md);
   border-radius: var(--radius-md);
 }
 .dialog-alternatives > .btn.secondary {

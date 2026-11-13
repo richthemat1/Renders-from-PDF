@@ -3,7 +3,7 @@
 .history-heading-search { display: flex; flex-direction: column; gap: 28px; }
 .history-page .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px 24px; margin: 0; }
 .history-page .page-heading p { margin-top: 10px; color: var(--muted); font-size: var(--text-sm); line-height: 1.5; }
-.history-page .page-heading .btn { min-height: 40px; font-size: var(--text-sm); border-radius: var(--radius-md); }
+.history-page .page-heading .btn { min-height: var(--control-md); font-size: var(--text-sm); border-radius: var(--radius-md); }
 .history-search-control { display: flex; align-items: center; gap: 10px; width: min(440px, 100%); height: 44px; padding-inline: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--gray-0); color: var(--muted); }
 .history-search-control > svg { flex-shrink: 0; }
 .history-search-control:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -31,7 +31,7 @@
 .history-card-location .history-path { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; min-height: 34px; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
 .history-repeat-note { font-size: var(--text-xs); }
 .history-page .history-card .history-actions { display: flex; align-items: center; gap: 6px; padding: 10px 16px; border-top: 1px solid var(--line); }
-.history-page .history-card .history-actions > .btn { min-height: 32px; padding-inline: 12px; border-radius: var(--radius-md); font-size: var(--text-xs); }
+.history-page .history-card .history-actions > .btn { min-height: var(--control-sm); padding-inline: 12px; border-radius: var(--radius-md); font-size: var(--text-xs); }
 .history-page .history-card .history-actions > .btn:first-child { border-color: transparent; background: var(--accent-100); color: var(--accent-dark); }
 .history-page .history-card .history-actions > .icon-btn { width: 32px; height: 32px; margin-left: auto; color: var(--muted); }
 .history-page .history-card .history-actions > .icon-btn:hover:not(:disabled) { color: #a14355; background: var(--danger-bg); }

@@ -41,7 +41,7 @@
 .cutout-pager b { display: grid; place-items: center; box-sizing: border-box; min-width: 30px; height: 28px; padding: 0 6px; border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm); color: var(--gray-900); font-size: var(--text-xs); font-weight: 700; }
 .cutout-zoom b { min-width: 32px; color: var(--gray-900); font-weight: 600; text-align: center; }
-.cutout-editor .cut-tools .btn.text-action { flex-shrink: 0; gap: 8px; height: 36px; min-height: 36px; padding: 0 14px; border-radius: var(--radius-md);
+.cutout-editor .cut-tools .btn.text-action { flex-shrink: 0; gap: 8px; height: var(--control-sm); min-height: var(--control-sm); padding: 0 14px; border-radius: var(--radius-md);
   color: var(--accent-600); font-size: var(--text-sm); font-weight: 600; }
 .cutout-editor .cut-tools .btn.text-action:disabled { color: var(--gray-400); }
 .cutout-editor .cut-toggle { flex-shrink: 0; gap: 8px; color: var(--gray-900); font-size: var(--text-xs); font-weight: 400; white-space: nowrap; }
@@ -181,7 +181,7 @@
 .cutout-editor .cut-footer p { flex-direction: column; gap: 4px; min-width: 0; line-height: normal; }
 .cutout-editor .cut-footer p b { color: var(--gray-900); font-size: var(--text-xs); font-weight: 600; }
 .cutout-editor .cut-footer p span { color: var(--gray-500); font-size: var(--text-xs); }
-.cutout-editor .cut-footer .btn { height: 36px; min-height: 36px; padding: 0 14px; font-size: var(--text-sm); }
+.cutout-editor .cut-footer .btn { height: var(--control-md); min-height: var(--control-md); padding: 0 14px; font-size: var(--text-sm); }
 .cutout-editor .cut-footer .btn.secondary { border-color: var(--gray-300); color: var(--gray-900); }
 
 /* Gallery hooks */

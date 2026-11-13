@@ -528,7 +528,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   line-height: 1.5;
 }
 .section-save-bar .btn {
-  min-height: 34px;
+  min-height: var(--control-sm);
 }
 
 /* The title takes the free width, so «Варианты в папку…» and «Папка результата» stay together on the right. */

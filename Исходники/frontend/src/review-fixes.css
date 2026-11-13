@@ -21,7 +21,7 @@
 }
 .preview-view-switch, .preview-image-actions, .preview-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .preview-view-switch .btn[aria-pressed="true"] { color: var(--accent-dark); background: var(--accent-100); border-color: var(--accent-300); }
-.preview-taskbar .btn { min-height: 34px; font-size: var(--text-xs); }
+.preview-taskbar .btn { min-height: var(--control-sm); font-size: var(--text-xs); }
 .viewer-preview-dialog .source-preview-state { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 52ch; padding: 20px; color: var(--muted); text-align: center; font-size: var(--text-sm); }
 .source-preview-state p { margin: 0; line-height: 1.6; }
 .failure-details { margin-block: 8px; font-size: var(--text-xs); }
@@ -34,7 +34,7 @@
   .viewer-content .viewer-heading > div { min-width: 0; }
   .viewer-content .viewer-heading h1 { font-size: var(--text-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .viewer-content .viewer-heading p { margin-top: 4px; font-size: var(--text-xs); }
-  .viewer-content .viewer-heading > .btn { flex-shrink: 0; min-height: 34px; height: 34px; }
+  .viewer-content .viewer-heading > .btn { flex-shrink: 0; min-height: var(--control-sm); height: var(--control-sm); }
   .viewer-content .edit-panel:not(.is-floating) .edit-panel-top,
   .viewer-content .edit-panel:not(.is-floating) .editor-instructions,
   .viewer-content .edit-panel:not(.is-floating) .editor-removed { display: none; }
