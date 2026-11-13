@@ -35,6 +35,33 @@ class AppUX(unittest.TestCase):
         dialog.get_by_role('button', name='Вернуться к правкам', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(3)
 
+    def test_closing_the_window_with_edits_asks_in_the_page_and_can_save_first(self):
+        # Without edits the window closes at once: the page has nothing to ask.
+        self.assertFalse(self.page.evaluate('window.pdfPhotosRequestClose()'))
+        self.page.evaluate("""() => { window.__closed = 0; window.pywebview = { api: {
+            close_window: () => { window.__closed += 1; return Promise.resolve(true); } } }; }""")
+        self.edit()
+        self.card(0).get_by_role('checkbox').check()
+        self.page.keyboard.press('Delete')
+        self.assertTrue(self.page.evaluate('window.pdfPhotosRequestClose()'))
+        dialog = self.page.get_by_role('dialog', name='Закрыть окно с несохранёнными правками?')
+        expect(dialog.get_by_role('button', name='Закрыть без сохранения', exact=True)).to_be_visible()
+        expect(dialog.get_by_role('button', name='Вернуться к правкам', exact=True)).to_be_focused()
+        dialog.get_by_role('button', name='Сохранить и закрыть', exact=True).click()
+        self.page.wait_for_function('window.__closed === 1')
+        report = load_report(self.output)
+        self.assertEqual(report['revision'], 1)
+        self.assertTrue(report['images'][0]['removed'])
+
+    def test_an_error_stays_on_its_page_and_f6_reaches_the_message(self):
+        self.page.evaluate("() => window.dispatchEvent(new CustomEvent('pdf-photos-error', {detail: 'Не найдено PDF.'}))")
+        toast = self.page.locator('.toast')
+        expect(toast).to_contain_text('Не найдено PDF.')
+        self.page.keyboard.press('F6')
+        expect(toast.get_by_role('button', name='Скрыть сообщение')).to_be_focused()
+        self.page.get_by_role('button', name='Настройки', exact=True).first.click()
+        expect(toast).to_have_count(0)
+
     def test_escape_in_editor_does_not_cancel_a_background_queue(self):
         release = Event()
         self.addCleanup(release.set)

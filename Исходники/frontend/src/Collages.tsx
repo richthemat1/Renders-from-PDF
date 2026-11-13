@@ -3,7 +3,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent a
 import { Check, CircleHelp, Columns3, Eye, EyeOff, Layers, Minus, Pencil, Plus, Rows3, Scissors, SeparatorHorizontal,
   SeparatorVertical, Sparkles, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import { errorText, plural, request } from "./api";
-import { Dialog, NewVariantDialog, Select } from "./components";
+import { Dialog, DiscardDialog, NewVariantDialog, Select } from "./components";
 import type { ActionMenuItem, SelectOption } from "./components";
 import { useContextMenu } from "./contextMenu";
 import { Presence } from "./motion";
@@ -295,6 +295,10 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   const [skipped, setSkipped] = useState<Set<number>>(() => new Set(view.frames.length
     ? opening.cells.flatMap((cell, index) => framesIn(cell, view.frames).length ? [] : [index]) : []));
   const [targets, setTargets] = useState<Record<number, Target>>({});
+  // Lines moved (history) or frames sent to variants: closing would lose them, so it asks first.
+  const [touched, setTouched] = useState(false);
+  const [askClose, setAskClose] = useState(false);
+  const requestClose = () => { if (touched || history.length) setAskClose(true); else onClose(); };
   const [guide, setGuide] = useState<number | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const drag = useRef<{ axis: Axis; index: number; pointer: number; before: Lines | null } | null>(null);
@@ -323,6 +327,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   function choose(indices: number[], value: string) {
     if (value === "__new") { setNaming(indices); return; }
     const target: Target = value === "__keep" ? "keep" : value === "__misc" ? null : value;
+    setTouched(true);
     setTargets((current) => ({ ...current, ...Object.fromEntries(indices.map((index) => [index, target])) }));
   }
   const base = view.variant ?? variants[0] ?? "1";
@@ -494,7 +499,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
   const snappedNow = selected && selectedValue !== null && snaps[selected.axis === "x" ? "xs" : "ys"].includes(selectedValue);
   const arrowsAxis = selected && selectedValue !== null ? selected.axis : mode;
   return (
-    <Dialog title="Разрезать склейку" wide className="cut-editor" onClose={onClose}
+    <Dialog title="Разрезать склейку" wide className="cut-editor" onClose={requestClose}
       headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Склейки" title="Как пользоваться: Склейки"
         onClick={onHelp}><CircleHelp size={18} /></button>}
       subtitle={<p className="cut-editor-subtitle">Страница {view.page} · {view.title} · {width} × {height} px</p>}>
@@ -645,7 +650,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
         </div>
         <div className="cut-footer">
           <p><Layers size={18} />{summary}</p>
-          <button className="btn secondary" onClick={onClose}>Отмена</button>
+          <button className="btn secondary" onClick={requestClose}>Отмена</button>
           <button className="btn primary" disabled={!kept.length || (whole && !view.boxes.length)} onClick={apply}>
             <Scissors size={16} />{whole ? "Вернуть целиком" : `Разрезать на ${kept.length} ${plural(kept.length, ["кадр", "кадра", "кадров"])}`}
           </button>
@@ -654,6 +659,8 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
       <Presence>{naming && <NewVariantDialog variants={options} labelOf={label} preferred={base} onClose={() => setNaming(null)}
         subject={naming.length === 1 ? `Кадр ${naming[0] + 1} встанет в новый вариант.` : "Все кадры встанут в новый вариант."}
         onCreate={(key, name) => { if (name) setNames({ ...names, [key]: name }); choose(naming, key); setNaming(null); }} />}</Presence>
+      <Presence>{askClose && <DiscardDialog what="Линии разреза и выбранные варианты кадров"
+        onStay={() => setAskClose(false)} onDiscard={() => { setAskClose(false); onClose(); }} />}</Presence>
     </Dialog>
   );
 }

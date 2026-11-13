@@ -63,7 +63,9 @@ class CopyPreviewUI(unittest.TestCase):
         self.assertEqual([image['variant'] for image in report['images']], [1, 1, 2, None, 3, 3])
         self.assertEqual((self.output/report['images'][0]['file']).read_bytes(), original)
         self.assertEqual(len(PdfReader(self.output/report['images'][4]['file']).pages), 2)
-        self.page.get_by_role('button', name='Отменить сохранение', exact=True).click()
+        self.page.locator('.toast').get_by_role('button', name='Отменить сохранение', exact=True).click()
+        # Undoing from the notice asks the same question as «Ещё → Отменить последнее сохранение…».
+        self.page.get_by_role('dialog', name='Отменить последнее сохранение?').get_by_role('button', name='Отменить сохранение', exact=True).click()
         expect(self.page.locator('nav').get_by_role('button', name='Все изображения 4', exact=True)).to_be_visible()
         expect(self.page.locator('.asset-card')).to_have_count(4)
         self.assertEqual(len(load_report(self.output)['images']), 4)
@@ -85,7 +87,9 @@ class CopyPreviewUI(unittest.TestCase):
         report = load_report(self.output)
         self.assertFalse(report['images'][0].get('removed'))
         self.assertEqual(report['images'][4]['copy_of'], 0)
-        self.page.get_by_role('button', name='Отменить сохранение', exact=True).click()
+        self.page.locator('.toast').get_by_role('button', name='Отменить сохранение', exact=True).click()
+        # Undoing from the notice asks the same question as «Ещё → Отменить последнее сохранение…».
+        self.page.get_by_role('dialog', name='Отменить последнее сохранение?').get_by_role('button', name='Отменить сохранение', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(3)
         report = load_report(self.output)
         self.assertTrue(report['images'][0]['removed'])

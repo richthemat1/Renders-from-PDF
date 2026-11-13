@@ -240,9 +240,13 @@ export interface NativeApi {
   /** Asks for a folder; null when the dialog was closed. `variants`: keys, or null for every variant. */
   export_variants(id: string, variants: string[] | null): Promise<VariantExport | null>;
   reveal_variant(id: string, variant: string): Promise<boolean>;
+  /** Closes the window after the page asked about unsaved edits itself. */
+  close_window(): Promise<boolean>;
 }
 declare global {
   interface Window {
     pywebview?: { api: NativeApi };
+    /** Called by the window on «×» while edits are unsaved: true when the page shows its own question. */
+    pdfPhotosRequestClose?: () => boolean;
   }
 }

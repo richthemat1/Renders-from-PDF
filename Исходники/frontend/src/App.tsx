@@ -53,6 +53,9 @@ export function App() {
   const [fileDrag, setFileDrag] = useState(false);
   const [, setDirty] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
+  // The pending action closes the window: the question names closing, not «продолжить».
+  const [pendingClose, setPendingClose] = useState(false);
+  useEffect(() => { if (!pending) setPendingClose(false); }, [pending]);
   const [historyQuery, setHistoryQuery] = useState("");
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState(false);
@@ -116,12 +119,35 @@ export function App() {
       clearTimeout(timer);
     };
   }, []);
+  // The pointer over a message, or the focus in it, holds it on screen: its action stays within reach.
+  const [noticeHeld, setNoticeHeld] = useState(false);
+  // A new message starts unheld: the one under the pointer may have gone without a «mouseleave».
+  useEffect(() => setNoticeHeld(false), [notice]);
   useEffect(() => {
-    if (!notice || notice.error) return;
+    if (!notice || notice.error || noticeHeld) return;
     // A notice with an action, such as «Отменить сохранение», stays long enough to reach for it.
     const timer = setTimeout(() => setNotice(null), notice.action ? 20000 : 6500);
     return () => clearTimeout(timer);
-  }, [notice]);
+  }, [notice, noticeHeld]);
+  // An error belongs to the page it happened on: another page closes it instead of carrying it along.
+  const shownPage = useRef(page);
+  useEffect(() => {
+    if (shownPage.current === page) return;
+    shownPage.current = page;
+    setNotice((current) => current?.error ? null : current);
+  }, [page]);
+  useEffect(() => {
+    // F6 moves to the message at the bottom of the window, as Windows moves between the panes of a window.
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "F6" || event.ctrlKey || event.altKey || event.metaKey) return;
+      const target = document.querySelector<HTMLElement>(".toast .toast-action, .toast .toast-close");
+      if (!target) return;
+      event.preventDefault();
+      target.focus();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   const notify = useCallback(
     (text: string, error = false, action?: Notice["action"]) => setNotice({ text, error, action }),
     [],
@@ -145,6 +171,16 @@ export function App() {
     },
     [notify],
   );
+  useEffect(() => {
+    window.pdfPhotosRequestClose = () => {
+      if (!dirtyRef.current) return false;
+      setLeaveError(false);
+      setPendingClose(true);
+      setPending(() => () => void native("close_window").catch((error) => notify(errorText(error), true)));
+      return true;
+    };
+    return () => { delete window.pdfPhotosRequestClose; };
+  }, [notify]);
   const guard = useCallback((action: () => void) => {
     if (dirtyRef.current) { setLeaveError(false); setPending(() => action); }
     else action();
@@ -378,7 +414,7 @@ export function App() {
       )}</Presence>
       {/* The region stays in the window, so a message that appears in it is read out (WCAG 4.1.3). */}
       <div className="toast-live" aria-live="polite">
-      <Presence>{notice && <Toast notice={notice} busy={waiting} onClose={() => setNotice(null)} onAction={() => {
+      <Presence>{notice && <Toast notice={notice} busy={waiting} onHold={setNoticeHeld} onClose={() => { setNotice(null); setNoticeHeld(false); }} onAction={() => {
         const action = notice.action;
         if (action) void run(async () => {
           await action.run();
@@ -388,17 +424,18 @@ export function App() {
       </div>
       <Presence>{pending && (
         <Dialog
-          title="Есть несохранённые изменения"
+          title={pendingClose ? "Закрыть окно с несохранёнными правками?" : "Есть несохранённые изменения"}
           busy={leaving}
           onClose={() => setPending(null)}
         >
           <p>
-            Сохраните правки и продолжите выбранное действие либо вернитесь к редактору.
+            {pendingClose ? "Сохраните правки перед закрытием или закройте окно без них. Уже сохранённые PDF останутся на месте."
+              : "Сохраните правки и продолжите выбранное действие либо вернитесь к редактору."}
           </p>
           {leaveError && <p className="dialog-error" role="alert">Не удалось сохранить правки. Вернитесь к редактору: ваши изменения остаются там.</p>}
           <div className="dialog-choices">
             <button className="btn primary" disabled={leaving || !saveCurrent.current} onClick={() => void saveAndContinue()}>
-              {leaving && <LoaderCircle size={16} className="spin" />}Сохранить и продолжить
+              {leaving && <LoaderCircle size={16} className="spin" />}{pendingClose ? "Сохранить и закрыть" : "Сохранить и продолжить"}
             </button>
             <div className="dialog-alternatives">
               <button className="btn secondary" data-autofocus disabled={leaving} onClick={() => setPending(null)}>
@@ -414,7 +451,7 @@ export function App() {
                   action();
                 }}
               >
-                Перейти без сохранения
+                {pendingClose ? "Закрыть без сохранения" : "Перейти без сохранения"}
               </button>
             </div>
           </div>

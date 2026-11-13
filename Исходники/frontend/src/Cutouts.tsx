@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, CircleHelp, Crop, Image as ImageIcon, Images
   Shapes, SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
-import { Dialog, NewVariantDialog, Select } from "./components";
+import { Dialog, DiscardDialog, NewVariantDialog, Select } from "./components";
 import type { ActionMenuItem, SelectOption } from "./components";
 import { useContextMenu } from "./contextMenu";
 import { Presence, reducedMotion } from "./motion";
@@ -289,6 +289,10 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       marks: piece.marks })));
   });
   const [history, setHistory] = useState<Frame[][]>([]);
+  // Frames drawn or moved (history), sent to variants or with marks switched: closing would lose them, so it asks.
+  const [touched, setTouched] = useState(false);
+  const [askClose, setAskClose] = useState(false);
+  const requestClose = () => { if (touched || history.length) setAskClose(true); else onClose(); };
   // Frames picked in the list or on the page, for «Куда выбранные»; the last one is in hand: its handles,
   // its open row, its size over it.
   const [picked, setPicked] = useState<number[]>([]);
@@ -585,9 +589,11 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
     if (anchor.current !== null && uids.includes(anchor.current)) anchor.current = rest.at(-1) ?? null;
   }
   function setTarget(uids: number[], target: Target) {
+    setTouched(true);
     setFrames(frames.map((frame) => uids.includes(frame.uid) ? { ...frame, target } : frame));
   }
   function setMarks(uid: number, marks: boolean) {
+    setTouched(true);
     setFrames(frames.map((frame) => frame.uid === uid ? { ...frame, marks } : frame));
   }
   function show(frame: Frame) {
@@ -668,6 +674,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
       used.push(key);
       next.set(frame.uid, key);
     }
+    setTouched(true);
     setFrames(frames.map((frame) => next.has(frame.uid) ? { ...frame, target: next.get(frame.uid)! } : frame));
   }
   // The panel lists the cutouts page by page, each with the picture or the page it is cut from.
@@ -764,7 +771,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const parse = (value: string): Target => value === "__keep" ? "keep" : value === "__misc" ? null : value;
 
   return (
-    <Dialog title="Вырезки со страниц PDF" wide className="cut-editor cutout-editor" onClose={onClose}
+    <Dialog title="Вырезки со страниц PDF" wide className="cut-editor cutout-editor" onClose={requestClose}
       icon={<Crop size={22} strokeWidth={2.75} absoluteStrokeWidth />}
       headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Вырезки" title="Как пользоваться: Вырезки"
         onClick={onHelp}><CircleHelp size={18} /></button>}
@@ -968,7 +975,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
         <div className="cut-footer">
           <ImageIcon {...LINE} />
           <p><b>{summary.title}</b><span>{summary.detail}</span></p>
-          <button className="btn secondary" onClick={onClose}>Отмена</button>
+          <button className="btn secondary" onClick={requestClose}>Отмена</button>
           {/* Without frames and earlier pieces there is nothing to apply. */}
           <button className="btn primary" disabled={!count && !hadPieces} onClick={apply}>
             <Crop {...LINE} />{hadPieces || !count ? "Применить" : `Добавить ${count} ${plural(count, ["вырезку", "вырезки", "вырезок"])}`}
@@ -981,6 +988,8 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
           : naming.length === frames.length ? "Все вырезки встанут в новый вариант."
           : `${naming.length} ${plural(naming.length, ["вырезка встанет", "вырезки встанут", "вырезок встанут"])} в новый вариант.`}
         onCreate={(key, name) => { if (name) setNames({ ...names, [key]: name }); setTarget(naming, key); setNaming(null); }} />}</Presence>
+      <Presence>{askClose && <DiscardDialog what="Нарисованные рамки и выбранные варианты вырезок"
+        onStay={() => setAskClose(false)} onDiscard={() => { setAskClose(false); onClose(); }} />}</Presence>
     </Dialog>
   );
 }

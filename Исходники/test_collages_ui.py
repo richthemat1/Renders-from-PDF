@@ -86,6 +86,12 @@ class CollagesUI(unittest.TestCase):
         expect(editor.locator('.cut-list li')).to_have_count(4)
         editor.get_by_role('button', name='Удалить все линии').click()
         expect(editor.locator('.cut-list li')).to_have_count(1)
+        # Esc with lines changed asks first instead of throwing the work away.
+        self.page.keyboard.press('Escape')
+        ask = self.page.get_by_role('dialog', name='Закрыть без применения?')
+        ask.get_by_role('button', name='Вернуться к редактору', exact=True).click()
+        expect(ask).to_have_count(0)
+        expect(editor.locator('.cut-list li')).to_have_count(1)
         editor.get_by_role('button', name='Найти швы').click()
         expect(editor.locator('.cut-note')).to_contain_text('стыки кадров одинакового размера')
         expect(editor.locator('.cut-list li')).to_have_count(4)

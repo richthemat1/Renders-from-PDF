@@ -657,11 +657,13 @@ export function Viewer({
       setSelected([]);
       onDirty(false);
       setSavedHere("saved");
-      notify(done, false, {
-        label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => undoSaved(value.result),
+      // One message keeps «Отменить сохранение» within reach: a clean copy in the user's folder that could not be
+      // refreshed is told in it, as an error that stays until closed, instead of a second toast replacing the first.
+      // The undo asks the same question as in «Ещё»: it throws away what this save wrote.
+      const failed = value.delivery_errors?.length ? ` ${value.delivery_errors.join(" ")}` : "";
+      notify(failed ? `Правки сохранены.${failed}` : done, Boolean(failed), {
+        label: "Отменить сохранение", icon: <Undo2 size={16} strokeWidth={2} absoluteStrokeWidth />, run: () => setConfirmUndoSave(true),
       });
-      // The save itself succeeded; only a clean copy in the user's folder could not be refreshed.
-      if (value.delivery_errors?.length) notify(`Правки сохранены. ${value.delivery_errors.join(" ")}`, true);
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) setConflict(true);

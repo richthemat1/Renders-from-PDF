@@ -52,6 +52,8 @@ class NativeBridge:
         self._unsaved_sequence = -1
         self._unsaved_lock = Lock()
         self._dialogs = Lock()
+        # Set by open_desktop: closes the window once the page has asked about unsaved edits itself.
+        self._close = None
 
     def _guard(self):
         if self._window is None or self._window.get_current_url() != self._server.url:
@@ -217,6 +219,14 @@ class NativeBridge:
         self._guard()
         return clipboard_text()
 
+    def close_window(self):
+        """The page asked «Сохранить и закрыть / Закрыть без сохранения» and the person chose to close."""
+        self._guard()
+        if self._close is None:
+            return False
+        Thread(target=self._close, daemon=False, name='pdf-photos-close').start()
+        return True
+
     def set_unsaved(self, value, sequence=None):
         self._guard()
         if type(value) is not bool:
@@ -328,10 +338,22 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
                                        background_color='#f4f6f8', text_select=True)
         bridge._window = window
 
-        def finish_close():
+        def finish_close(confirmed=False):
             try:
+                if not confirmed and bridge._unsaved and not jobs.busy:
+                    # The page asks with its own buttons, «Сохранить и закрыть» among them, and calls close_window;
+                    # a page that cannot answer leaves the question to the system dialog below.
+                    try:
+                        handled = window.evaluate_js(
+                            'window.pdfPhotosRequestClose ? window.pdfPhotosRequestClose() : false') is True
+                    except Exception:
+                        LOGGER.exception('The page did not take the close question')
+                        handled = False
+                    if handled:
+                        closing.clear()
+                        return
                 # A queue stopped by closing loses the file it was on, as unsaved edits are lost.
-                question = close_question(jobs.busy, bridge._unsaved)
+                question = close_question(jobs.busy, bridge._unsaved and not confirmed)
                 if question and not window.create_confirmation_dialog(*question):
                     closing.clear()
                     return
@@ -342,6 +364,14 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
             except Exception:
                 LOGGER.exception('Unable to close desktop')
                 closing.clear()
+
+        def close_confirmed():
+            if closed.is_set() or closing.is_set():
+                return
+            closing.set()
+            finish_close(confirmed=True)
+
+        bridge._close = close_confirmed
 
         def on_closing():
             if closed.is_set():

@@ -60,7 +60,9 @@ class ViewerUX(unittest.TestCase):
         self.card(0).get_by_role('checkbox').check()
         self.page.keyboard.press('Delete')
         self.save()
-        self.page.get_by_role('button', name='Отменить сохранение', exact=True).click()
+        self.page.locator('.toast').get_by_role('button', name='Отменить сохранение', exact=True).click()
+        # Undoing from the notice asks the same question as «Ещё → Отменить последнее сохранение…».
+        self.page.get_by_role('dialog', name='Отменить последнее сохранение?').get_by_role('button', name='Отменить сохранение', exact=True).click()
         expect(self.page.locator('.asset-card')).to_have_count(4)
         report = load_report(self.output)
         self.assertFalse(report['images'][0].get('removed'))

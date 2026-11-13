@@ -359,8 +359,10 @@ export function Dialog({
 
 /** The notice at the bottom of the window (Figma 85:855 / 85:842): a white card with its mark and the first sentence
  * as the title. Under <Presence> it rises in and sinks away; the next notice fades into the card already shown. */
-export function Toast({ notice, busy, onAction, onClose }: {
+export function Toast({ notice, busy, onAction, onClose, onHold }: {
   notice: Notice; busy: boolean; onAction(): void; onClose(): void;
+  /** True while the pointer is over the message or the focus is in it: it should not go away under the hand. */
+  onHold?(held: boolean): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const presence = usePresence();
@@ -369,7 +371,10 @@ export function Toast({ notice, busy, onAction, onClose }: {
   const { title, detail } = noticeParts(notice.text);
   return (
     // Read out by the live region it appears in (App); an error interrupts as an alert.
-    <div ref={ref} className={`toast${notice.error ? " error" : ""}`} role={notice.error ? "alert" : undefined}>
+    <div ref={ref} className={`toast${notice.error ? " error" : ""}`} role={notice.error ? "alert" : undefined}
+      onMouseEnter={() => onHold?.(true)} onMouseLeave={() => onHold?.(false)}
+      onFocus={() => onHold?.(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onHold?.(false); }}>
       <span className="toast-mark" aria-hidden="true">
         {notice.error ? <AlertTriangle size={16} strokeWidth={2} absoluteStrokeWidth />
           : <Check size={16} strokeWidth={2} absoluteStrokeWidth />}
@@ -779,4 +784,17 @@ export function StatusNote({
       {children}
     </span>
   );
+}
+
+/** Closing an editor with work in it: the frames, lines or targets set there are lost unless applied. */
+export function DiscardDialog({ what, onDiscard, onStay }: { what: string; onDiscard(): void; onStay(): void }) {
+  return <Dialog title="Закрыть без применения?" onClose={onStay}>
+    <p>{what} пропадут: они попадут в результат только после «Применить».</p>
+    <div className="dialog-choices">
+      <button className="btn secondary" data-autofocus onClick={onStay}>Вернуться к редактору</button>
+      <div className="dialog-alternatives">
+        <button className="btn danger-text" onClick={onDiscard}>Закрыть без применения</button>
+      </div>
+    </div>
+  </Dialog>;
 }

@@ -35,6 +35,21 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertIn('Обработка остановится', both)
         self.assertIn('несохранённые правки', both)
 
+    def test_close_window_closes_only_after_the_page_asked_and_only_from_the_app_window(self):
+        # The page shows «Сохранить и закрыть / Закрыть без сохранения» itself and then asks the window to close.
+        self.assertFalse(self.bridge.close_window())
+        closed = []
+        self.bridge._close = lambda: closed.append(True)
+        self.assertTrue(self.bridge.close_window())
+        for _ in range(50):
+            if closed:
+                break
+            import time; time.sleep(0.02)
+        self.assertEqual(closed, [True])
+        self.window.get_current_url.return_value = 'https://example.com/'
+        with self.assertRaises(ValueError):
+            self.bridge.close_window()
+
     def test_paste_reads_the_windows_clipboard_only_for_the_app_window(self):
         # «Вставить» in a field's context menu: WebView2 would ask permission for navigator.clipboard every time.
         with patch('photo_desktop.clipboard_text', return_value='Вариант 4. Двор'):
