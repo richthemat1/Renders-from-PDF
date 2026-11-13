@@ -90,6 +90,7 @@ export function App() {
       clear();
     };
   }, [page, state?.busy]);
+  const lastSnapshot = useRef("");
   useEffect(() => {
     let cancelled = false,
       timer: ReturnType<typeof setTimeout>;
@@ -103,7 +104,13 @@ export function App() {
           controller.signal,
         );
         if (!cancelled) {
-          setState(next);
+          // An unchanged snapshot leaves the window as it is: polling every 300 ms during processing must not
+          // redraw a gallery of hundreds of cards each time.
+          const text = JSON.stringify(next);
+          if (text !== lastSnapshot.current) {
+            lastSnapshot.current = text;
+            setState(next);
+          }
           setConnection("");
         }
         interval = next.busy || next.closing ? 300 : 1300;
@@ -313,8 +320,12 @@ export function App() {
       },
     });
   }
+  // Results of the same PDF, counted once per render instead of comparing every pair of the hundred rows.
+  const sourceKey = (source: string) => source.replaceAll("\\", "/").toLocaleLowerCase();
+  const sourceCounts = new Map<string, number>();
+  for (const item of state?.history ?? []) sourceCounts.set(sourceKey(item.source), (sourceCounts.get(sourceKey(item.source)) ?? 0) + 1);
   function historyRow(item: HistoryItem) {
-    const repeats = (state?.history ?? []).filter((other) => other.source.replaceAll("\\", "/").toLocaleLowerCase() === item.source.replaceAll("\\", "/").toLocaleLowerCase()).length > 1;
+    const repeats = (sourceCounts.get(sourceKey(item.source)) ?? 0) > 1;
     return <article className="history-entry history-card" key={item.id} onContextMenu={(event) => openHistoryMenu(event, item)}>
       <button className="history-row history-card-main" disabled={waiting || !item.available} onClick={() => void openHistory(item.id)}>
         <span className="history-card-top">

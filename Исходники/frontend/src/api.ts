@@ -59,13 +59,10 @@ export function fileUrl(base: string, relative: string): string {
     relative.replaceAll("\\", "/").split("/").map(encodeURIComponent).join("/")
   );
 }
+// One formatter for every date: toLocaleString builds a new one on each call, a hundred times per history render.
+const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 export function dateLabel(value: string): string {
-  return new Date(value).toLocaleString("ru-RU", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return DATE_FORMAT.format(new Date(value));
 }
 
 export function plural(count: number, forms: [string, string, string]): string {

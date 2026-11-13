@@ -2605,3 +2605,10 @@ kbd,
     outline-color: Highlight;
   }
 }
+
+/* A card out of view is not laid out or painted until it nears the screen: a gallery of hundreds of cards
+   opens and reacts as fast as a short one. Its place keeps the last real size, so scrolling does not jump. */
+.viewer-content .asset-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}

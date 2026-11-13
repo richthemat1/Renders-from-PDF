@@ -189,13 +189,18 @@ def desktop_handler(server):
                 path = (root / relative).resolve()
                 if not path.is_relative_to(root) or not path.is_file():
                     return self.error(404, 'Файл не найден.')
+                stat = path.stat()
+                # The file's time and size name its version: an edit that rewrites it changes both.
+                etag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+                if self.headers.get('If-None-Match') == etag:
+                    return self.reply(304, b'', mimetypes.guess_type(path.name)[0] or 'application/octet-stream', etag)
                 contents = path.read_bytes()
             except (OSError, ValueError):
                 return self.error(404, 'Файл не найден.')
             content_type = mimetypes.guess_type(path.name)[0] or 'application/octet-stream'
             if content_type.startswith('text/') or content_type in ('application/javascript', 'application/json'):
                 content_type += '; charset=utf-8'
-            return self.reply(200, contents, content_type)
+            return self.reply(200, contents, content_type, etag)
 
         def do_GET(self):
             kind, relative = self.route()

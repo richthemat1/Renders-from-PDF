@@ -272,6 +272,15 @@ class DesktopServerTests(EditFixture, unittest.TestCase):
         self.assertEqual(self.request(self.server.origin + '/app/wrong-token/api/state')[0], 404)
         self.assertEqual(self.request('api/missing')[0], 404)
 
+    def test_files_are_revalidated_by_etag_instead_of_downloaded_again(self):
+        status, _, headers = self.request('assets/main.js')
+        self.assertEqual((status, headers['Cache-Control']), (200, 'no-cache'))
+        etag = headers['ETag']
+        self.assertTrue(etag)
+        status, body, headers = self.request('assets/main.js', headers={'If-None-Match': etag})
+        self.assertEqual((status, body, headers['ETag']), (304, b'', etag))
+        self.assertEqual(self.request('assets/main.js', headers={'If-None-Match': '"other"'})[0], 200)
+
     def test_registered_wrapper_repairs_moved_output_and_exposes_only_registered_files(self):
         moved = self.root / 'Перенесено'
         self.output.rename(moved)

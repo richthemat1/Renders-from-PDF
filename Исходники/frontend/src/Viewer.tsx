@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import {
   ArrowDown,
@@ -151,6 +151,8 @@ export function Viewer({
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
+  // The field shows each letter at once; the gallery follows a moment later and skips letters typed meanwhile.
+  const searched = useDeferredValue(query);
   const [saving, setSaving] = useState(false);
   // «Изменения сохранены» reports a save made here, not a result that was only opened.
   const [savedHere, setSavedHere] = useState<"" | "saved" | "undone">("");
@@ -534,7 +536,7 @@ export function Viewer({
     return (
       matches &&
       (!showStatusTabs || status === "all" || status === row.status) &&
-      text.includes(query.trim().toLocaleLowerCase("ru"))
+      text.includes(searched.trim().toLocaleLowerCase("ru"))
     );
   });
   if (!filter.startsWith("variant:")) visible.sort((a, b) =>

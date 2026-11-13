@@ -67,13 +67,17 @@ def handler(server):
             folder = server.folders.get(parts[0])
             return (folder, parts[1] if len(parts) > 1 else '') if folder else (None, None)
 
-        def reply(self, status, body, content_type='application/json; charset=utf-8'):
+        def reply(self, status, body, content_type='application/json; charset=utf-8', etag=None):
             if isinstance(body, dict):
                 body = json.dumps(body, ensure_ascii=False).encode('utf-8')
             self.send_response(status)
             self.send_header('Content-Type', content_type)
             self.send_header('Content-Length', str(len(body)))
-            self.send_header('Cache-Control', 'no-store')
+            # A file with an ETag is kept by the window and asked again each time («no-cache»): an unchanged
+            # thumbnail comes back as a bodiless 304, a rewritten one with its new bytes.
+            self.send_header('Cache-Control', 'no-cache' if etag else 'no-store')
+            if etag:
+                self.send_header('ETag', etag)
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.end_headers()
             if self.command != 'HEAD':
