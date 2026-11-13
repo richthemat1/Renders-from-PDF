@@ -199,7 +199,7 @@
 /* The place a dragged card would take among the cards of its variant. */
 .viewer-content .asset-card.drag-slot {
   border: 1.5px dashed #a1acff;
-  background: #f4f5ff;
+  background: var(--accent-50);
 }
 /* The card lifted by the pointer: a copy that follows it above everything. */
 .card-drag-ghost {
@@ -241,18 +241,18 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 }
 .viewer-content .stats > .passive-stat {
   border-color: transparent;
-  background: #edf1f6;
+  background: var(--gray-100);
   box-shadow: none;
   cursor: default;
 }
 .viewer-content .stats > button {
-  border-color: #dce2ec;
+  border-color: var(--gray-300);
   background: var(--gray-0);
 }
 .viewer-content .stats > button:hover,
 .viewer-content .stats > button.selected {
-  border-color: #aeb8ea;
-  background: #f3f5ff;
+  border-color: var(--accent-300);
+  background: var(--accent-50);
 }
 /* One short line under a section heading («Убранные», «Служебные», «Склейки», «Вырезки»): what the section holds
    and what returning or saving does. 36px high when it fits a line. */
@@ -263,8 +263,8 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   margin: 12px 0 0;
   padding: 8px 12px;
   color: #556377;
-  background: #eef2f8;
-  border: 1px solid #dfe6ef;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-300);
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
   line-height: 18px;
@@ -312,7 +312,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   margin-top: 2px;
 }
 .viewer-content .report-issue-list > li.is-error > svg {
-  color: #b34657;
+  color: var(--danger-fg);
 }
 .viewer-content .report-issue-list > li > div {
   flex: 1;
@@ -337,7 +337,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 }
 .viewer-preview-dialog .preview-zoom-tools > span {
   margin-right: auto;
-  color: #67758a;
+  color: var(--gray-500);
   font-size: var(--text-xs);
 }
 .viewer-preview-dialog .preview-zoom-tools > .preview-scale {
@@ -514,7 +514,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   padding: 10px 12px 10px 16px;
   border: 1px solid #cdd4ee;
   border-radius: var(--radius-panel);
-  background: #fbfcff;
+  background: var(--gray-25);
 }
 .section-save-bar > svg {
   flex-shrink: 0;
