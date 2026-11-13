@@ -18,7 +18,6 @@ import {
   LockKeyhole,
   Play,
   ScanEye,
-  ShieldCheck,
   Tag,
   TriangleAlert,
 } from "lucide-react";
@@ -98,9 +97,9 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
     <header className="page-heading processing-heading">
       <div>
         <h1>Обработка PDF</h1>
-        <p>Извлеките изображения. Проверьте подписи. Соберите варианты.</p>
+        <p>PDF → изображения по вариантам → PDF каждого варианта в вашей папке</p>
       </div>
-      <button className="btn secondary" onClick={onPrevious} disabled={waiting}><FolderOpen size={16} />Открыть прошлый результат</button>
+      <button className="btn secondary" onClick={onPrevious} disabled={waiting}><FolderOpen size={16} />Открыть прошлый результат…</button>
     </header>
 
     {failures}
@@ -144,7 +143,7 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
                   onContextMenu={(event) => onHistoryMenu(event, item)}>
                   <span className="file-icon"><FileText size={21} /></span>
                   <span className="history-name"><strong>{item.name}</strong>
-                    <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.documents} PDF{check > 0 && ` · проверить: ${check}`}</small>
+                    <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.variants ? `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}` : `${item.documents} готовых PDF`}{check > 0 && ` · проверить: ${check}`}</small>
                   </span>
                   <ChevronRight size={18} />
                 </button>;
@@ -195,7 +194,6 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
     {view.showJob && !processing && <aside className="processing-next-panel" aria-labelledby="next-processing-title">
       <h2 id="next-processing-title"><FilePlus2 size={18} />Новая обработка</h2>
       <UploadZone fileDrag={fileDrag} waiting={waiting} quiet={complete || view.remaining > 0} onChoose={onChoose} />
-      <p className="processing-next-local"><ShieldCheck size={14} /><span>Обработка на вашем компьютере</span></p>
     </aside>}
     </div>
 
@@ -214,13 +212,12 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       <div className="section-title"><h2 id="recent-results-title">Последние результаты</h2><button className="text-btn" onClick={onHistory}>Вся история<ArrowRight size={14} /></button></div>
       <div className="processing-recent-list">
         {state.history.slice(0, 3).map((item) => {
-          const current = !processing && item.id === view.currentRecord?.id;
           return <button className="history-row processing-history-row" key={item.id} disabled={waiting || !item.available} onClick={() => onOpenHistory(item)}
                   onContextMenu={(event) => onHistoryMenu(event, item)}>
             <span className="file-icon"><FileText size={21} /></span>
             <span className="history-name"><strong>{item.name}</strong>
-              <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {current || !item.variants ? `${item.documents} PDF` : `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}`}{!current && ` · ${dateLabel(item.finished_at)}`}</small>
-              {!item.available && <small className="history-unavailable">Папка недоступна — укажите новое расположение в истории</small>}
+              <small>{item.images} {plural(item.images, ["изображение", "изображения", "изображений"])} · {item.variants ? `${item.variants} ${plural(item.variants, ["вариант", "варианта", "вариантов"])}` : `${item.documents} готовых PDF`} · {dateLabel(item.finished_at)}</small>
+              {!item.available && <small className="history-unavailable">Папка недоступна — нажмите «Указать папку…» в истории</small>}
             </span>
             <ChevronRight size={18} />
           </button>;
@@ -228,6 +225,5 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       </div>
     </section>}
 
-    <p className="processing-privacy"><ShieldCheck size={15} /><span>Локально, без отправки в интернет</span></p>
   </div>;
 }

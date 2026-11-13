@@ -654,3 +654,12 @@ export function orderedIds(draft: Draft): number[] {
     ...draft.order.filter((id) => !members.has(id)),
   ].filter((id) => !isRemoved(draft, id));
 }
+
+/** A caption that starts with its variant («Вариант 12. Вид с набережной» under «Вариант 12») needs no label above it;
+ * «Вариант 12.1» or «Вариант 120» is another variant and keeps it. */
+export function repeatsLabel(label: string, title: string): boolean {
+  const name = label.trim().toLocaleLowerCase("ru"), text = title.trim().toLocaleLowerCase("ru");
+  if (!text.startsWith(name)) return false;
+  const rest = text.slice(name.length);
+  return rest === "" || /^(?!\.\d)[^\p{L}\p{N}]/u.test(rest);
+}

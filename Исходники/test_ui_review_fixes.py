@@ -27,7 +27,7 @@ class ReviewFixesUI(unittest.TestCase):
         from photo_edit import load_report
         self.page.get_by_role('button', name='Редактировать', exact=True).click()
         self.page.locator('.asset-card[data-id="1"]').get_by_role('checkbox').check()
-        self.page.get_by_role('button', name='Новый вариант', exact=True).click()
+        self.page.get_by_role('button', name='Новый вариант…', exact=True).click()
         dialog = self.page.get_by_role('dialog')
         dialog.get_by_role('button', name='Подвариант 1.1', exact=True).click()
         expect(dialog.get_by_label('Номер или название варианта')).to_have_value('1.1')
@@ -130,7 +130,7 @@ class ReviewFixesUI(unittest.TestCase):
         self.page.get_by_role('button', name='Обработка PDF', exact=True).click()
         failures = self.page.get_by_role('region', name='Необработанные файлы')
         expect(failures).to_contain_text('Файл может быть повреждён')
-        expect(failures.get_by_role('button', name='Выбрать другую папку', exact=True)).to_have_count(0)
+        expect(failures.get_by_role('button', name='Выбрать другую папку…', exact=True)).to_have_count(0)
         expect(failures.get_by_text('No /Root object!', exact=False)).not_to_be_visible()
         failures.get_by_text('Технические подробности', exact=True).click()
         expect(failures.get_by_text('No /Root object!', exact=False)).to_be_visible()
@@ -141,13 +141,13 @@ class ReviewFixesUI(unittest.TestCase):
             self.jobs.start([self.report['source']])
             self.jobs.wait(10)
         expect(failures).to_contain_text('Проверьте доступ к папке')
-        expect(failures.get_by_role('button', name='Выбрать другую папку', exact=True)).to_be_visible()
+        expect(failures.get_by_role('button', name='Выбрать другую папку…', exact=True)).to_be_visible()
 
     def test_preview_mouse_actions_change_draft_and_can_restore(self):
         self.edit()
         self.card(0).locator('.asset-title button').first.click()
         dialog = self.page.get_by_role('dialog')
-        dialog.get_by_role('button', name='Перенести изображение', exact=True).click()
+        dialog.get_by_role('button', name='Перенести в вариант', exact=True).click()
         self.page.get_by_role('menuitem', name='Вариант 2', exact=True).click()
         expect(dialog.locator('.preview-location')).to_contain_text('Вариант 2')
         dialog.get_by_role('button', name='Убрать изображение', exact=True).click()
@@ -292,7 +292,7 @@ class ReviewFixesUI(unittest.TestCase):
 
         self.edit()
         self.card(3).get_by_role('checkbox').check()
-        new_variant = self.page.get_by_role('button', name='Новый вариант', exact=True)
+        new_variant = self.page.get_by_role('button', name='Новый вариант…', exact=True)
         shown = frames('dialog', new_variant.click)
         passes_through_partial(shown)
         # Still fading in, the window already takes the typing.
@@ -334,7 +334,7 @@ class ReviewFixesUI(unittest.TestCase):
     def test_a_dialog_field_takes_the_focus_and_marks_it_inside_its_border(self):
         self.edit()
         self.card(3).get_by_role('checkbox').check()
-        self.page.get_by_role('button', name='Новый вариант', exact=True).click()
+        self.page.get_by_role('button', name='Новый вариант…', exact=True).click()
         field = self.page.get_by_role('dialog').get_by_label('Номер или название варианта')
         expect(field).to_be_focused()
         style = field.evaluate('f => [getComputedStyle(f).outlineStyle, getComputedStyle(f).boxShadow]')
@@ -344,7 +344,7 @@ class ReviewFixesUI(unittest.TestCase):
         box = field.bounding_box()
         self.assertGreaterEqual(hints['y'], box['y'] + box['height'])
         self.page.keyboard.press('Escape')
-        expect(self.page.get_by_role('button', name='Новый вариант', exact=True)).to_be_focused()
+        expect(self.page.get_by_role('button', name='Новый вариант…', exact=True)).to_be_focused()
 
 
 if __name__ == '__main__':

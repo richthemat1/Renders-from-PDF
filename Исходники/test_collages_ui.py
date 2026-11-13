@@ -84,7 +84,7 @@ class CollagesUI(unittest.TestCase):
         expect(self.page.locator('.edit-panel, .review-summary')).to_have_count(0)
         card.get_by_role('button', name='Разрезать…').click()
         expect(editor.locator('.cut-list li')).to_have_count(4)
-        editor.get_by_role('button', name='Убрать линии').click()
+        editor.get_by_role('button', name='Удалить все линии').click()
         expect(editor.locator('.cut-list li')).to_have_count(1)
         editor.get_by_role('button', name='Найти швы').click()
         expect(editor.locator('.cut-note')).to_contain_text('стыки кадров одинакового размера')

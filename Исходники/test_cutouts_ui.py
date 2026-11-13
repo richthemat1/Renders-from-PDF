@@ -77,7 +77,7 @@ class CutoutsUI(PageEditorUI):
     def test_a_render_is_cut_out_from_under_its_plan_kept_with_a_snapshot_and_its_picture_returned(self):
         section = self.section()
         expect(section).to_contain_text('Вырезок пока нет')
-        section.get_by_role('button', name='Вырезать из страниц…').first.click()
+        section.get_by_role('button', name='Вырезать со страницы…').first.click()
         editor = self.page.locator('dialog.cutout-editor')
         expect(editor.locator('.cutout-found')).to_have_count(1)
         expect(editor.locator('.cutout-found')).to_contain_text('Найденная картинка · Вариант 2')
@@ -138,7 +138,7 @@ class CutoutsUI(PageEditorUI):
         self.page.get_by_role('button', name='Редактировать', exact=True).click()
         card = self.page.locator('.asset-card').first
         card.hover()
-        card.get_by_role('button', name='Вырезать часть…').click()
+        card.get_by_role('button', name='Вырезать со страницы…').click()
         editor = self.page.locator('dialog.cutout-editor')
         expect(editor.locator('.cutout-row')).to_have_count(1)
         expect(editor.locator('.cut-note')).to_contain_text('Рамка поставлена по краям картинки')
@@ -182,13 +182,13 @@ class CutoutsUI(PageEditorUI):
                 break
             except PermissionError:
                 self.page.wait_for_timeout(100)
-        self.section().get_by_role('button', name='Вырезать из страниц…').first.click()
+        self.section().get_by_role('button', name='Вырезать со страницы…').first.click()
         expect(editor.locator('.cutout-loading')).to_contain_text('Исходный PDF недоступен')
         self.assertEqual(self.errors, [])
 
 
     def test_a_row_shows_its_cutout_and_several_picked_go_to_a_variant_at_once(self):
-        self.section().get_by_role('button', name='Вырезать из страниц…').first.click()
+        self.section().get_by_role('button', name='Вырезать со страницы…').first.click()
         editor = self.page.locator('dialog.cutout-editor')
         pager = editor.locator('.cutout-pager b')
         # Two frames on page 1 (from the picture, over the scheme) and one on page 2.
@@ -243,7 +243,7 @@ class MarkedCutoutsUI(PageEditorUI):
 
     def test_each_cutout_takes_the_marks_over_its_picture_or_leaves_them_out(self):
         section = self.section()
-        section.get_by_role('button', name='Вырезать из страниц…').first.click()
+        section.get_by_role('button', name='Вырезать со страницы…').first.click()
         editor = self.page.locator('dialog.cutout-editor')
         # A frame clear of the sign has no marks to keep.
         self.drag(self.at(.08, .2), self.at(.25, .35))

@@ -52,7 +52,7 @@ class HistoryReviewDesignUI(unittest.TestCase):
         self.page.evaluate('''() => { window.openedFolders = [];
             window.pywebview = {api: {open_history_folder: async id => {window.openedFolders.push(id); return true;}}};
         }''')
-        cards.first.get_by_role('button', name='Открыть папку:', exact=False).click()
+        cards.first.get_by_role('button', name='Открыть папку результата:', exact=False).click()
         self.page.wait_for_function('window.openedFolders.length === 1')
         expect(self.page.locator('.history-page')).to_be_visible()
         cards.first.locator('.history-row').click()
@@ -69,11 +69,11 @@ class HistoryReviewDesignUI(unittest.TestCase):
         self.page.get_by_role('button', name='История обработки', exact=True).click()
         card = self.page.locator('.history-card')
         expect(card.locator('.history-row')).to_be_disabled()
-        expect(card.get_by_role('button', name='Указать папку', exact=True)).to_be_visible()
+        expect(card.get_by_role('button', name='Указать папку…', exact=True)).to_be_visible()
         for width, height in ((1100, 760), (800, 640), (780, 620)):
             self.page.set_viewport_size({'width': width, 'height': height})
             self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth > innerWidth'))
-            expect(card.get_by_role('button', name='Указать папку', exact=True)).to_be_enabled()
+            expect(card.get_by_role('button', name='Указать папку…', exact=True)).to_be_enabled()
 
     def test_summary_expands_warnings_and_individual_ocr_without_changing_the_result(self):
         self.warnings()

@@ -66,7 +66,7 @@ export function CropDialog({ title, src, size, box, busy, onApply, onClose }: {
   }
   const share = (value: number, side: number) => `${value / side * 100}%`;
   return (
-    <Dialog title="Вырезать часть изображения" subtitle={title} icon={<CropIcon size={18} />} wide busy={busy}
+    <Dialog title="Обрезать изображение" subtitle={title} icon={<CropIcon size={18} />} wide busy={busy}
       className="crop-dialog" onClose={onClose}>
       <p className="crop-note">Потяните рамку за края: в варианте останется то, что внутри неё. Обрезанное изображение
         встанет на место этого и сразу запишется в PDF варианта.</p>
@@ -88,11 +88,11 @@ export function CropDialog({ title, src, size, box, busy, onApply, onClose }: {
       <div className="crop-footer">
         <span className="crop-size">Останется {frame[2] - frame[0]} × {frame[3] - frame[1]} px из {size[0]} × {size[1]}</span>
         <button type="button" className="btn compact secondary" disabled={busy || same(frame, whole)}
-          onClick={() => setFrame(whole)}>Вся картинка</button>
+          onClick={() => setFrame(whole)}>Без обрезки</button>
         <span className="crop-spacer" />
         <button type="button" className="btn secondary" disabled={busy} onClick={onClose}>Отмена</button>
         <button type="button" className="btn primary" disabled={busy || unchanged} onClick={() => onApply(frame)}>
-          <CropIcon size={16} /><span>Вырезать и сохранить</span>
+          <CropIcon size={16} /><span>Обрезать и сохранить</span>
         </button>
       </div>
     </Dialog>

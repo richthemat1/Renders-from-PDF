@@ -16,6 +16,7 @@ import {
   Copy,
   CopyCheck,
   Crop,
+  SquareScissors,
   FileText,
   FolderInput,
   FolderOpen,
@@ -75,6 +76,7 @@ import {
   variantParent,
 } from "./editor";
 import type { CutoutChange, Draft } from "./editor";
+import { repeatsLabel } from "./editor";
 import { beforeAt, useCardDrag } from "./cardDrag";
 import type { DropPlace } from "./cardDrag";
 import { EditorToolbar } from "./EditorToolbar";
@@ -159,7 +161,7 @@ export function Viewer({
   /** The images «Новый вариант…» moves: the selection, or one card from its context menu. */
   const [newVariant, setNewVariant] = useState<number[] | null>(null);
   const [cutting, setCutting] = useState<CollageView | null>(null);
-  /** «Вырезать…»: the card being cropped in place, the whole picture to draw the frame on and its crop so far. */
+  /** «Обрезать…»: the card being cropped in place, the whole picture to draw the frame on and its crop so far. */
   const [cropping, setCropping] = useState<{ view: CollageView; src: string; box: Box | null } | null>(null);
   const [cutoutEditor, setCutoutEditor] = useState<{ page: number; picture?: number } | null>(null);
   const [copying, setCopying] = useState<{ ids: number[]; whole: boolean } | null>(null);
@@ -376,7 +378,7 @@ export function Viewer({
       pending: false, boxes: [], suggestion: [], members: [id], frames: [], variant: location.variant,
       variantLabel: location.variant !== null ? variantLabel(labelled, location.variant) : folderLabel(report, location.folder) };
   }
-  /** «Вырезать…»: crop one card where it stands. The crop is written at once, so nothing else may wait to be saved. */
+  /** «Обрезать…»: crop one card where it stands. The crop is written at once, so nothing else may wait to be saved. */
   function cropImage(id: number) {
     if (saving) return;
     if (dirty || id in draft.frames || id in draft.copies || id >= draft.sourceCount) {
@@ -735,7 +737,7 @@ export function Viewer({
     notify(value.saved.length === 1
       ? `«${name(value.saved[0])}» сохранён в папку «${value.folder}». После следующих сохранений он обновится сам.`
       : `Сохранено PDF: ${value.saved.length} — в папку «${value.folder}». После следующих сохранений они обновятся сами.`,
-    false, first ? { label: "Показать в проводнике", icon: <FolderSearch size={16} />, run: () => revealVariant(first) } : undefined);
+    false, first ? { label: "Показать в Проводнике", icon: <FolderSearch size={16} />, run: () => revealVariant(first) } : undefined);
   }
   function open(relative = "") {
     void native("open_result", result.id, relative).catch((error) =>
@@ -976,11 +978,11 @@ export function Viewer({
     const keep = !selected.includes(id);
     const items: ActionMenuItem[] = [
       { value: "preview", label: "Просмотреть", icon: <Maximize2 size={16} />, disabled: !single },
-      { value: "source", label: `Посмотреть в оригинале · стр. ${row.image.page}`, icon: <Scan size={16} />, disabled: !single },
+      { value: "source", label: `Исходная страница ${row.image.page}`, icon: <Scan size={16} />, disabled: !single },
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />,
         disabled: !single || removedSet.has(id) || !!row.image.removed },
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} />, disabled: !single },
-      { value: "crop", label: "Вырезать…", icon: <Crop size={16} />, separator: true,
+      { value: "crop", label: "Обрезать…", icon: <Crop size={16} />, separator: true,
         disabled: saving || !single || !active.length },
       { value: "turn", label: "Повернуть", icon: <RotateCw size={16} />, disabled: saving || !active.length,
         children: TURN_ITEMS },
@@ -989,10 +991,10 @@ export function Viewer({
       { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true,
         disabled: saving || !active.length,
         children: [...variants.map((variant) => ({ value: `move:${variant}`, label: variantLabel(labelled, variant) })),
-          { value: "move:return-to-misc", label: "Вернуть в папку подписи / Все остальное", separator: true,
+          { value: "move:return-to-misc", label: "Вернуть на прежнее место", separator: true,
             disabled: !active.some((value) => draftVariant(draft, value) !== null) }] },
       { value: "new", label: "Новый вариант…", icon: <Plus size={16} />, disabled: saving || !active.length },
-      { value: "copy", label: active.length > 1 ? "Создать копии" : "Создать копию", icon: <Copy size={16} />,
+      { value: "copy", label: active.length > 1 ? "Создать копии…" : "Создать копию…", icon: <Copy size={16} />,
         disabled: saving || !active.length },
       { value: "same", label: same.length ? `Выбрать такие же по размеру (${same.length})` : "Выбрать такие же по размеру",
         icon: <CopyCheck size={16} />, disabled: saving || !same.length },
@@ -1011,7 +1013,7 @@ export function Viewer({
     if (editing) items.push(
       { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />,
         separator: !(single && row.variant === null && !removedSet.has(id)), disabled: saving || !single || !active.length },
-      { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />,
+      { value: "cutout", label: "Вырезать со страницы…", icon: <SquareScissors size={16} />,
         disabled: saving || !single || !active.length || id in draft.frames },
     );
     if (removedIds.length && !active.length)
@@ -1052,7 +1054,7 @@ export function Viewer({
     const items: ActionMenuItem[] = [
       sourcePage
         ? { value: "image", label: "Извлечённое изображение", icon: <Images size={16} /> }
-        : { value: "source", label: `Посмотреть в оригинале · стр. ${row.image.page}`, icon: <Scan size={16} /> },
+        : { value: "source", label: `Исходная страница ${row.image.page}`, icon: <Scan size={16} /> },
       { value: "fit", label: "Вместить изображение", icon: <Scan size={16} />, disabled: zoom === 1 },
       { value: "zoom", label: "Увеличить вдвое", icon: <Plus size={16} />, disabled: zoom >= 5 },
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />, separator: true,
@@ -1062,12 +1064,12 @@ export function Viewer({
         children: TURN_ITEMS },
     ];
     if (editing) items.push(
-      { value: "move", label: "Перенести изображение", icon: <FolderInput size={16} />, separator: true, disabled: saving,
+      { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true, disabled: saving,
         children: [...variants.map((variant) => ({ value: `move:${variant}`, label: variantLabel(labelled, variant) })),
-          { value: "move:return", label: "Вернуть в папку подписи / Все остальное", separator: true,
+          { value: "move:return", label: "Вернуть на прежнее место", separator: true,
             disabled: row.variant === null || removedNow }] },
       { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: saving || removedNow },
-      { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />, disabled: saving || removedNow },
+      { value: "cutout", label: "Вырезать со страницы…", icon: <SquareScissors size={16} />, disabled: saving || removedNow },
       removedNow
         ? { value: "restore", label: "Вернуть изображение", icon: <RotateCcw size={16} />, disabled: saving }
         : { value: "remove", label: "Убрать изображение", icon: <Trash2 size={16} />, danger: true, disabled: saving },
@@ -1104,7 +1106,7 @@ export function Viewer({
     if (variant !== null && editing) items.push(
       { value: "here", label: selectedActive.length ? `Перенести выбранные сюда (${selectedActive.length})` : "Перенести выбранные сюда",
         icon: <FolderInput size={16} />, disabled: saving || !selectedActive.some((id) => draftVariant(draft, id) !== variant) },
-      { value: "copy", label: "Создать копию PDF варианта", icon: <Copy size={16} />, disabled: saving || !members.length },
+      { value: "copy", label: "Создать копию PDF варианта…", icon: <Copy size={16} />, disabled: saving || !members.length },
     );
     items.push({ value: "rename", label: variant !== null ? "Переименовать вариант…" : "Переименовать подпись…",
       icon: <Pencil size={16} />, separator: true, disabled: dirty || saving });
@@ -1112,7 +1114,7 @@ export function Viewer({
       items.push({ value: "export", label: "Сохранить PDF в папку…", icon: <FolderOutput size={16} />, separator: true,
         disabled: saving || !savedVariants.has(variant) });
       if (result.delivery?.[variant]?.length)
-        items.push({ value: "reveal", label: "Показать копию в проводнике", icon: <FolderSearch size={16} /> });
+        items.push({ value: "reveal", label: "Показать копию в Проводнике", icon: <FolderSearch size={16} /> });
     }
     context.open(event, {
       heading: title,
@@ -1384,7 +1386,7 @@ export function Viewer({
             <button className="btn compact secondary" disabled={saving} onClick={() => setReset(true)}>
               <RotateCcw size={16} />{conflict ? "Обновить" : "Сбросить"}</button>
             <button className="btn compact primary editor-save" disabled={saving || !dirty} title="Сохранить · Ctrl+S" onClick={() => void save()}>
-              {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить"}</button>
+              {saving ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}{saving ? "Сохраняю…" : "Сохранить распределение"}</button>
           </section>
         )}
         <Presence>{editing && !sectionPage && (
@@ -1604,7 +1606,7 @@ export function Viewer({
                   })()}
                   {editing && !saving && !removedSet.has(row.id) && !(row.id in draft.frames) && collageOf(row.id)?.state !== "suspected" &&
                     <button className="btn compact secondary cutout-cut-button" onClick={() => startCutout(row.id)}>
-                      <Crop size={15} />Вырезать часть…</button>}
+                      <SquareScissors size={15} />Вырезать со страницы…</button>}
                   {editing && !removedSet.has(row.id) && (
                     <span className="drag-handle" title="Перетащите карточку">
                       <GripVertical size={16} />
@@ -1612,7 +1614,7 @@ export function Viewer({
                   )}
                 </div>
                 <div className="asset-info">
-                  {row.label.trim().toLocaleLowerCase("ru") !== row.title.trim().toLocaleLowerCase("ru") && <span className="asset-group" title={row.label}>
+                  {!repeatsLabel(row.label, row.title) && <span className="asset-group" title={row.label}>
                     {row.label}
                   </span>}
                   <div className="asset-title">
@@ -1714,16 +1716,16 @@ export function Viewer({
                 onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={15} />Исходная страница {previewRow.image.page}</button>
             </div>
             {editing && <div className="preview-edit-actions" aria-label="Правки открытого изображения">
-              <ActionMenu label="Перенести изображение" disabled={saving}
+              <ActionMenu label="Перенести в вариант" disabled={saving}
                 items={[...variants.map((key) => ({ value: key, label: variantLabel(labelled, key) })),
-                  { value: "return", label: "Вернуть в папку подписи / Все остальное", separator: true,
+                  { value: "return", label: "Вернуть на прежнее место", separator: true,
                     disabled: previewRow.variant === null || removedSet.has(previewRow.id) }]}
                 onAction={(target) => target === "return"
                   ? change({ type: "return-to-misc", ids: [previewRow.id] }) : move(target, [previewRow.id])} />
               <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
                 onClick={() => cutImage(previewRow.id)}><Scissors size={15} />Разрезать…</button>
               <button className="btn compact secondary" disabled={saving || removedSet.has(previewRow.id)}
-                onClick={() => { const id = previewRow.id; setPreview(null); startCutout(id); }}><Crop size={15} />Вырезать часть…</button>
+                onClick={() => { const id = previewRow.id; setPreview(null); startCutout(id); }}><SquareScissors size={15} />Вырезать со страницы…</button>
               <button className="btn compact secondary" disabled={saving}
                 aria-label={removedSet.has(previewRow.id) ? "Вернуть изображение" : "Убрать изображение"}
                 onClick={() => change({ type: removedSet.has(previewRow.id) ? "restore" : "remove", ids: [previewRow.id] })}>

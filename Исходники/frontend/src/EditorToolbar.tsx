@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, CopyCheck, Crop, Ellipsis, FolderInput,
-  LoaderCircle, Plus, Redo2, RotateCcw, Save, Scissors, SquarePen, Trash2, TriangleAlert, Undo2,
+  ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, Check, CircleHelp, Copy, CopyCheck, Ellipsis, FolderInput,
+  LoaderCircle, Plus, Redo2, RotateCcw, Save, Scissors, SquarePen, SquareScissors, Trash2, TriangleAlert, Undo2,
 } from "lucide-react";
 import { ActionMenu } from "./components";
 import type { ActionMenuItem } from "./components";
@@ -103,14 +103,14 @@ export function EditorToolbar(props: Props) {
   const noSelection = !props.selected || props.saving;
   const moveItems: ActionMenuItem[] = [
     ...props.variants,
-    { value: "return-to-misc", label: "Вернуть в папку подписи / Все остальное", separator: true, disabled: !props.canReturn },
+    { value: "return-to-misc", label: "Вернуть на прежнее место", separator: true, disabled: !props.canReturn },
   ];
   const actions: ActionMenuItem[] = [
     { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />,
       disabled: noSelection,
       children: moveItems.map((variant) => ({ ...variant, value: `move:${variant.value}` })) },
-    { value: "new", label: "Новый вариант", icon: <Plus size={16} />, disabled: noSelection },
-    { value: "copy", label: "Создать копии выбранных", icon: <Copy size={16} />,
+    { value: "new", label: "Новый вариант…", icon: <Plus size={16} />, disabled: noSelection },
+    { value: "copy", label: "Создать копии выбранных…", icon: <Copy size={16} />,
       disabled: props.saving || !props.selectedActive },
     { value: "same", label: props.sameSize ? `Выбрать такие же по размеру (${props.sameSize})` : "Выбрать такие же по размеру",
       icon: <CopyCheck size={16} />, disabled: props.saving || !props.sameSize },
@@ -127,7 +127,7 @@ export function EditorToolbar(props: Props) {
     { value: "remove", label: "Убрать", icon: <Trash2 size={16} />, disabled: props.saving || !props.selectedActive, danger: true },
     // Cutting stays below the everyday actions, so a low window still shows «Убрать» without scrolling.
     { value: "cut", label: "Разрезать склейку…", icon: <Scissors size={16} />, disabled: props.saving || !props.canCut, separator: true },
-    { value: "cutout", label: "Вырезать часть со страницы…", icon: <Crop size={16} />, disabled: props.saving },
+    { value: "cutout", label: "Вырезать со страницы…", icon: <SquareScissors size={16} />, disabled: props.saving },
     { value: "undo", label: "Отменить шаг", icon: <Undo2 size={16} />,
       disabled: props.saving || !props.canUndo, separator: true },
     { value: "redo", label: "Повторить шаг · Ctrl+Y", icon: <Redo2 size={16} />,
@@ -135,7 +135,7 @@ export function EditorToolbar(props: Props) {
     { value: "reset", label: "Сбросить", icon: <RotateCcw size={16} />,
       disabled: props.saving || !props.dirty },
     { value: "removed", label: `Показать убранные (${props.removed})`, icon: <Trash2 size={16} /> },
-    { value: "undo-save", label: "Отменить последнее сохранение", icon: <RotateCcw size={16} />,
+    { value: "undo-save", label: "Отменить последнее сохранение…", icon: <RotateCcw size={16} />,
       disabled: props.saving || props.dirty || !props.canUndoSave, separator: true },
     { value: "help", label: "Помощь", icon: <CircleHelp size={16} />, separator: true },
   ];
@@ -197,9 +197,9 @@ export function EditorToolbar(props: Props) {
             <ActionMenu className="editor-primary-action editor-move" label="Перенести в вариант"
               disabled={noSelection} items={moveItems} onAction={(value) => value === "return-to-misc" ? props.onReturn() : props.onMove(value)}
               upwards={floating} placementKey={floating} />
-            <button className="btn compact secondary editor-primary-action editor-new" aria-label="Новый вариант"
-              title="Новый вариант" disabled={noSelection} onClick={props.onNewVariant}>
-              <Plus size={16} /><span>Новый вариант</span>
+            <button className="btn compact secondary editor-primary-action editor-new" aria-label="Новый вариант…"
+              title="Новый вариант…" disabled={noSelection} onClick={props.onNewVariant}>
+              <Plus size={16} /><span>Новый вариант…</span>
             </button>
             <div className="editor-reorder editor-primary-action">
               <button className="icon-btn" aria-label="Раньше в варианте" title="Раньше в варианте"

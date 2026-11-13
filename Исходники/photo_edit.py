@@ -86,7 +86,7 @@ def parse_payload(report, payload, pieces=0):
         raise EditError('Этот результат создан тестовой версией 3.12 с общей папкой «Перспективные изображения». '
                         'Обработайте исходный PDF заново, чтобы править варианты.')
     if payload.get('revision') != report['revision']:
-        raise EditConflict('Результат уже изменён в другом окне. Обновите страницу и повторите правку.')
+        raise EditConflict('Результат уже изменён в другом окне. Нажмите «Обновить» и повторите правку.')
     images = report['images']
     try:
         def indices(values):
@@ -130,7 +130,7 @@ def parse_payload(report, payload, pieces=0):
     current = variant_members(report)
     lost = [index for ids in current.values() for index in ids if index not in set(seen)]
     if lost:
-        raise EditError('В правке пропущены изображения из вариантов. Обновите страницу и повторите правку.')
+        raise EditError('В правке пропущены изображения из вариантов. Нажмите «Обновить» и повторите правку.')
     for key in current:
         variants.setdefault(key, [])
     return variants, removed, current
@@ -434,7 +434,7 @@ def _commit_transaction(output, report, new, built, retired, backup, backup_only
     backup_name = str(backup.relative_to(output))
     _safe_path(output, backup_name, mutation=True)
     if _report_hash(load_report(output)) != _report_hash(report):
-        raise EditConflict('Результат изменён во время сохранения. Обновите страницу и повторите правку.')
+        raise EditConflict('Результат изменён во время сохранения. Нажмите «Обновить» и повторите правку.')
     backup_io = _backup_io_path(backup)
     touched = sorted(set(built) | set(retired) | set(backup_only) | {'Отчёт.json', 'Просмотр.html'})
     paths = {relative: _safe_path(output, relative, mutation=True) for relative in touched}
@@ -466,7 +466,7 @@ def _commit_transaction(output, report, new, built, retired, backup, backup_only
             transaction['saved_hashes'][relative] = _file_hash(destination)
         if (_report_hash(load_report(output)) != _report_hash(report) or
                 any(_file_hash(paths[relative]) != transaction['saved_hashes'][relative] for relative in saved)):
-            raise EditConflict('Результат изменён во время сохранения. Обновите страницу и повторите правку.')
+            raise EditConflict('Результат изменён во время сохранения. Нажмите «Обновить» и повторите правку.')
         for relative in touched:
             _safe_path(output, relative, mutation=True)
         if any(_backup_io_path(paths[relative]).exists() for relative in created):
@@ -526,7 +526,7 @@ def parse_turns(report, payload):
     images = report['images']
     for index in turns:
         if not 0 <= index < len(images) or images[index].get('removed'):
-            raise EditError('Изображение для поворота не найдено. Обновите страницу и повторите правку.')
+            raise EditError('Изображение для поворота не найдено. Нажмите «Обновить» и повторите правку.')
     return turns
 
 
@@ -547,11 +547,11 @@ def parse_collage_edits(report, payload):
             if 'collage' in cut:
                 record, created = records.get(cut['collage']), False
                 if record is None or record.get('state') == 'dismissed':
-                    raise EditError('Склейка не найдена в результате. Обновите страницу и повторите правку.')
+                    raise EditError('Склейка не найдена в результате. Нажмите «Обновить» и повторите правку.')
             else:
                 index = cut.get('source')
                 if type(index) is not int or not 0 <= index < len(images) or images[index].get('removed'):
-                    raise EditError('Изображение для разрезания не найдено. Обновите страницу и повторите правку.')
+                    raise EditError('Изображение для разрезания не найдено. Нажмите «Обновить» и повторите правку.')
                 if images[index].get('collage') in records:
                     record, created = records[images[index]['collage']], False
                 else:
@@ -581,7 +581,7 @@ def parse_collage_edits(report, payload):
             parsed.append((record, boxes, members, created, cut.get('trim', False)))
         for value in checked+dismissed:
             if value not in records:
-                raise EditError('Склейка не найдена в результате. Обновите страницу и повторите правку.')
+                raise EditError('Склейка не найдена в результате. Нажмите «Обновить» и повторите правку.')
         for value in dismissed:
             if records[value].get('state') != 'suspected' or value in used:
                 raise EditError('Отметить «Это одно фото» можно только неразрезанную картинку.')
@@ -1017,7 +1017,7 @@ def _rect_box(record, rect):
     left, top, right, bottom = record['area']
     if (rect[0] < left-AREA_TOLERANCE or rect[1] < top-AREA_TOLERANCE or
             rect[2] > right+AREA_TOLERANCE or rect[3] > bottom+AREA_TOLERANCE):
-        raise EditError('Рамка вырезки выходит за край картинки. Обновите страницу и повторите правку.')
+        raise EditError('Рамка вырезки выходит за край картинки. Нажмите «Обновить» и повторите правку.')
     width, height = record['size']
     box = [round((min(max(rect[0], left), right)-left)/(right-left)*width),
            round((min(max(rect[1], top), bottom)-top)/(bottom-top)*height),
@@ -1048,17 +1048,17 @@ def parse_cutout_edits(report, payload):
             if 'record' in item:
                 record = records.get(item['record'])
                 if record is None:
-                    raise EditError('Вырезка не найдена в результате. Обновите страницу и повторите правку.')
+                    raise EditError('Вырезка не найдена в результате. Нажмите «Обновить» и повторите правку.')
             elif 'source' in item:
                 index = item['source']
                 if type(index) is not int or not 0 <= index < len(images):
-                    raise EditError('Картинка для вырезки не найдена. Обновите страницу и повторите правку.')
+                    raise EditError('Картинка для вырезки не найдена. Нажмите «Обновить» и повторите правку.')
                 record = by_image.get(index)
                 if record is None:
                     geometry = geometry or page_geometry(report)
                     picture = next((value for value in cutout_sources(report, geometry) if value['image'] == index), None)
                     if picture is None:
-                        raise EditError('Из этой картинки вырезать нельзя. Обновите страницу и повторите правку.')
+                        raise EditError('Из этой картинки вырезать нельзя. Нажмите «Обновить» и повторите правку.')
                     entry = images[index]
                     record = {'id': f'{entry["page"]}-v{index}', 'page': entry['page'], 'kind': 'image', 'image': index,
                               'area': picture['area'], 'size': list(entry['size']), 'title': entry.get('title')}
@@ -1279,21 +1279,21 @@ def apply_edits(output, payload):
         raise EditError('Убранное изображение нельзя повернуть. Верните его и повторите поворот.')
     for record, boxes, members, created, trim in cuts:
         if any(index not in removed for index in members):
-            raise EditError('Прежние кадры склейки не убраны из правки. Обновите страницу и повторите разрезание.')
+            raise EditError('Прежние кадры склейки не убраны из правки. Нажмите «Обновить» и повторите разрезание.')
     restored = [int(index) for index in payload.get('restored', [])]
     for item in cutouts:
         record = item['record']
         if any(index not in removed for index in item['members']):
-            raise EditError('Прежние вырезки не убраны из правки. Обновите страницу и повторите правку.')
+            raise EditError('Прежние вырезки не убраны из правки. Нажмите «Обновить» и повторите правку.')
         if record['kind'] != 'image':
             continue
         picture = record['image']
         saved_removed = bool(report['images'][picture].get('removed'))
         # Cutouts take the place of their picture; without cutouts the picture comes back.
         if item['boxes'] and not saved_removed and picture not in removed:
-            raise EditError('Картинка, из которой сделаны вырезки, не убрана из правки. Обновите страницу.')
+            raise EditError('Картинка, из которой сделаны вырезки, не убрана из правки. Нажмите «Обновить».')
         if not item['boxes'] and (picture in removed or saved_removed and picture not in restored):
-            raise EditError('Без вырезок картинка должна вернуться на место. Обновите страницу и повторите правку.')
+            raise EditError('Без вырезок картинка должна вернуться на место. Нажмите «Обновить» и повторите правку.')
     copies = payload.get('copies', [])
     copy_start = len(report['images'])
     working = _report_with_copies(report, copies) if copies else report
@@ -1478,7 +1478,7 @@ def restore_last_save(output, payload):
     output = Path(output).resolve()
     report = load_report(output)
     if payload.get('revision') != report['revision']:
-        raise EditConflict('Результат уже изменён в другом окне. Обновите страницу и повторите правку.')
+        raise EditConflict('Результат уже изменён в другом окне. Нажмите «Обновить» и повторите правку.')
     if not can_undo_last_save(report):
         raise EditError('Последнее сохранение уже отменено или его резервная копия недоступна.')
     edit = report['edits'][-1]
@@ -1598,7 +1598,7 @@ def rename_item(output, payload):
     output = Path(output).resolve()
     report = load_report(output)
     if payload.get('revision') != report['revision']:
-        raise EditConflict('Результат уже изменён в другом окне. Обновите страницу и повторите правку.')
+        raise EditConflict('Результат уже изменён в другом окне. Нажмите «Обновить» и повторите правку.')
     kind, target = payload.get('kind'), payload.get('target')
     name = payload.get('name')
     images = report['images']

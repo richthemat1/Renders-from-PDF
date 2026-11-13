@@ -28,7 +28,7 @@ import type { HistoryItem, Notice, ProcessingFailure, Result, Snapshot } from ".
 import { Viewer } from "./Viewer";
 import { Settings } from "./Settings";
 import { ProcessingPage } from "./ProcessingPage";
-import { failureMessage } from "./processing-model";
+import { canRetry, failureMessage } from "./processing-model";
 import { HelpDialog } from "./Help";
 import type { HelpTopic } from "./Help";
 import "./app-ux.css";
@@ -232,7 +232,7 @@ export function App() {
       const next = await native("choose_output");
       setState(next);
       if (next.settings.mode !== state?.settings.mode || next.settings.folder !== state?.settings.folder)
-        notify("Папка результатов изменена. Нажмите «Повторить» у нужного файла.");
+        notify("Место сохранения изменено. Нажмите «Обработать заново» у нужного файла.");
     });
   }
   const matchingHistory = (state?.history ?? []).filter((item) => item.name.toLocaleLowerCase("ru").includes(historyQuery.toLocaleLowerCase("ru")));
@@ -241,14 +241,14 @@ export function App() {
     if (!items.length) return null;
     return <section className="failure-panel" aria-label="Необработанные файлы">
       <div className="section-title"><h2><AlertTriangle size={18} />Не обработано: {items.length}</h2></div>
-      <p>Эти файлы требуют повторной обработки. Причины сохраняются между запусками приложения.</p>
+      <p>Эти файлы не обработаны. Причины сохраняются между запусками.</p>
       {items.map((item) => <article className="failure-row" key={item.id}>
         <div><strong>{item.name}</strong><p>{failureMessage(item)}</p>
           {failureMessage(item) !== item.reason && <details className="failure-details"><summary>Технические подробности</summary><p>{item.reason}</p></details>}
           <small>{dateLabel(item.failed_at)}</small></div>
         <div className="failure-actions">
-          <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={15} />Повторить</button>
-          {item.action === "choose_output" && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку</button>}
+          {canRetry(item) && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => failureAction(item, "retry")}><RotateCcw size={15} />Обработать заново</button>}
+          {item.action === "choose_output" && <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={chooseFailureOutput}><FolderOpen size={15} />Выбрать другую папку…</button>}
           <button className="icon-btn" disabled={waiting} aria-label={`Убрать ошибку из истории: ${item.name}`} title="Убрать запись из истории" onClick={() => failureAction(item, "forget")}><X size={16} /></button>
         </div>
       </article>)}
@@ -292,13 +292,13 @@ export function App() {
         <span className="history-card-location">
           <span><FolderOutput size={14} />Папка результата</span>
           <span className="history-path" title={item.output}>{item.output}</span>
-          {!item.available && <span className="history-unavailable">Укажите новое расположение папки</span>}
+          {!item.available && <span className="history-unavailable">Папка не найдена — нажмите «Указать папку…»</span>}
           {repeats && <span className="history-repeat-note">Есть другие выгрузки этого PDF</span>}
         </span>
       </button>
       <div className="history-actions">
-        {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку: ${item.name}`}><FolderOpen size={15} /><span>Папка</span></button>
-          : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={15} />Указать папку</button>}
+        {item.available ? <button className="btn compact secondary" disabled={waiting} onClick={() => historyAction(item, "folder")} aria-label={`Открыть папку результата: ${item.name}`}><FolderOpen size={15} /><span>Открыть папку</span></button>
+          : <button className="btn compact secondary" disabled={waiting || state?.busy} onClick={() => historyAction(item, "relocate")}><FolderOpen size={15} />Указать папку…</button>}
         <button className="btn compact secondary" disabled={waiting || state?.busy} aria-label={`Обработать заново: ${item.name}`} onClick={() => historyAction(item, "repeat")}><RotateCcw size={15} /><span>Заново</span></button>
         <button className="icon-btn" disabled={waiting} aria-label={`Убрать из истории: ${item.name}`} title="Убрать запись из истории, сохранив файлы" onClick={() => historyAction(item, "forget")}><Trash2 size={18} /></button>
       </div>
@@ -517,7 +517,7 @@ export function App() {
                     const record = state.history.find((item) => item.output.replaceAll("\\", "/").replace(/\/+$/, "").toLocaleLowerCase() === output);
                     if (record) void openHistory(record.id);
                     else notify("Результат не найден в истории. Откройте его папку вручную.", true,
-                      { label: "Выбрать папку результата", icon: <FolderOpen size={16} strokeWidth={2} absoluteStrokeWidth />, run: previous });
+                      { label: "Открыть прошлый результат…", icon: <FolderOpen size={16} strokeWidth={2} absoluteStrokeWidth />, run: previous });
                   }}
                   onHistory={() => navigate("history")}
                   onOpenHistory={(item) => void openHistory(item.id)}
@@ -539,7 +539,7 @@ export function App() {
                       disabled={waiting}
                     >
                       <FolderOpen size={17} />
-                      Открыть папку результата
+                      Открыть прошлый результат…
                     </button>
                   </div>
                   <label className="history-search-control"><Search size={18} />

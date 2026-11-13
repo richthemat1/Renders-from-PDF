@@ -1,17 +1,30 @@
 import { plural } from "./api";
 import type { HistoryItem, ProcessingFailure, Snapshot } from "./types";
 
+const ENCRYPTED = /password|encrypted|парол/iu;
+const DAMAGED = /no \/root|xref|invalid pdf|not a pdf|really a pdf|pdf.*(corrupt|damaged)|eof marker/iu;
+// The file itself has nothing to extract: processing the same file again ends the same way.
+const NO_IMAGES = /не найдено отдельных растровых изображений/iu;
+
 export function failureMessage(item: Pick<ProcessingFailure, "reason" | "action">): string {
-  // Cyrillic inside a quoted filename is not a localized explanation.
-  const localized = /^(?:PDF\s+)?[а-яё]{2,}(?:\s|:)/iu.test(item.reason.trim());
+  // A localized explanation starts with a Russian word, a one-letter preposition («В PDF не найдено…») included;
+  // Cyrillic inside a quoted filename is not one.
+  const localized = /^(?:PDF\s+)?[а-яё]+(?:\s|:)/iu.test(item.reason.trim());
   if (item.action === "choose_output") return localized ? item.reason
     : "Не удалось сохранить результат. Проверьте доступ к папке и длину пути.";
-  if (/password|encrypted|парол/iu.test(item.reason))
+  if (ENCRYPTED.test(item.reason))
     return "PDF защищён паролем. Сохраните копию без пароля и выберите её для обработки.";
-  if (/no \/root|xref|invalid pdf|not a pdf|really a pdf|pdf.*(corrupt|damaged)|eof marker/iu.test(item.reason))
+  if (DAMAGED.test(item.reason))
     return "Не удалось прочитать PDF. Файл может быть повреждён. Откройте его в программе просмотра и сохраните новую копию.";
+  if (NO_IMAGES.test(item.reason))
+    return "В этом PDF нет растровых изображений — только текст или векторная графика. Программа извлекает растровые изображения, поэтому повторная обработка не поможет.";
   return localized ? item.reason
     : "Не удалось обработать PDF. Проверьте, открывается ли он в программе просмотра, и попробуйте сохранить новую копию.";
+}
+
+/** «Обработать заново» helps only when the cause is outside the file: a damaged, locked or empty PDF fails the same way. */
+export function canRetry(item: Pick<ProcessingFailure, "reason" | "action">): boolean {
+  return item.action === "choose_output" || !(ENCRYPTED.test(item.reason) || DAMAGED.test(item.reason) || NO_IMAGES.test(item.reason));
 }
 
 type Outcome = NonNullable<Snapshot["job"]>["outcome"] | "status";
@@ -50,6 +63,11 @@ export function processingView(state: Snapshot) {
   const warnings = state.job?.warnings ?? (outcome === "complete" ? currentRecord?.warnings ?? 0 : 0);
   const errors = state.job?.errors ?? (outcome === "complete" ? currentRecord?.errors ?? 0 : 0);
   const progress = Math.max(0, Math.min(100, state.progress));
+  // Variants are what the user takes away; PDFs of other captions are a side count.
+  const variants = batch.length > 1
+    ? batch.reduce((sum, item) => sum + (item.variants ?? 0), 0)
+    : currentRecord?.variants ?? 0;
+  const images = `${state.totals.images} ${plural(state.totals.images, ["изображение", "изображения", "изображений"])}`;
   const titles: Record<Outcome, string> = {
     idle: "Новая обработка",
     processing: state.cancelling ? "Останавливаю обработку…" : "Готовлю ваши материалы",
@@ -64,10 +82,11 @@ export function processingView(state: Snapshot) {
     showJob: outcome !== "idle",
     title: titles[outcome],
     subtitle: outcome === "processing"
-      ? "Обработка на вашем компьютере"
+      ? "Можно открыть историю или результат — обработка продолжится."
       : outcome === "complete"
-        // Not «N PDF из M изображений»: a variant joins many images, so fewer PDFs is no loss.
-        ? `${state.totals.images} ${plural(state.totals.images, ["изображение разложено", "изображения разложены", "изображений разложены"])} по ${state.totals.documents} PDF`
+        ? variants > 0
+          ? `${variants} ${plural(variants, ["вариант готов", "варианта готовы", "вариантов готово"])} · ${images}`
+          : `${images} · ${state.totals.documents} готовых PDF`
         : state.detail,
     currentRecord,
     batch,

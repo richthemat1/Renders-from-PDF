@@ -313,7 +313,7 @@ class JobService:
                 self._detail = ('Дождитесь завершения текущих изображений — незавершённые выгрузки будут удалены.'
                                 if len(self._active) > 1 else
                                 'Дождитесь завершения текущего изображения — незавершённая выгрузка будет удалена.')
-                self._append('Запрошена отмена обработки.', 'warn')
+                self._append('Обработка останавливается…', 'warn')
             return self.snapshot()
 
     def wait(self, timeout=None):
@@ -409,7 +409,7 @@ class JobService:
         with self._lock:
             folder = Path(self._history_item(id)['output']).resolve()
             if not folder.is_dir():
-                raise ValueError('Папка недоступна. Нажмите «Указать новое расположение».')
+                raise ValueError('Папка результата не найдена: её переместили или удалили. Нажмите «Указать папку…» и выберите её новое место.')
             return folder
 
     def forget_history(self, id):
@@ -569,12 +569,12 @@ class JobService:
                 if counts.get(key):
                     self._append(f'Проверьте вручную: {title} — {counts[key]}.', 'warn')
             if report['warnings']:
-                self._append(f'Предупреждений: {len(report["warnings"])}. Подробности — в отчёте.', 'warn')
+                self._append(f'Предупреждений: {len(report["warnings"])}. Подробности — на панели проверки в открытом результате.', 'warn')
             if report['errors']:
-                self._append(f'Не сохранено изображений: {len(report["errors"])}. Причины — в «Отчёт.json».', 'error')
+                self._append(f'Не сохранено изображений: {len(report["errors"])}. Причины — на панели проверки в открытом результате.', 'error')
             if report.get('preview_errors'):
                 self._append(f'Не создано миниатюр: {len(report["preview_errors"])}. Сами PDF сохранены.', 'warn')
-            self._append(report['output'], 'muted')
+            self._append(f'Папка результата: {report["output"]}', 'muted')
             if delivered['saved']:
                 self._append(f'Готовые варианты — {len(delivered["saved"])} PDF: '
                              f'{Path(delivered["saved"][0]).parent}', 'ok')

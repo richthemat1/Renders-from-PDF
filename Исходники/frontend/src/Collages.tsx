@@ -530,7 +530,7 @@ export function CutEditor({ view, resultId, variants, labelOf, dotOf, onApply, o
             <span aria-hidden="true" />Обрезать светлые поля
           </label>
           <button className="btn text-action" disabled={!lines.xs.length && !lines.ys.length}
-            onClick={() => { commit({ xs: [], ys: [] }); setSelected(null); }}><Trash2 size={16} />Убрать линии</button>
+            onClick={() => { commit({ xs: [], ys: [] }); setSelected(null); }}><Trash2 size={16} />Удалить все линии</button>
         </div>
         <div className="cut-workspace">
           <div className="cut-canvas">

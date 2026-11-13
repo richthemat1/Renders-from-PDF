@@ -724,7 +724,7 @@ class PreviewServerEdits(EditFixture, unittest.TestCase):
                 self.assertEqual(self.colors(output/'Вариант 1/Вариант 1.pdf'), ['green'])
                 status, body = self.request(base+'/api/apply', edit, server.origin)
                 self.assertEqual(status, 409)
-                self.assertIn('Обновите страницу', json.loads(body)['error'])
+                self.assertIn('Нажмите «Обновить»', json.loads(body)['error'])
             finally:
                 server.stop()
 

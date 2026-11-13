@@ -1,4 +1,4 @@
-"""«Вырезать…» in the right-click menu of a card: a frame over the picture, saved into its variant at once."""
+"""«Обрезать…» in the right-click menu of a card: a frame over the picture, saved into its variant at once."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -53,8 +53,8 @@ class CropUI(EditFixture, unittest.TestCase):
 
     def crop_first_card(self):
         self.page.locator('.asset-card').first.click(button='right')
-        self.page.get_by_role('menuitem', name='Вырезать…', exact=True).click()
-        dialog = self.page.get_by_role('dialog', name='Вырезать часть изображения')
+        self.page.get_by_role('menuitem', name='Обрезать…', exact=True).click()
+        dialog = self.page.get_by_role('dialog', name='Обрезать изображение')
         expect(dialog.locator('.crop-stage img')).to_be_visible()
         return dialog
 
@@ -65,7 +65,7 @@ class CropUI(EditFixture, unittest.TestCase):
         self.pull('se', -.5, -.25)
         expect(dialog.locator('.crop-size')).to_contain_text('300 × 300')
         with self.page.expect_response(lambda r: r.url.endswith('/apply') and r.status == 200):
-            dialog.get_by_role('button', name='Вырезать и сохранить', exact=True).click()
+            dialog.get_by_role('button', name='Обрезать и сохранить', exact=True).click()
         expect(dialog).to_have_count(0)
         # Still two cards, the cropped one first; nothing is left to save and no whole picture beside it.
         expect(self.page.locator('.asset-card')).to_have_count(2)
@@ -79,7 +79,7 @@ class CropUI(EditFixture, unittest.TestCase):
         self.pull('se', .5, .25)
         expect(dialog.locator('.crop-size')).to_contain_text('600 × 400')
         with self.page.expect_response(lambda r: r.url.endswith('/apply') and r.status == 200):
-            dialog.get_by_role('button', name='Вырезать и сохранить', exact=True).click()
+            dialog.get_by_role('button', name='Обрезать и сохранить', exact=True).click()
         self.assertEqual(page_sizes(self.output/'Вариант 3'/'Вариант 3.pdf'), [(600, 400), (600, 400)])
         self.assertEqual(self.errors, [])
 
@@ -94,9 +94,9 @@ class CropUI(EditFixture, unittest.TestCase):
         self.page.locator('.asset-card').nth(1).click(button='right')
         self.page.get_by_role('menuitem', name='Убрать', exact=True).click()
         self.page.locator('.asset-card').first.click(button='right')
-        self.page.get_by_role('menuitem', name='Вырезать…', exact=True).click()
+        self.page.get_by_role('menuitem', name='Обрезать…', exact=True).click()
         expect(self.page.get_by_text('Сначала сохраните или отмените правки', exact=False)).to_be_visible()
-        expect(self.page.get_by_role('dialog', name='Вырезать часть изображения')).to_have_count(0)
+        expect(self.page.get_by_role('dialog', name='Обрезать изображение')).to_have_count(0)
         self.assertEqual(self.errors, [])
 
 

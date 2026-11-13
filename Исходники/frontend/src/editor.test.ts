@@ -382,3 +382,14 @@ describe("variants named in words", () => {
     expect(payload(numbered, 4)).not.toHaveProperty("variant_names");
   });
 });
+
+describe("variant label above a caption", () => {
+  it("hides a label the caption already starts with, keeps another variant's", async () => {
+    const { repeatsLabel } = await import("./editor");
+    expect(repeatsLabel("Вариант 12", "Вариант 12. Перспективное изображение")).toBe(true);
+    expect(repeatsLabel("Вариант 1", "вариант 1")).toBe(true);
+    expect(repeatsLabel("Вариант 1", "Вариант 12. Вид")).toBe(false);
+    expect(repeatsLabel("Вариант 12", "Вариант 12.1 Вид")).toBe(false);
+    expect(repeatsLabel("Вариант 1", "Перспектива")).toBe(false);
+  });
+});

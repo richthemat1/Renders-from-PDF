@@ -51,14 +51,14 @@ class DeliveryUI(unittest.TestCase):
         expect(self.page.get_by_text('«Вариант 1.pdf» сохранён в папку', exact=False)).to_be_visible()
         self.assertEqual(self.names(), ['Вариант 1.pdf'])
         self.assertEqual(self.calls, [['1']])
-        self.page.get_by_role('button', name='Показать в проводнике', exact=True).click()
+        self.page.get_by_role('button', name='Показать в Проводнике', exact=True).click()
         variant.click(button='right')
-        self.page.get_by_role('menuitem', name='Показать копию в проводнике', exact=True).click()
+        self.page.get_by_role('menuitem', name='Показать копию в Проводнике', exact=True).click()
         self.assertEqual(self.calls[1:], [('reveal', '1'), ('reveal', '1')])
         # The other variant has no copy yet: only the save action is offered.
         self.page.locator('nav').get_by_role('button', name='Вариант 2 1', exact=True).click(button='right')
         expect(self.page.get_by_role('menuitem', name='Сохранить PDF в папку…', exact=True)).to_be_enabled()
-        expect(self.page.get_by_role('menuitem', name='Показать копию в проводнике', exact=True)).to_have_count(0)
+        expect(self.page.get_by_role('menuitem', name='Показать копию в Проводнике', exact=True)).to_have_count(0)
         self.assertEqual(self.errors, [])
 
     def test_all_variants_button_and_unsaved_edits_ask_to_save_first(self):

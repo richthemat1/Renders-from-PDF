@@ -373,7 +373,7 @@ class DesktopServerTests(EditFixture, unittest.TestCase):
         self.assertEqual(self.jobs.snapshot()['history'][0]['images'], 3)
         status, stale, _ = self.request(endpoint, payload, origin=True)
         self.assertEqual(status, 409)
-        self.assertIn('Обновите страницу', stale['error'])
+        self.assertIn('Нажмите «Обновить»', stale['error'])
         invalid = {'revision': 1, 'variants': {'1': [1, 1], '2': [3, 2]}}
         self.assertEqual(self.request(endpoint, invalid, origin=True)[0], 400)
         self.assertEqual(self.request('api/results/unknown/apply', payload, origin=True)[0], 404)

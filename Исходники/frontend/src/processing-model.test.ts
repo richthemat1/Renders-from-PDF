@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureMessage, processingView } from "./processing-model";
+import { canRetry, failureMessage, processingView } from "./processing-model";
 import type { HistoryItem, Snapshot } from "./types";
 
 const result: HistoryItem = {
@@ -108,5 +108,28 @@ describe("processing page state", () => {
 
   it("keeps an unknown interrupted legacy job neutral instead of inventing success", () => {
     expect(processingView(snapshot({ has_job: true, progress: 42, status: "Проверка состояния" }))).toMatchObject({ outcome: "status", title: "Проверка состояния", showJob: true, canOpenResult: false });
+  });
+});
+
+describe("failures of the file itself", () => {
+  it("shows a Russian reason that starts with a one-letter preposition", () => {
+    const reason = "В PDF не найдено отдельных растровых изображений. На страницах может быть только текст или векторная графика.";
+    expect(failureMessage({ reason, action: "retry" })).toContain("нет растровых изображений");
+    expect(failureMessage({ reason: "С папкой что-то не так", action: "choose_output" })).toBe("С папкой что-то не так");
+  });
+  it("offers to process again only when it can help", () => {
+    expect(canRetry({ reason: "В PDF не найдено отдельных растровых изображений.", action: "retry" })).toBe(false);
+    expect(canRetry({ reason: "No /Root object! - Is this really a PDF?", action: "retry" })).toBe(false);
+    expect(canRetry({ reason: "File is encrypted with a password", action: "retry" })).toBe(false);
+    expect(canRetry({ reason: "Путь папки сохранения слишком длинный.", action: "choose_output" })).toBe(true);
+    expect(canRetry({ reason: "Процесс обработки завершился с ошибкой", action: "retry" })).toBe(true);
+  });
+});
+
+describe("completion summary", () => {
+  it("counts variants, not PDFs of other captions", () => {
+    const view = processingView(snapshot({ job: job("complete", { completed: 1 }), current_output: result.output, history: [result],
+      totals: { images: 33, documents: 25, unsigned: 11, review: 2 } }));
+    expect(view.subtitle).toBe("3 варианта готовы · 33 изображения");
   });
 });

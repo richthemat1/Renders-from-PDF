@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, CircleHelp, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan,
+import { ChevronLeft, ChevronRight, CircleHelp, Crop, Image as ImageIcon, Images, LocateFixed, Magnet, Maximize, Minus, Pencil, Plus, Scan, SquareScissors,
   Shapes, SquareDashed, Trash, Trash2, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import { errorText, plural, request } from "./api";
@@ -180,7 +180,7 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
       <div className="library-header">
         <div><h2>Вырезки</h2><span>{count}</span></div>
         {/* An empty section offers the same button in its middle and explains itself there. */}
-        {!!views.length && <button className="btn compact primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>}
+        {!!views.length && <button className="btn compact primary" disabled={saving} onClick={() => onOpen()}><SquareScissors size={16} />Вырезать со страницы…</button>}
       </div>
       {!!views.length && <div className="section-note"><Crop size={16} aria-hidden="true" />
         <p>Части страниц PDF, вырезанные вручную. Вырезка встаёт в вариант вместо картинки, а саму картинку можно вернуть целиком.</p>
@@ -236,7 +236,7 @@ export function CutoutsPage({ views, count, saving, onOpen, onReturn }: {
           <span className="cutouts-empty-icon"><Crop size={20} /></span>
           <strong>Вырезок пока нет</strong>
           <p>Откройте страницы исходного PDF и обведите рамкой нужную часть — например, рендер без схемы, которая лежит поверх него.</p>
-          <button className="btn primary" disabled={saving} onClick={() => onOpen()}><Crop size={16} />Вырезать из страниц…</button>
+          <button className="btn primary" disabled={saving} onClick={() => onOpen()}><SquareScissors size={16} />Вырезать со страницы…</button>
         </div>
       )}
     </section>
@@ -764,7 +764,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
   const parse = (value: string): Target => value === "__keep" ? "keep" : value === "__misc" ? null : value;
 
   return (
-    <Dialog title="Вырезать из страниц PDF" wide className="cut-editor cutout-editor" onClose={onClose}
+    <Dialog title="Вырезки со страниц PDF" wide className="cut-editor cutout-editor" onClose={onClose}
       icon={<Crop size={22} strokeWidth={2.75} absoluteStrokeWidth />}
       headerActions={onHelp && <button className="icon-btn cut-editor-help" aria-label="Справка: Вырезки" title="Как пользоваться: Вырезки"
         onClick={onHelp}><CircleHelp size={18} /></button>}
@@ -806,7 +806,7 @@ export function CutoutEditor({ resultId, title, views, pictureInfo, isLive, star
           </label>
           <span className="cut-spacer" />
           <button className="btn text-action" disabled={!onPage.length} onClick={() => remove(onPage.map((frame) => frame.uid))}>
-            <SquareDashed {...LINE} />Убрать рамки</button>
+            <SquareDashed {...LINE} />Удалить все рамки</button>
         </div>
         <div className="cut-workspace">
           <nav className="cutout-pages" aria-label="Страницы">

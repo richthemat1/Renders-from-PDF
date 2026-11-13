@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import sys
 import time
@@ -424,7 +425,7 @@ def run_states(stand, browser, empty_server, server, history, only):
         def crop():
             open_result(page, server, history, target)
             page.locator('.asset-card').nth(4).click(button='right')
-            page.get_by_role('menuitem', name='Вырезать…').click()
+            page.get_by_role('menuitem', name=re.compile(r'^(Обрезать|Вырезать)…$')).click()
             page.get_by_role('dialog').wait_for(); settle(page, 800)
             s('crop', 'open')
             page.keyboard.press('Escape')
@@ -472,7 +473,7 @@ def run_states(stand, browser, empty_server, server, history, only):
             s('result', 'scan-overview2')
             open_result(page, server, history, target)
             sidebar_button(page, 'Вырезки').click()
-            button = page.get_by_role('button', name='Вырезать из страниц…')
+            button = page.get_by_role('button', name=re.compile(r'^Вырезать (из страниц|со страницы)…$'))
             if button.count():
                 button.first.click(); page.locator('dialog.cutout-editor').wait_for(); settle(page, 1200)
                 s('cutouts', 'editor')

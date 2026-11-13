@@ -1,4 +1,4 @@
-"""«Вырезать…» on a card: the crop takes the card's own place in its variant PDF, also for a copy
+"""«Обрезать…» on a card: the crop takes the card's own place in its variant PDF, also for a copy
 that lives in a variant the user made."""
 from pathlib import Path
 import tempfile
