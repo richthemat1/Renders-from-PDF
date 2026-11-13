@@ -1,6 +1,6 @@
 /* «Обрезать…»: one frame over one picture. The frame and its handles are those of the page editor. */
 .crop-dialog .crop-note { margin: 0 0 12px; color: #556377; font-size: var(--text-sm); line-height: 1.45; }
-.crop-area { display: flex; justify-content: center; padding: 14px; border: 1px solid #e3e7ee; border-radius: 10px; background: #f4f6f9; }
+.crop-area { display: flex; justify-content: center; padding: 14px; border: 1px solid var(--gray-300); border-radius: 10px; background: var(--gray-50); }
 .crop-stage { position: relative; flex-shrink: 0; overflow: hidden; background: var(--gray-0); box-shadow: 0 3px 16px #18202e12;
   user-select: none; touch-action: none; }
 .crop-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
@@ -12,7 +12,7 @@
 /* The heading as in the page editor: the mark at the left, the title and the picture's name beside it. */
 .dialog.crop-dialog > .dialog-heading { align-items: center; gap: 14px; }
 .crop-dialog .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px;
-  background: #f4f3ff; color: var(--gray-500); }
+  background: var(--accent-100); color: var(--gray-500); }
 .crop-dialog > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0;
   text-align: left; }
 .crop-dialog > .dialog-heading h2 { padding: 0; }
