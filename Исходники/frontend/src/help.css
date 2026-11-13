@@ -23,7 +23,7 @@
 }
 .dialog.help-center:not(.preview-dialog) .dialog-heading h2 {
   flex: 1;
-  font-size: 17px;
+  font-size: var(--text-lg);
   line-height: 24px;
 }
 .dialog.help-center .dialog-icon {
@@ -212,8 +212,8 @@
   border-radius: var(--radius-sm);
   background: var(--gray-50);
   color: #283241;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: var(--text-sm);
+  font-weight: 600;
   line-height: 20px;
   white-space: nowrap;
 }
@@ -243,7 +243,7 @@
   border: 0;
   background: none;
   color: var(--accent-600);
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
@@ -278,7 +278,7 @@
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
 }
@@ -352,7 +352,7 @@
 .help-center .help-keymap dd {
   flex-shrink: 0;
   color: #5d6678;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 20px;
   white-space: nowrap;
 }
@@ -404,7 +404,7 @@
   background: var(--gray-0);
   color: #3a49b3;
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 600;
   text-align: left;
   transition: background-color 0.15s, border-color 0.15s;
 }
@@ -454,7 +454,7 @@
   background: var(--gray-50);
   color: var(--gray-600);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 16px;
   overflow: hidden;
 }
@@ -908,7 +908,7 @@
   color: #30313d;
 }
 .help-center .hf-zoom b {
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .help-center .hf-zoom i {

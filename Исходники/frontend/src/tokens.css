@@ -63,6 +63,8 @@
   --text-lg: 16px;
   --text-xl: 18px;
   --text-2xl: 22px;
+  /* Page titles (h1 of every page) and the large totals of processing. */
+  --text-page: clamp(24px, 2vw, 28px);
 
   /* Radii */
   --radius-xs: 4px;

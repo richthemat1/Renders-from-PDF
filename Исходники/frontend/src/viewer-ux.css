@@ -416,7 +416,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
     margin-bottom: 18px;
   }
   .viewer-content .viewer-heading h1 {
-    font-size: 24px;
+    font-size: var(--text-2xl);
   }
   .viewer-content .stats {
     display: flex;

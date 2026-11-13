@@ -26,7 +26,7 @@
 .app-shell > .sidebar .brand strong {
   color: var(--sidebar-ink);
   font-size: var(--text-lg);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 22px;
   letter-spacing: -.015em;
   white-space: nowrap;
@@ -54,7 +54,7 @@
   padding: 0 12px;
   color: var(--sidebar-muted);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 16px;
   letter-spacing: .035em;
 }
@@ -73,7 +73,7 @@
   color: var(--sidebar-ink);
   font-size: var(--text-sm);
   line-height: 20px;
-  font-weight: 450;
+  font-weight: 400;
 }
 
 .app-shell > .sidebar .project-link + .project-link {
@@ -111,7 +111,7 @@
   background: var(--gray-800);
   color: var(--gray-400);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 18px;
 }
 
@@ -123,7 +123,7 @@
 .app-shell > .sidebar .project-link.active {
   background: var(--sidebar-selected);
   color: var(--accent-200);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .app-shell > .sidebar .project-link.active::before {
@@ -449,7 +449,7 @@
   background: #3b4255;
   color: #c9cfe0;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 @keyframes sidebar-tooltip-in {
@@ -475,7 +475,7 @@
   color: var(--sidebar-muted);
   font: inherit;
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 16px;
   letter-spacing: .035em;
   text-transform: uppercase;
@@ -489,7 +489,7 @@
 
 .app-shell > .sidebar .nav-group-toggle > b {
   margin-left: auto;
-  font-weight: 650;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -771,6 +771,6 @@
 }
 
 .app-shell.is-sidebar-collapsed > .sidebar .project-link.is-subvariant .variant-dot > i {
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: -.02em;
 }

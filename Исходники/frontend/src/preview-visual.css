@@ -36,7 +36,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 700;
   line-height: 1.3;
 }

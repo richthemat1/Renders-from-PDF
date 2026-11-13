@@ -4,7 +4,7 @@
 .collage-card.cutout-card .collage-frame.cutout-card-frame b { border: 2px solid var(--gray-0); background: var(--accent-500); }
 .cutouts-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 24px; border: 1px solid var(--line);
   border-radius: 14px; background: var(--gray-0); text-align: center; }
-.cutouts-empty strong { color: var(--ink); font-size: 15px; }
+.cutouts-empty strong { color: var(--ink); font-size: var(--text-md); }
 .cutouts-empty p { max-width: 520px; margin: 0; color: var(--muted); font-size: var(--text-xs); line-height: 18px; }
 .cutouts-empty .btn { margin-top: 4px; }
 .cutouts-empty-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-2xl); background: var(--gray-100); color: var(--gray-500); }
@@ -16,15 +16,15 @@
 .cutout-editor .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; background: var(--accent-100);
   color: var(--gray-500); }
 .cutout-editor > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 0; }
-.cutout-editor > .dialog-heading h2 { padding: 0; color: var(--gray-900); font-size: 20px; font-weight: 700; line-height: normal; }
+.cutout-editor > .dialog-heading h2 { padding: 0; color: var(--gray-900); font-size: var(--text-xl); font-weight: 700; line-height: normal; }
 .cutout-editor .cut-editor-subtitle { display: flex; align-items: center; gap: 12px; margin: 0 !important; color: var(--gray-500) !important;
-  font-size: 12px !important; line-height: normal; }
+  font-size: var(--text-xs) !important; line-height: normal; }
 .cutout-editor .cut-editor-subtitle span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cutout-editor .cut-editor-subtitle i { flex-shrink: 0; width: 3px; height: 3px; border-radius: 50%; background: #939ba9; }
 .cutout-editor > .dialog-heading .icon-btn { width: 32px; height: 32px; margin: 0; color: var(--gray-500); }
 .cutout-loading { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 32px;
   color: var(--muted); text-align: center; }
-.cutout-loading strong { color: var(--ink); font-size: 15px; }
+.cutout-loading strong { color: var(--ink); font-size: var(--text-md); }
 .cutout-loading p { max-width: 520px; margin: 0; }
 
 /* Tools */
@@ -55,7 +55,7 @@
 .cutout-pages { display: flex; flex: 0 0 128px; flex-direction: column; min-height: 0; border-right: 1px solid var(--gray-300); background: var(--gray-25); }
 .cutout-pages h3 { display: flex; align-items: baseline; justify-content: space-between; margin: 0; padding: 18px 12px 0; color: var(--gray-900);
   font-size: var(--text-xs); font-weight: 700; }
-.cutout-pages h3 span { color: var(--gray-500); font-size: 11px; font-weight: 400; }
+.cutout-pages h3 span { color: var(--gray-500); font-size: var(--text-xs); font-weight: 400; }
 .cutout-pages ol { display: flex; flex-direction: column; gap: 21px; margin: 0; padding: 21px 12px 18px; overflow: auto; overscroll-behavior: contain;
   list-style: none; }
 .cutout-pages button { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0; background: transparent;
@@ -68,7 +68,7 @@
 .cutout-pages button:focus-visible { outline: none; }
 .cutout-pages button:focus-visible .cutout-sheet { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .cutout-sheet-caption { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 600; }
-.cutout-sheet-caption b { padding: 1px 6px; border-radius: var(--radius-md); background: #6260da; color: var(--gray-0); font-size: 11px; font-weight: 700; line-height: 15px; }
+.cutout-sheet-caption b { padding: 1px 6px; border-radius: var(--radius-md); background: #6260da; color: var(--gray-0); font-size: var(--text-xs); font-weight: 700; line-height: 15px; }
 
 /* Page */
 .cutout-center { display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; padding-bottom: 12px; background: var(--gray-100); }
@@ -80,7 +80,7 @@
 .cutout-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cutout-found { position: absolute; box-sizing: border-box; border: 1px dashed #8b95a5; border-radius: var(--radius-xs); pointer-events: none; }
 .cutout-found .collage-chip { position: absolute; left: -1px; bottom: calc(100% + 4px); box-sizing: border-box; max-width: calc(100% + 2px);
-  min-height: 20px; padding: 1px 6px; font-size: 11px; white-space: nowrap; pointer-events: auto; }
+  min-height: 20px; padding: 1px 6px; font-size: var(--text-xs); white-space: nowrap; pointer-events: auto; }
 .cutout-found .collage-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cutout-frame { position: absolute; z-index: 2; box-sizing: border-box; border: 1.5px solid #6260da; border-radius: 2px; background: #6260da05;
   cursor: move; }
@@ -93,7 +93,7 @@
    pictures, which stand over their top edges. */
 .cutout-frame-target { position: absolute; bottom: 7px; left: 7px; display: inline-flex; align-items: center; gap: 5px; box-sizing: border-box;
   max-width: calc(100% - 14px); height: 20px; padding: 0 6px; border: 1px solid var(--gray-300); border-radius: var(--radius-xs); background: #ffffffeb;
-  color: var(--gray-900); font-size: 11px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+  color: var(--gray-900); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; pointer-events: none; }
 .cutout-frame-target > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .cutout-handle { position: absolute; box-sizing: border-box; width: 10px; height: 10px; margin: -6px 0 0 -6px; border: 2px solid var(--accent-500);
   border-radius: 2px; background: var(--gray-0); }
@@ -106,7 +106,7 @@
 .cutout-handle.sw { left: 0; top: 100%; cursor: nesw-resize; }
 .cutout-handle.w { left: 0; top: 50%; cursor: ew-resize; }
 .cutout-callout { z-index: 4; box-sizing: border-box; height: 29px; margin: 0 0 0 34px; padding: 0 10px; border-radius: var(--radius-sm); background: #4946bd;
-  color: #e4e2ff; font-size: 11px; }
+  color: #e4e2ff; font-size: var(--text-xs); }
 .cutout-callout b { color: var(--gray-0); font-weight: 700; }
 .cutout-callout.above { margin-bottom: 9px; }
 .cutout-callout.below { margin-top: 9px; }
@@ -131,7 +131,7 @@
 .cutout-group + .cutout-group { margin-top: 10px; }
 .cutout-group h4 { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 2px; color: var(--gray-500); }
 .cutout-group h4 b { font-size: var(--text-xs); font-weight: 700; }
-.cutout-group h4 span { font-size: 11px; font-weight: 400; }
+.cutout-group h4 span { font-size: var(--text-xs); font-weight: 400; }
 /* A short row — thumbnail, number and where the cutout goes — so a dozen fit in sight; the frame in hand opens its row
    with the controls. The whole row is a button under its content; only the controls of an open row take the pointer. */
 .cutout-row { position: relative; display: flex; flex-shrink: 0; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--gray-200);
@@ -172,7 +172,7 @@
 .cutout-warning { display: inline-flex; align-items: center; gap: 4px; color: #8a5a12 !important; }
 .cutout-kind-note { display: flex; gap: 8px; padding: 4px 2px; color: var(--gray-500); }
 .cutout-kind-note > svg { flex-shrink: 0; }
-.cutout-kind-note p { display: flex; flex-direction: column; gap: 4px; margin: 0 !important; color: var(--gray-500) !important; font-size: 11px; line-height: 1.6; }
+.cutout-kind-note p { display: flex; flex-direction: column; gap: 4px; margin: 0 !important; color: var(--gray-500) !important; font-size: var(--text-xs); line-height: 1.6; }
 .cutout-kind-note b { font-weight: 600; line-height: normal; }
 
 /* Footer */
@@ -212,7 +212,7 @@
 @media (max-height: 720px) {
   .dialog.cutout-editor > .dialog-heading { height: 60px; padding-block: 0; }
   .cutout-editor .dialog-icon { width: 32px; height: 32px; }
-  .cutout-editor > .dialog-heading h2 { font-size: 17px; }
+  .cutout-editor > .dialog-heading h2 { font-size: var(--text-lg); }
   .cutout-editor .cut-footer { height: 60px; }
   .cutout-editor .cut-footer p span { display: none; }
   .cutout-editor .cut-hints p:not(.cut-note) { display: none; }

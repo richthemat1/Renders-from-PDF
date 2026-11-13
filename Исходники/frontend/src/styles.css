@@ -90,15 +90,15 @@ p {
   margin: 0;
 }
 h1 {
-  font-size: clamp(22px, 2.1vw, 28px);
+  font-size: var(--text-page);
   line-height: 1.3;
   letter-spacing: -0.025em;
-  font-weight: 750;
+  font-weight: 700;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
 h2 {
-  font-size: 17px;
+  font-size: var(--text-lg);
   letter-spacing: -0.015em;
   line-height: 1.4;
 }
@@ -187,7 +187,7 @@ html:has(.is-resizing-sidebar) * {
 }
 .brand strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--text-md);
   color: white;
   letter-spacing: -0.015em;
 }
@@ -348,7 +348,7 @@ html:has(.is-resizing-sidebar) * {
 }
 .topbar-title {
   font-size: var(--text-main);
-  font-weight: 650;
+  font-weight: 600;
   color: #526076;
 }
 .topbar-actions {
@@ -423,7 +423,7 @@ kbd {
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
   transition:
@@ -504,7 +504,7 @@ kbd {
   background: transparent;
   color: var(--accent-dark);
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: 600;
 }
 .text-btn:hover:not(:disabled) {
   text-decoration: underline;
@@ -558,7 +558,7 @@ kbd {
   margin-bottom: 18px;
 }
 .upload-zone h2 {
-  font-size: 20px;
+  font-size: var(--text-xl);
 }
 .upload-zone p {
   color: var(--gray-500);
@@ -590,7 +590,7 @@ kbd {
   white-space: nowrap;
 }
 .destination strong {
-  font-weight: 550;
+  font-weight: 600;
 }
 .job-panel {
   background: white;
@@ -605,7 +605,7 @@ kbd {
   gap: var(--space-4);
 }
 .section-title h2 {
-  font-size: 15px;
+  font-size: var(--text-md);
 }
 .progress-track {
   height: 5px;
@@ -639,7 +639,7 @@ kbd {
   border: 0;
 }
 .job-totals strong {
-  font-size: 26px;
+  font-size: var(--text-page);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -724,7 +724,7 @@ summary {
 }
 .history-name strong {
   display: block;
-  font-weight: 650;
+  font-weight: 600;
   font-size: var(--text-main);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -824,7 +824,7 @@ fieldset {
 }
 .setting-option strong {
   font-size: var(--text-main);
-  font-weight: 650;
+  font-weight: 600;
 }
 .setting-option small {
   display: block;
@@ -871,7 +871,7 @@ fieldset {
   margin: 0;
 }
 .viewer-heading h1 {
-  font-size: clamp(21px, 1.8vw, 27px);
+  font-size: var(--text-page);
 }
 .stats {
   display: grid;
@@ -897,7 +897,7 @@ fieldset {
 .stats strong {
   display: block;
   font-size: var(--text-2xl);
-  font-weight: 750;
+  font-weight: 700;
   line-height: 1;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
@@ -1097,7 +1097,7 @@ fieldset {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.3;
   background: var(--gray-0);
   color: #3e4857;
@@ -1163,7 +1163,7 @@ fieldset {
 .asset-group {
   display: block;
   font-size: var(--text-small);
-  font-weight: 750;
+  font-weight: 700;
   color: #6e58b5;
   letter-spacing: 0.035em;
   text-transform: uppercase;
@@ -1351,7 +1351,7 @@ fieldset {
 }
 .edit-panel.is-floating .edit-panel-top strong {
   font-size: var(--text-small);
-  font-weight: 500;
+  font-weight: 400;
   white-space: nowrap;
 }
 .edit-panel.is-floating .editor-instructions,
@@ -1639,11 +1639,11 @@ fieldset {
 .select-menu > button {
   min-height: 34px;
   font-size: var(--text-small) !important;
-  font-weight: 550;
+  font-weight: 600;
 }
 .select-menu > button[aria-selected="true"] {
   color: var(--accent-dark);
-  font-weight: 650;
+  font-weight: 600;
 }
 .select-menu > button > svg {
   flex-shrink: 0;
@@ -1722,7 +1722,7 @@ details[open] > summary::after {
   margin-bottom: 20px;
 }
 .empty h2 {
-  font-size: 19px;
+  font-size: var(--text-xl);
 }
 .empty p {
   color: var(--muted);
@@ -1881,7 +1881,7 @@ details[open] > summary::after {
 .form-label {
   display: block;
   font-size: var(--text-small);
-  font-weight: 650;
+  font-weight: 600;
   margin-bottom: 9px;
 }
 .form-input {
@@ -2388,7 +2388,7 @@ kbd,
     padding-inline: 0;
   }
   .job-totals strong {
-    font-size: 23px;
+    font-size: var(--text-2xl);
   }
   .job-totals > div {
     padding-left: var(--space-3);

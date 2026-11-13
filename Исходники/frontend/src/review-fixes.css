@@ -32,7 +32,7 @@
   .viewer-content .breadcrumbs { margin-bottom: 4px; }
   .viewer-content .viewer-heading { flex-wrap: nowrap; align-items: center; gap: 12px; margin-bottom: 0; }
   .viewer-content .viewer-heading > div { min-width: 0; }
-  .viewer-content .viewer-heading h1 { font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .viewer-content .viewer-heading h1 { font-size: var(--text-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .viewer-content .viewer-heading p { margin-top: 4px; font-size: var(--text-xs); }
   .viewer-content .viewer-heading > .btn { flex-shrink: 0; min-height: 34px; height: 34px; }
   .viewer-content .edit-panel:not(.is-floating) .edit-panel-top,
