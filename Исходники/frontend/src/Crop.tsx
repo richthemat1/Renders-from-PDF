@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Crop as CropIcon } from "lucide-react";
 import { Dialog } from "./components";
 import type { Box } from "./editor";
@@ -64,12 +64,30 @@ export function CropDialog({ title, src, size, box, busy, onApply, onClose }: {
   function end(event: ReactPointerEvent) {
     if (drag.current?.pointer === event.pointerId) drag.current = null;
   }
+  /** The frame from the keyboard: arrows move it, Ctrl+arrows the right and bottom edges, Alt+arrows the left and
+   * top edges, Shift takes larger steps, Enter crops. */
+  function key(event: ReactKeyboardEvent) {
+    if (busy) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (!unchanged) onApply(frame);
+      return;
+    }
+    const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const direction = arrows[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const step = Math.max(1, Math.round(Math.max(size[0], size[1]) / (event.shiftKey ? 20 : 200)));
+    const handle: Handle | null = event.ctrlKey ? (direction[0] ? "e" : "s") : event.altKey ? (direction[0] ? "w" : "n") : null;
+    setFrame((current) => movedBox(current, handle, direction[0] * step, direction[1] * step, size));
+  }
   const share = (value: number, side: number) => `${value / side * 100}%`;
   return (
-    <Dialog title="Обрезать изображение" subtitle={title} icon={<CropIcon size={18} />} wide busy={busy}
+    <Dialog title="Обрезать изображение" subtitle={<p className="crop-subtitle">{title}</p>} icon={<CropIcon size={18} />} wide busy={busy}
       className="crop-dialog" onClose={onClose}>
-      <p className="crop-note">Потяните рамку за края: в варианте останется то, что внутри неё. Обрезанное изображение
-        встанет на место этого и сразу запишется в PDF варианта.</p>
+      <p className="crop-note">Потяните рамку за края или углы: в варианте останется то, что внутри неё. Обрезанное
+        изображение встанет на место этого и сразу запишется в PDF варианта. С клавиатуры: стрелки двигают рамку,
+        Ctrl+стрелки — правый и нижний край, Alt+стрелки — левый и верхний, с Shift — крупнее, Enter — обрезать.</p>
       <div className="crop-area">
         <div className="crop-stage" ref={stage} style={{ aspectRatio: `${size[0]} / ${size[1]}`,
           width: `min(100%, calc(62vh * ${size[0] / size[1]}))` }}
@@ -77,7 +95,9 @@ export function CropDialog({ title, src, size, box, busy, onApply, onClose }: {
           <img src={src} alt="" draggable={false} />
           <div className="cutout-frame is-selected crop-frame" style={{ left: share(frame[0], size[0]), top: share(frame[1], size[1]),
             width: share(frame[2] - frame[0], size[0]), height: share(frame[3] - frame[1], size[1]) }}
-            onPointerDown={(event) => start(event, null)}>
+            onPointerDown={(event) => start(event, null)}
+            tabIndex={0} data-autofocus role="group" onKeyDown={key}
+            aria-label={`Рамка обрезки: останется ${frame[2] - frame[0]} × ${frame[3] - frame[1]} px. Стрелки двигают рамку, Ctrl и Alt со стрелками — её края.`}>
             {HANDLES.map((handle) => (
               <span key={handle} className={`cutout-handle ${handle}`} aria-hidden="true"
                 onPointerDown={(event) => start(event, handle)} />

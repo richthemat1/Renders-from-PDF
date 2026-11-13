@@ -1,4 +1,4 @@
-/* «Вырезать…»: one frame over one picture. The frame and its handles are those of the page editor. */
+/* «Обрезать…»: one frame over one picture. The frame and its handles are those of the page editor. */
 .crop-dialog .crop-note { margin: 0 0 12px; color: #556377; font-size: 13px; line-height: 1.45; }
 .crop-area { display: flex; justify-content: center; padding: 14px; border: 1px solid #e3e7ee; border-radius: 10px; background: #f4f6f9; }
 .crop-stage { position: relative; flex-shrink: 0; overflow: hidden; background: #fff; box-shadow: 0 3px 16px #18202e12;
@@ -9,3 +9,18 @@
 .crop-footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
 .crop-footer .crop-size { color: #17202b; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .crop-footer .crop-spacer { flex: 1; }
+/* The heading as in the page editor: the mark at the left, the title and the picture's name beside it. */
+.dialog.crop-dialog > .dialog-heading { align-items: center; gap: 14px; }
+.crop-dialog .dialog-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px;
+  background: #f4f3ff; color: #647184; }
+.crop-dialog > .dialog-heading .dialog-heading-copy { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0;
+  text-align: left; }
+.crop-dialog > .dialog-heading h2 { padding: 0; }
+.crop-dialog .crop-subtitle { overflow: hidden; margin: 0; color: #647184; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+/* Handles of 24 px (WCAG 2.5.8) inside the frame's corners and edges: at the picture's edge none is cut off. */
+.crop-stage .cutout-handle { width: 24px; height: 24px; margin: 0; border-width: 3px; border-radius: 4px; }
+.crop-stage .cutout-handle.ne, .crop-stage .cutout-handle.e, .crop-stage .cutout-handle.se { margin-left: -24px; }
+.crop-stage .cutout-handle.n, .crop-stage .cutout-handle.s { margin-left: -12px; }
+.crop-stage .cutout-handle.se, .crop-stage .cutout-handle.s, .crop-stage .cutout-handle.sw { margin-top: -24px; }
+.crop-stage .cutout-handle.e, .crop-stage .cutout-handle.w { margin-top: -12px; }
+.crop-stage .crop-frame:focus-visible { outline: 3px solid #fff; outline-offset: -3px; box-shadow: 0 0 0 9999px #17202b8c, inset 0 0 0 6px var(--focus-ring); }

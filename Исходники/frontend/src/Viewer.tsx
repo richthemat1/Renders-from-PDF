@@ -1007,10 +1007,11 @@ export function Viewer({
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />,
         disabled: !single || removedSet.has(id) || !!row.image.removed },
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} />, disabled: !single },
-      { value: "crop", label: "Обрезать…", icon: <Crop size={16} />, separator: true,
-        disabled: saving || !single || !active.length },
-      { value: "turn", label: "Повернуть", icon: <RotateCw size={16} />, disabled: saving || !active.length,
-        children: TURN_ITEMS },
+      // Both are written to the PDF at once: with edits waiting for «Сохранить» they are off and say why.
+      { value: "crop", label: dirty ? "Обрезать… — сначала сохраните правки" : "Обрезать…", icon: <Crop size={16} />, separator: true,
+        disabled: saving || dirty || !single || !active.length },
+      { value: "turn", label: dirty ? "Повернуть — сначала сохраните правки" : "Повернуть", icon: <RotateCw size={16} />,
+        disabled: saving || dirty || !active.length, children: TURN_ITEMS },
     ];
     if (editing) items.push(
       { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true,
@@ -1087,8 +1088,8 @@ export function Viewer({
       { value: "pdf", label: "Открыть готовый PDF", icon: <FileText size={16} />, separator: true,
         disabled: removedNow || !!row.image.removed },
       { value: "caption", label: "Копировать подпись", icon: <ClipboardCopy size={16} /> },
-      { value: "turn", label: "Повернуть", icon: <RotateCw size={16} />, disabled: saving || removedNow || !!row.image.removed,
-        children: TURN_ITEMS },
+      { value: "turn", label: dirty ? "Повернуть — сначала сохраните правки" : "Повернуть", icon: <RotateCw size={16} />,
+        disabled: saving || dirty || removedNow || !!row.image.removed, children: TURN_ITEMS },
     ];
     if (editing) items.push(
       { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />, separator: true, disabled: saving,
@@ -1744,6 +1745,14 @@ export function Viewer({
                 onClick={() => setSourcePage(false)}><Images size={15} />Извлечённое изображение</button>
               <button className="btn compact secondary" aria-pressed={sourcePage}
                 onClick={() => { if (!sourcePage) { setSourcePreview({ key: "" }); setSourcePage(true); } }}><Scan size={15} />Исходная страница {previewRow.image.page}</button>
+            </div>
+            <div className="preview-image-actions" aria-label="Изображение">
+              <ActionMenu label="Повернуть" icon={<RotateCw size={15} />} items={TURN_ITEMS}
+                disabled={saving || dirty || removedSet.has(previewRow.id) || !!previewRow.image.removed}
+                onAction={(value) => void turnImages([previewRow.id], Number(value.slice(5)) as Turn)} />
+              <button className="btn compact secondary" disabled={saving || dirty || removedSet.has(previewRow.id) || !!previewRow.image.removed}
+                title={dirty ? "Обрезка сразу записывается в PDF: сначала сохраните правки" : "Обрезать изображение рамкой на месте"}
+                onClick={() => { const id = previewRow.id; setPreview(null); cropImage(id); }}><Crop size={15} />Обрезать…</button>
             </div>
             {editing && <div className="preview-edit-actions" aria-label="Правки открытого изображения">
               <ActionMenu label="Перенести в вариант" disabled={saving}

@@ -83,6 +83,22 @@ class CropUI(EditFixture, unittest.TestCase):
         self.assertEqual(page_sizes(self.output/'Вариант 3'/'Вариант 3.pdf'), [(600, 400), (600, 400)])
         self.assertEqual(self.errors, [])
 
+    def test_the_frame_works_from_the_keyboard(self):
+        dialog = self.crop_first_card()
+        frame = dialog.locator('.crop-frame')
+        expect(frame).to_be_focused()
+        size = dialog.locator('.crop-size')
+        whole = size.inner_text()
+        # Ctrl+arrow pulls the right edge in, Alt+arrow the top edge down; Enter crops and saves.
+        for _ in range(5):
+            self.page.keyboard.press('Control+ArrowLeft')
+        self.page.keyboard.press('Shift+Alt+ArrowDown')
+        expect(size).not_to_have_text(whole)
+        with self.page.expect_response(lambda response: response.url.endswith('/apply') and response.status == 200):
+            self.page.keyboard.press('Enter')
+        expect(dialog).to_have_count(0)
+        self.assertEqual(self.errors, [])
+
     def test_unsaved_edits_are_saved_first_and_escape_changes_nothing(self):
         before = (self.output/'Вариант 3'/'Вариант 3.pdf').read_bytes()
         dialog = self.crop_first_card()
@@ -94,8 +110,9 @@ class CropUI(EditFixture, unittest.TestCase):
         self.page.locator('.asset-card').nth(1).click(button='right')
         self.page.get_by_role('menuitem', name='Убрать', exact=True).click()
         self.page.locator('.asset-card').first.click(button='right')
-        self.page.get_by_role('menuitem', name='Обрезать…', exact=True).click()
-        expect(self.page.get_by_text('Сначала сохраните или отмените правки', exact=False)).to_be_visible()
+        # Written to the PDF at once: with edits waiting the item is off and says why.
+        expect(self.page.get_by_role('menuitem', name='Обрезать… — сначала сохраните правки', exact=True)).to_be_disabled()
+        self.page.keyboard.press('Escape')
         expect(self.page.get_by_role('dialog', name='Обрезать изображение')).to_have_count(0)
         self.assertEqual(self.errors, [])
 
