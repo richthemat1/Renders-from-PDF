@@ -183,7 +183,7 @@
 .app-shell .sidebar .project-link.is-drop-target {
   background: #5969db42;
   box-shadow: inset 0 0 0 2px #a1acff;
-  color: #fff;
+  color: var(--gray-0);
 }
 .viewer-content .asset-card.is-insertion-target.is-after {
   box-shadow: inset -5px 0 0 var(--accent), 0 0 0 2px #5969db45;
@@ -221,7 +221,7 @@
   height: 28px;
   padding: 0 8px;
   border-radius: 14px;
-  color: #fff;
+  color: var(--gray-0);
   background: var(--accent);
   box-shadow: 0 2px 8px #17202b33;
   font: 700 13px/1 "Manrope Variable", "Segoe UI", sans-serif;
@@ -247,7 +247,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 }
 .viewer-content .stats > button {
   border-color: #dce2ec;
-  background: #fff;
+  background: var(--gray-0);
 }
 .viewer-content .stats > button:hover,
 .viewer-content .stats > button.selected {
@@ -265,8 +265,8 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   color: #556377;
   background: #eef2f8;
   border: 1px solid #dfe6ef;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
   line-height: 18px;
 }
 .viewer-content .section-note > svg {
@@ -278,8 +278,8 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   margin: 0;
 }
 .viewer-content .status-badge.removed {
-  color: #72545f;
-  background: #f4e9ed;
+  color: var(--removed-fg);
+  background: var(--removed-bg);
 }
 .viewer-content .removed-card .asset-image > .cover-button img {
   opacity: 0.85;
@@ -287,7 +287,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 .viewer-content .restore-image {
   width: 100%;
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .viewer-content .asset-card.issue-highlight {
   outline: 3px solid #dfad48;
@@ -303,8 +303,8 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
   gap: 10px;
   align-items: flex-start;
   padding: 12px 0;
-  border-top: 1px solid #e4e8ed;
-  font-size: 12px;
+  border-top: 1px solid var(--gray-200);
+  font-size: var(--text-xs);
 }
 .viewer-content .report-issue-list > li > svg {
   color: #ac7b26;
@@ -325,7 +325,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 }
 .viewer-content .report-issue-list .text-btn {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .viewer-preview-dialog .preview-zoom-tools {
   display: flex;
@@ -338,7 +338,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 .viewer-preview-dialog .preview-zoom-tools > span {
   margin-right: auto;
   color: #67758a;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 .viewer-preview-dialog .preview-zoom-tools > .preview-scale {
   min-width: 42px;
@@ -348,7 +348,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 }
 .viewer-preview-dialog .preview-zoom-tools .text-btn {
   min-width: 54px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 .viewer-preview-dialog .preview-stage {
@@ -429,7 +429,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
     flex: 0 1 auto;
     min-height: 36px;
     padding: 6px 10px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     gap: 6px;
   }
   .viewer-content .stats .stat-icon {
@@ -442,11 +442,11 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
     gap: 5px;
   }
   .viewer-content .stats strong {
-    font-size: 14px;
+    font-size: var(--text-md);
   }
   .viewer-content .stats small {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--text-xs);
   }
   .viewer-content .review-banner {
     padding: 12px 14px;
@@ -499,7 +499,7 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
     margin-left: 27px;
   }
   .viewer-preview-dialog .preview-zoom-tools > span {
-    font-size: 12px;
+    font-size: var(--text-xs);
     max-width: 24ch;
   }
 }
@@ -523,8 +523,8 @@ body.is-card-dragging .app-shell .sidebar .project-link[data-drop-variant]:not(.
 .section-save-bar p {
   flex: 1 1 260px;
   margin: 0;
-  color: #4c5668;
-  font-size: 13px;
+  color: var(--gray-600);
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 .section-save-bar .btn {

@@ -7,7 +7,7 @@
 .viewer-content .asset-title { align-items: flex-start; min-height: 42px; }
 .viewer-content .asset-meta { margin-top: auto; padding-top: 8px; }
 .viewer-content .asset-info .asset-group { min-height: 18px; }
-.viewer-content .clear-selection { flex-shrink: 0; white-space: nowrap; font-size: 12px; }
+.viewer-content .clear-selection { flex-shrink: 0; white-space: nowrap; font-size: var(--text-xs); }
 .viewer-content .clear-selection:disabled { opacity: .45; cursor: default; }
 .preview-taskbar {
   display: flex;
@@ -20,11 +20,11 @@
   border-top: 1px solid var(--line);
 }
 .preview-view-switch, .preview-image-actions, .preview-edit-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.preview-view-switch .btn[aria-pressed="true"] { color: var(--accent-dark); background: #eef1ff; border-color: #b2bbed; }
-.preview-taskbar .btn { min-height: 34px; font-size: 12px; }
-.viewer-preview-dialog .source-preview-state { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 52ch; padding: 20px; color: var(--muted); text-align: center; font-size: 13px; }
+.preview-view-switch .btn[aria-pressed="true"] { color: var(--accent-dark); background: var(--accent-100); border-color: var(--accent-300); }
+.preview-taskbar .btn { min-height: 34px; font-size: var(--text-xs); }
+.viewer-preview-dialog .source-preview-state { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 52ch; padding: 20px; color: var(--muted); text-align: center; font-size: var(--text-sm); }
 .source-preview-state p { margin: 0; line-height: 1.6; }
-.failure-details { margin-block: 8px; font-size: 12px; }
+.failure-details { margin-block: 8px; font-size: var(--text-xs); }
 .failure-details summary { cursor: pointer; color: var(--muted); }
 .failure-details p { overflow-wrap: anywhere; }
 @media (max-height: 800px) {
@@ -33,7 +33,7 @@
   .viewer-content .viewer-heading { flex-wrap: nowrap; align-items: center; gap: 12px; margin-bottom: 0; }
   .viewer-content .viewer-heading > div { min-width: 0; }
   .viewer-content .viewer-heading h1 { font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .viewer-content .viewer-heading p { margin-top: 4px; font-size: 12px; }
+  .viewer-content .viewer-heading p { margin-top: 4px; font-size: var(--text-xs); }
   .viewer-content .viewer-heading > .btn { flex-shrink: 0; min-height: 34px; height: 34px; }
   .viewer-content .edit-panel:not(.is-floating) .edit-panel-top,
   .viewer-content .edit-panel:not(.is-floating) .editor-instructions,
@@ -53,15 +53,15 @@
 @media (max-width: 850px) {
   .preview-taskbar { padding-inline: 12px; }
   .viewer-preview-dialog .preview-header-actions { gap: 8px; }
-  .viewer-preview-dialog .preview-open-pdf { padding-inline: 8px; font-size: 12px; }
+  .viewer-preview-dialog .preview-open-pdf { padding-inline: 8px; font-size: var(--text-xs); }
 }
 @container (max-width: 680px) {
   .viewer-content .selection-summary { gap: 8px; }
   .viewer-content .selection-summary .clear-selection { padding-inline: 4px; }
 }
 .variant-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-.variant-suggestion { min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
-.variant-suggestion:hover { border-color: #b2bbed; background: #f6f7ff; }
-.variant-suggestion.is-chosen { border-color: var(--accent); background: #eef1ff; color: var(--accent-dark); font-weight: 600; }
+.variant-suggestion { min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius-full); background: var(--gray-0); color: var(--ink); font: inherit; font-size: var(--text-xs); cursor: pointer; }
+.variant-suggestion:hover { border-color: var(--accent-300); background: #f6f7ff; }
+.variant-suggestion.is-chosen { border-color: var(--accent); background: var(--accent-100); color: var(--accent-dark); font-weight: 600; }
 .variant-suggestion:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .copy-variant-number .variant-suggestions { margin-bottom: 0; }

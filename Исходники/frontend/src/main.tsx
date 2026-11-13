@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/manrope";
 import { App } from "./App";
+import "./tokens.css";
 import "./styles.css";
 
 class AppBoundary extends React.Component<
