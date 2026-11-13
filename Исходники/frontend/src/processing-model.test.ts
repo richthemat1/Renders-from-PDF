@@ -133,3 +133,16 @@ describe("completion summary", () => {
     expect(view.subtitle).toBe("3 варианта готовы · 33 изображения");
   });
 });
+
+describe("queue with files waiting for a slot", () => {
+  it("lists the files in work and the ones waiting, also beside a single file in work", () => {
+    const view = processingView(snapshot({ busy: true, job: job("processing", {
+      active_files: [{ name: "Первый.pdf", index: 1, total: 3, phase: "Чтение страниц", progress: 40 }],
+      waiting: ["Второй.pdf", "Третий.pdf"] }) }));
+    expect(view.activeFiles.map((file) => file.name)).toEqual(["Первый.pdf"]);
+    expect(view.waiting).toEqual(["Второй.pdf", "Третий.pdf"]);
+  });
+  it("shows no waiting files once the queue is over", () => {
+    expect(processingView(snapshot({ job: job("complete", { waiting: ["Второй.pdf"] }) })).waiting).toEqual([]);
+  });
+});

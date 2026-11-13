@@ -374,6 +374,11 @@
   border-top: 1px solid var(--processing-line);
 }
 
+/* A file waiting for a free slot: listed, but quieter than the files in work. */
+.processing-active-file.is-waiting .processing-file-name {
+  color: var(--processing-muted);
+}
+
 .processing-file-percent {
   flex: none;
   margin-left: auto;

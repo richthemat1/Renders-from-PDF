@@ -128,6 +128,8 @@ class JobService:
                      'warnings': 0, 'errors': 0, 'active_file': None, 'active_files': [], 'outputs': []}
         # Files in work by queue slot; result folders they will take; files of the queue done with.
         self._active, self._reserved, self._handled, self._queue_size = {}, set(), 0, 0
+        # The queue's files and the slots already started: the rest wait, and the window lists them.
+        self._queue_paths, self._started_slots = (), set()
         self._logs = []
         self._pending_paths, self._pending_repeat = (), None
         # Files a stopped queue did not reach, so «Продолжить оставшиеся» needs no new selection.
@@ -297,6 +299,7 @@ class JobService:
             self._busy = True
             self._has_job = True
             self._handled, self._queue_size = 0, len(paths)
+            self._queue_paths, self._started_slots = paths, set()
             self._status, self._detail = 'Подготовка к обработке…', f'В очереди файлов: {len(paths)}'
             limit = self.workers or (parallel_limit() if self.processes else 1)
             # Freeze queue settings; later files still get a fresh unused destination.
@@ -475,6 +478,11 @@ class JobService:
                                       'phase': item['phase'], 'progress': round(item['progress'])} for item in files]
         if files:
             self._job['active_file'] = {key: files[0][key] for key in ('name', 'index', 'total')}
+        waiting = [path.name for slot, path in enumerate(self._queue_paths) if slot not in self._started_slots]
+        if waiting:
+            self._job['waiting'] = waiting
+        else:
+            self._job.pop('waiting', None)
         lines = [f'{item["name"]} · {item["phase"]}' if item['phase'] else item['name'] for item in files]
         if len(files) == 1:
             self._status, self._detail = f'Обработка PDF · {files[0]["index"]} из {files[0]["total"]}', lines[0]
@@ -511,6 +519,7 @@ class JobService:
         """Start one PDF of the queue; a folder that cannot be planned now fails only this file."""
         source = paths[slot]
         with self._lock:
+            self._started_slots.add(slot)
             try:
                 output = self._destination(source, settings)
             except Exception as error:
@@ -668,6 +677,8 @@ class JobService:
                 self._busy, self._found = False, 0
                 self._active.clear()
                 self._job['active_files'] = []
+                # Only a running queue has files waiting; a finished one shows none.
+                self._job.pop('waiting', None)
                 cancelled = self._cancel.is_set()
                 if outputs:
                     # «Открыть результат» opens the last file of the queue, in whatever order the files finished.
@@ -679,7 +690,8 @@ class JobService:
                     self._job['remaining'] = len(self._remaining)
                     self._job['outcome'] = 'cancelled'
                     self._status = f'Остановлено. Готово файлов: {successes} из {len(paths)}'
-                    self._detail = 'Полностью обработанные файлы сохранены. Все результаты доступны в истории.'
+                    self._detail = (f'Готовые результаты ({successes}) — в истории.' if successes else
+                                    'Ни один файл не успел обработаться.')
                 elif successes == len(paths) and not partial:
                     self._job['outcome'] = 'complete'
                     self._status = f'Готово. Обработано файлов: {successes} из {len(paths)}'

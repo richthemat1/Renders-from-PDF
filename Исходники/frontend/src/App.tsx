@@ -192,13 +192,18 @@ export function App() {
     });
   }
   const choose = useCallback(() => {
-    if (!state?.busy && !waiting)
+    // Ctrl+O while a queue runs used to do nothing at all: say why and what to do.
+    if (state?.busy) {
+      notify("Идёт обработка. Новые PDF можно добавить, когда она закончится или после «Остановить обработку».");
+      return;
+    }
+    if (!waiting)
       guard(() => void run(async () => {
         const next = await native("choose_pdfs");
         setState(next);
         setPage("work");
       }));
-  }, [state?.busy, waiting, run, guard]);
+  }, [state?.busy, waiting, run, guard, notify]);
   useEffect(() => {
     const started = () => {
       if (!dirtyRef.current) setPage("work");
@@ -469,7 +474,14 @@ export function App() {
             ? `Новые PDF (${fresh.length}) можно обработать сразу. Для уже обработанных — открыть прежний результат или сделать новую выгрузку; готовые папки сохранятся.`
             : "Можно открыть прежний результат или создать новую выгрузку. Уже готовые папки сохранятся."}</p>
           <ul className="repeat-list">
-            {repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>Обработан {dateLabel(file.finished_at)}</span></li>)}
+            {repeat.files.map((file, index) => <li key={`${file.previous_id}-${index}`}><strong>{file.name}</strong><span>Обработан {dateLabel(file.finished_at)}</span>
+              {/* Several earlier results: each opens on its own, so «Открыть прошлый результат» never guesses which. */}
+              {repeat.files.length > 1 && file.available && <button className="text-btn" disabled={waiting} onClick={() =>
+                void run(async () => {
+                  setState(await confirm(fresh.length ? "new" : false));
+                  const next = await request<Result>("open", { id: file.previous_id });
+                  setResult(next); setPage("viewer");
+                })}>Открыть прошлый результат</button>}</li>)}
             {fresh.map((name, index) => <li key={`new-${index}`} className="is-new"><strong>{name}</strong><span>Новый — ещё не обработан</span></li>)}
           </ul>
           <div className="dialog-choices">
@@ -480,7 +492,7 @@ export function App() {
             <div className="dialog-alternatives">
               {!!fresh.length && <button className="btn secondary" disabled={waiting} onClick={() =>
                 void run(async () => { setState(await confirm(true)); setPage("work"); })}>Обработать все заново</button>}
-              {previous && <button className="btn secondary" disabled={waiting}
+              {previous && repeat.files.length === 1 && <button className="btn secondary" disabled={waiting}
                 title={fresh.length ? "Новые PDF обработаются, пока вы смотрите прежний результат" : undefined} onClick={() =>
                   void run(async () => {
                     setState(await confirm(fresh.length ? "new" : false));

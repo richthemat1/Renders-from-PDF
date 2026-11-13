@@ -102,8 +102,6 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       <button className="btn secondary" onClick={onPrevious} disabled={waiting}><FolderOpen size={16} />Открыть прошлый результат…</button>
     </header>
 
-    {failures}
-
     <div className={`processing-layout${view.showJob && !processing ? " has-next-pdf" : ""}`}>
     <section className={`processing-operation${view.showJob ? ` job-panel is-${view.outcome}` : ""}`} data-outcome={view.outcome} aria-labelledby={view.showJob ? "job-status" : "new-processing-title"}>
       <div className="processing-operation-body">
@@ -118,18 +116,23 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
             </div>
             {processing ? <button className="btn secondary processing-main-action" onClick={onCancel} disabled={waiting || state.cancelling}>
               <CircleStop size={16} />{state.cancelling ? "Останавливаю…" : "Остановить обработку"}
-            </button> : view.remaining > 0 ? <button className="btn primary processing-main-action" onClick={onResume} disabled={waiting}>
-              <Play size={16} />Продолжить оставшиеся ({view.remaining})
+            </button> : view.remaining > 0 ? <button className="btn primary processing-main-action" onClick={onResume} disabled={waiting}
+              title="Файлы, которые были в работе при остановке, обработаются с начала">
+              <Play size={16} />Обработать оставшиеся ({view.remaining})
             </button> : view.canOpenResult && <button className={`btn ${complete ? "primary" : "secondary"} processing-main-action`} disabled={waiting} onClick={onOpenResult}>
-              <ArrowUpRight size={16} />{complete ? "Открыть результат" : "Открыть сохранённый результат"}
+              <ArrowUpRight size={16} />{complete ? view.batch.length > 1 ? "Открыть последний готовый" : "Открыть результат" : "Открыть сохранённый результат"}
             </button>}
           </div>
 
-          {processing && view.activeFiles.length > 0 ? <ul className="processing-file-panel processing-file-list" aria-label="Файлы в работе">
+          {processing && (view.activeFiles.length > 0 || view.waiting.length > 0) ? <ul className="processing-file-panel processing-file-list" aria-label="Файлы очереди">
             {view.activeFiles.map((file) => <li className="processing-active-file" key={file.index}>
               <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{file.name}</span>
                 <span className="processing-file-percent">{file.progress}%</span></p>
               {file.phase && <p className="processing-phase">{file.phase}</p>}
+            </li>)}
+            {view.waiting.map((name, index) => <li className="processing-active-file is-waiting" key={`waiting-${index}`}>
+              <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{name}</span>
+                <span className="processing-file-percent">в очереди</span></p>
             </li>)}
           </ul> : processing ? (view.fileName || view.phase) && <div className="processing-file-panel">
             {view.fileName && <p className="processing-file-line"><FileText size={17} /><span className="processing-file-name">{view.fileName}</span></p>}
@@ -196,6 +199,9 @@ export function ProcessingPage({ state, waiting, fileDrag, onChoose, onPrevious,
       <UploadZone fileDrag={fileDrag} waiting={waiting} quiet={complete || view.remaining > 0} onChoose={onChoose} />
     </aside>}
     </div>
+
+    {/* Below the new-PDF zone: a long list of failures must not push «Выбрать PDF» off a low window. */}
+    {failures}
 
     {state.logs.length > 0 && <section className="events processing-events" aria-label="События обработки">
       <details open={eventsOpen}>

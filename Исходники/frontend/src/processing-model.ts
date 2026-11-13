@@ -54,6 +54,8 @@ export function processingView(state: Snapshot) {
   const activeFile = outcome === "processing" ? state.job?.active_file ?? null : null;
   // Several PDFs at once each show their own stage; a single file keeps the one line of name and stage.
   const activeFiles = outcome === "processing" ? state.job?.active_files ?? [] : [];
+  // Files waiting for a free slot are listed too: a queue of three shows all three, not two of them.
+  const waiting = outcome === "processing" ? state.job?.waiting ?? [] : [];
   const fileName = outcome === "processing" ? activeFile?.name ?? null : currentRecord?.name ?? null;
   const phase = activeFile && state.detail === activeFile.name
     ? ""
@@ -91,7 +93,8 @@ export function processingView(state: Snapshot) {
     currentRecord,
     batch,
     activeFile,
-    activeFiles: activeFiles.length > 1 ? activeFiles : [],
+    activeFiles: activeFiles.length > 1 || waiting.length ? activeFiles : [],
+    waiting,
     fileName,
     phase,
     canOpenResult: Boolean(state.current_output),

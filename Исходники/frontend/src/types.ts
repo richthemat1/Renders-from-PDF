@@ -198,6 +198,8 @@ export interface Snapshot {
     outputs?: string[];
     /** Files a stopped queue did not finish, which «Продолжить оставшиеся» processes. */
     remaining?: number;
+    /** Files of the running queue not started yet, in queue order. */
+    waiting?: string[];
   };
   cancelling: boolean;
   closing: boolean;

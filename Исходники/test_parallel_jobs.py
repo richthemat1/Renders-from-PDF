@@ -49,6 +49,18 @@ class ParallelQueue(unittest.TestCase):
         self.assertFalse(snapshot['busy'], 'The queue did not finish')
         return snapshot
 
+    def test_files_waiting_for_a_slot_are_listed_until_they_start(self):
+        first, second, third = self.source('Первый'), self.source('Второй'), self.source('Третий')
+        entered, release = self.gate(first, second, third)
+        self.jobs.start([first, second, third])
+        self.assertTrue(entered[first].wait(10))
+        waiting = self.jobs.snapshot()['job']['waiting']
+        # Two slots, or one when memory is short: either way the last file waits, in queue order.
+        self.assertIn(waiting, ([third.name], [second.name, third.name]))
+        for event in release.values():
+            event.set()
+        self.assertNotIn('waiting', self.finish()['job'])
+
     def test_two_files_run_at_once_and_results_keep_queue_order(self):
         first, second = self.source('Первый'), self.source('Второй')
         entered, release = self.gate(first, second)
