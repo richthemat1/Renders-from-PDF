@@ -14,6 +14,15 @@ from photo_native import app_icon_path, clipboard_text, configure_logging, enabl
 LOGGER = logging.getLogger('pdf-photos')
 
 
+def dev_overrides():
+    """Development-only hooks for UI audits; a frozen release build ignores them."""
+    if getattr(sys, 'frozen', False):
+        return None, None
+    port = os.environ.get('PDF_PHOTOS_CDP_PORT', '').strip()
+    state = os.environ.get('PDF_PHOTOS_STATE', '').strip()
+    return (int(port) if port else None), (Path(state) if state else None)
+
+
 def open_local(path):
     path = Path(path).resolve(strict=True)
     if sys.platform == 'win32':
@@ -296,6 +305,8 @@ def bind_file_drop(window, on_drop):
 
 def open_desktop(initial_files=(), state_path=None, debug=False):
     enable_dpi_awareness()
+    cdp_port, dev_state = dev_overrides()
+    state_path = state_path or dev_state
     log_path = configure_logging()
     assets = frontend_path()
     if not (assets / 'index.html').is_file():
@@ -369,6 +380,8 @@ def open_desktop(initial_files=(), state_path=None, debug=False):
                 jobs.prepare(initial_files)
         # Force modern Chromium: the old mshtml fallback cannot run the React editor.
         icon = app_icon_path()
+        if cdp_port:
+            webview.settings['REMOTE_DEBUGGING_PORT'] = cdp_port
         webview.start(start_initial, gui='edgechromium', debug=debug, private_mode=True,
                       icon=str(icon) if icon else None)
         return 0
