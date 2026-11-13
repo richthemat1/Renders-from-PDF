@@ -61,7 +61,7 @@
   min-height: 36px;
   padding: 0 14px;
   gap: 8px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -74,7 +74,7 @@
   width: 36px;
   height: 36px;
   margin: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
 }
 .viewer-preview-dialog .preview-stage {
   position: relative;
@@ -85,7 +85,7 @@
   padding: 0;
   border-radius: 0;
   border-block: 1px solid var(--line);
-  background: #f6f7f9;
+  background: var(--gray-50);
   overflow: hidden;
 }
 .viewer-preview-dialog .preview-image-scroll {
@@ -95,9 +95,9 @@
   height: auto;
   min-width: 0;
   min-height: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
-.viewer-preview-dialog .preview-image-canvas img { border-radius: 3px; }
+.viewer-preview-dialog .preview-image-canvas img { border-radius: var(--radius-xs); }
 .viewer-preview-dialog .preview-page-button {
   position: absolute;
   top: calc(50% - 24px);
@@ -140,7 +140,7 @@
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: var(--radius-md);
 }
 .viewer-preview-dialog .preview-zoom-tools > .preview-scale {
   width: 68px;
@@ -195,7 +195,7 @@
   font-size: var(--text-sm);
   line-height: 1.6;
 }
-.viewer-preview-dialog .preview-explanation .preview-fallback { color: #85601e; }
+.viewer-preview-dialog .preview-explanation .preview-fallback { color: var(--review-fg); }
 .viewer-preview-dialog .preview-shortcuts {
   position: absolute;
   width: 1px;
@@ -214,7 +214,7 @@
   max-width: min(30%, 280px);
   min-height: 28px;
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--accent-100);
   color: var(--accent-dark);
   font-size: var(--text-xs);
@@ -249,7 +249,7 @@
   .viewer-preview-dialog .preview-open-pdf { width: 36px; padding: 0; justify-content: center; }
   .viewer-preview-dialog .preview-source-meta { gap: 2px 6px; }
   .viewer-preview-dialog .preview-image-scroll { inset: 12px 48px 64px; }
-  .viewer-preview-dialog .preview-page-button { width: 32px; height: 36px; border-radius: 9px; }
+  .viewer-preview-dialog .preview-page-button { width: 32px; height: 36px; border-radius: var(--radius-md); }
   .viewer-preview-dialog .preview-previous { left: 8px; }
   .viewer-preview-dialog .preview-next { right: 8px; }
   .viewer-preview-dialog .preview-footer { flex-wrap: wrap; min-height: 112px; gap: 8px; padding: 16px; }
