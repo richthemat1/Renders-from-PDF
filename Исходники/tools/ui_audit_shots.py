@@ -453,7 +453,8 @@ def run_states(stand, browser, empty_server, server, history, only):
                 page.mouse.wheel(0, 700)
             settle(page, 600)
             s('edit', 'dock-floating')
-            page.mouse.wheel(0, -5000)
+            # The wheel scrolls smoothly and may still move during the shot: jump back at once.
+            page.evaluate('window.scrollTo(0, 0)'); settle(page, 300)
             cards.nth(2).get_by_role('checkbox').check()
             page.get_by_role('button', name='Новый вариант').first.click()
             settle(page, 400); s('dialog', 'new-variant'); page.keyboard.press('Escape')
