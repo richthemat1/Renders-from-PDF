@@ -101,6 +101,15 @@
   --shadow-4: 0 16px 48px #28243f1a, 0 2px 6px #28243f08;
   --shadow-5: 0 24px 80px #28243f2e;
 
+  /* Motion: the same steps as MOTION in motion.tsx */
+  --dur-instant: 90ms;
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --dur-slower: 340ms;
+  --ease-out: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-in: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+
   /* Layers; dialogs live in the top layer through showModal() and take none */
   --z-topbar: 20;
   --z-dock: 25;

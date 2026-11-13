@@ -83,7 +83,7 @@
   font-weight: 600;
   line-height: 18px;
   text-align: left;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color var(--dur-fast), color var(--dur-fast);
 }
 .help-center .help-tab {
   width: 100%;
@@ -406,7 +406,7 @@
   font-size: var(--text-sm);
   font-weight: 600;
   text-align: left;
-  transition: background-color 0.15s, border-color 0.15s;
+  transition: background-color var(--dur-fast), border-color var(--dur-fast);
 }
 .help-center .help-next:hover {
   border-color: #c9d0f3;

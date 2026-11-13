@@ -186,7 +186,7 @@
 
 /* Gallery hooks */
 .asset-image .cutout-cut-button { position: absolute; left: 50%; bottom: 12px; z-index: 3; transform: translateX(-50%); min-height: 34px; opacity: 0;
-  transition: opacity .12s; }
+  transition: opacity var(--dur-fast); }
 .asset-card:hover .cutout-cut-button, .asset-card:focus-within .cutout-cut-button { opacity: 1; }
 
 @media (max-width: 1100px) {

@@ -18,12 +18,15 @@ export interface Motion {
   deferred?: boolean;
 }
 
+/** Durations in seconds, the same steps as --dur-* in tokens.css. */
+export const MOTION = { instant: 0.09, fast: 0.12, base: 0.18, slow: 0.28, slower: 0.34 };
+
 // Opacity rather than GSAP's autoAlpha: a field in a window must take the focus while the window fades in.
 export const TOAST_MOTION: Motion = {
-  hidden: { opacity: 0, y: 16, scale: 0.98 }, shown: { opacity: 1, y: 0, scale: 1 }, enter: 0.34, exit: 0.22,
+  hidden: { opacity: 0, y: 16, scale: 0.98 }, shown: { opacity: 1, y: 0, scale: 1 }, enter: MOTION.slower, exit: MOTION.base,
 };
 export const DIALOG_MOTION: Motion = {
-  hidden: { opacity: 0, y: 12, scale: 0.98 }, shown: { opacity: 1, y: 0, scale: 1 }, enter: 0.28, exit: 0.18,
+  hidden: { opacity: 0, y: 12, scale: 0.98 }, shown: { opacity: 1, y: 0, scale: 1 }, enter: MOTION.slow, exit: MOTION.base,
 };
 const opensUp = (target: HTMLElement) => target.dataset.side === "top";
 export const MENU_MOTION: Motion = {
@@ -32,16 +35,22 @@ export const MENU_MOTION: Motion = {
     y: (_: number, target: HTMLElement) => (opensUp(target) ? 4 : -4),
     transformOrigin: (_: number, target: HTMLElement) => (opensUp(target) ? "50% 100%" : "50% 0%"),
   },
-  shown: { opacity: 1, scale: 1, y: 0 }, enter: 0.18, exit: 0.12, deferred: true,
+  shown: { opacity: 1, scale: 1, y: 0 }, enter: MOTION.base, exit: MOTION.fast, deferred: true,
 };
 export const DOCK_MOTION: Motion = {
-  hidden: { opacity: 0, y: 8 }, shown: { opacity: 1, y: 0 }, enter: 0.22, exit: 0.18,
+  hidden: { opacity: 0, y: 8 }, shown: { opacity: 1, y: 0 }, enter: MOTION.base, exit: MOTION.base,
 };
 export const BANNER_MOTION: Motion = {
-  hidden: { yPercent: 100 }, shown: { yPercent: 0 }, enter: 0.3, exit: 0.22,
+  hidden: { yPercent: 100 }, shown: { yPercent: 0 }, enter: MOTION.slow, exit: MOTION.base,
 };
 export const COLLAPSE_MOTION: Motion = {
-  hidden: { height: 0, opacity: 0 }, shown: { height: "auto", opacity: 1 }, enter: 0.26, exit: 0.2, appear: false,
+  hidden: { height: 0, opacity: 0 }, shown: { height: "auto", opacity: 1 }, enter: MOTION.slow, exit: MOTION.base, appear: false,
+};
+
+/** A group over a long list (the review summary above the gallery): it fades instead of growing, so the cards below
+ * move once instead of being laid out again on every frame. */
+export const FADE_COLLAPSE_MOTION: Motion = {
+  hidden: { opacity: 0 }, shown: { opacity: 1 }, enter: MOTION.base, exit: MOTION.fast, appear: false,
 };
 
 const ANIMATED = "opacity,transform,transformOrigin,height,overflow,pointerEvents";
@@ -145,9 +154,10 @@ export function MotionDiv({ motion, ...props }: { motion: Motion } & HTMLAttribu
 
 /** A group that slides open and shut instead of appearing at once, and is `hidden` once shut.
  * Its class goes on an inner block, so padding does not show while the height animates. */
-export function Collapsible({ open, className, children, ...props }: { open: boolean } & HTMLAttributes<HTMLDivElement>) {
+export function Collapsible({ open, className, children, motion = COLLAPSE_MOTION, ...props }:
+  { open: boolean; motion?: Motion } & HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement>(null);
-  const shown = useAnimatedOpen(open, ref, COLLAPSE_MOTION);
+  const shown = useAnimatedOpen(open, ref, motion);
   return (
     <div ref={ref} {...props} hidden={!shown}>
       {className ? <div className={className}>{children}</div> : children}

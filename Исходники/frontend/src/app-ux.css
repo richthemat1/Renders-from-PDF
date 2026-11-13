@@ -131,12 +131,12 @@
     visibility: hidden;
     width: 270px;
     box-shadow: 12px 0 40px #10182733;
-    transition: transform 0.2s cubic-bezier(0.55, 0.055, 0.675, 0.19), visibility 0s linear 0.2s;
+    transition: transform var(--dur-base) cubic-bezier(0.55, 0.055, 0.675, 0.19), visibility 0s linear var(--dur-base);
   }
   .app-shell .sidebar.is-open {
     transform: none;
     visibility: visible;
-    transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1), visibility 0s;
+    transition: transform var(--dur-slow) cubic-bezier(0.165, 0.84, 0.44, 1), visibility 0s;
   }
   .app-shell .mobile-only {
     display: inline-flex;
@@ -154,12 +154,12 @@
     background: #10182766;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s ease-in, visibility 0s linear 0.2s;
+    transition: opacity var(--dur-base) ease-in, visibility 0s linear var(--dur-base);
   }
   .app-shell:has(.sidebar.is-open) .sidebar-scrim {
     opacity: 1;
     visibility: visible;
-    transition: opacity 0.3s ease-out, visibility 0s;
+    transition: opacity var(--dur-slow) ease-out, visibility 0s;
   }
   .app-shell .edit-panel.is-floating {
     left: 16px;

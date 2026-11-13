@@ -429,7 +429,7 @@
   box-shadow: 0 6px 20px #0b0e1440;
   transform: translateY(-50%);
   pointer-events: none;
-  animation: sidebar-tooltip-in 90ms ease-out;
+  animation: sidebar-tooltip-in var(--dur-instant) ease-out;
 }
 
 .sidebar-tooltip::before {
@@ -496,7 +496,7 @@
 .app-shell > .sidebar .nav-group-toggle > svg:last-child {
   flex-shrink: 0;
   margin-right: -2px;
-  transition: transform 140ms ease-out;
+  transition: transform var(--dur-fast) ease-out;
 }
 
 .app-shell > .sidebar .nav-group-toggle[aria-expanded="false"] > svg:last-child {

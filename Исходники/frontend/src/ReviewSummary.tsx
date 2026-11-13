@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from "react";
 import { ArrowRight, Check, ChevronDown, Layers, ScanEye, ScanSearch, Scissors, TriangleAlert } from "lucide-react";
-import { Collapsible } from "./motion";
+import { Collapsible, FADE_COLLAPSE_MOTION } from "./motion";
 import "./review-summary.css";
 
 function issueFrom(value: unknown, error: boolean) {
@@ -78,7 +78,7 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
         {canRestoreService && <button className="text-btn" onClick={onService}>Посмотреть и вернуть</button>}
       </span>}
     </div>}
-    <Collapsible id={`${id}-issues`} open={open}>
+    <Collapsible id={`${id}-issues`} open={open} motion={FADE_COLLAPSE_MOTION}>
       {!!warnings.length && <p className="review-summary-recommendation">{warnings.length === 1
         ? "Проверьте это изображение вручную." : `Для всех ${warnings.length} предупреждений: проверьте изображения вручную.`}</p>}
       <ul className="review-issue-list">
@@ -97,7 +97,7 @@ export function ReviewSummary({ review, unsigned, warnings, errors, serviceCount
               </button>}
             </div>
           </div>
-          {issue.detail && <Collapsible id={`${id}-detail-${index}`} className="review-issue-detail" open={expanded.has(index)}>
+          {issue.detail && <Collapsible id={`${id}-detail-${index}`} className="review-issue-detail" open={expanded.has(index)} motion={FADE_COLLAPSE_MOTION}>
             <p>{issue.detail}</p>
           </Collapsible>}
         </li>)}
