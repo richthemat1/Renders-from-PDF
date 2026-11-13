@@ -102,7 +102,7 @@
 .dialog .dialog-error {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-control);
-  background: #fff1f2;
+  background: var(--danger-bg);
   color: #963b49;
 }
 .app-shell .sidebar-scrim {
