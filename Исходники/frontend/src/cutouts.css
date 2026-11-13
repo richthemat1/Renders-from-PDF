@@ -75,7 +75,7 @@
 /* The side room holds the number of a frame at the left edge of the page. */
 .cutout-scroller { display: flex; flex: 1; min-height: 0; padding: var(--space-5) var(--space-10) 0; overflow: hidden; }
 .cutout-scroller.is-zoomed { overflow: auto; overscroll-behavior: contain; }
-.cutout-stage { position: relative; flex-shrink: 0; margin: auto; background: var(--gray-0); box-shadow: 0 3px 16px #18202e12; cursor: crosshair;
+.cutout-stage { position: relative; flex-shrink: 0; margin: auto; background: var(--gray-0); box-shadow: var(--shadow-2); cursor: crosshair;
   outline: none; user-select: none; touch-action: none; }
 .cutout-stage > img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .cutout-found { position: absolute; box-sizing: border-box; border: 1px dashed #8b95a5; border-radius: var(--radius-xs); pointer-events: none; }

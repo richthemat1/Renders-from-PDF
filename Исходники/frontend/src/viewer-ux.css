@@ -223,7 +223,7 @@
   border-radius: 14px;
   color: var(--gray-0);
   background: var(--accent);
-  box-shadow: 0 2px 8px #17202b33;
+  box-shadow: var(--shadow-2);
   font: 700 13px/1 "Manrope Variable", "Segoe UI", sans-serif;
 }
 body.is-card-dragging,

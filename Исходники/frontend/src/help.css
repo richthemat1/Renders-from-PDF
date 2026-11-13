@@ -579,7 +579,7 @@
   border: 1px solid var(--gray-300);
   border-radius: var(--radius-lg);
   background: var(--gray-0);
-  box-shadow: 0 1px 3px #28243f0d;
+  box-shadow: var(--shadow-1);
 }
 .help-center .hf-row {
   display: flex;
@@ -676,7 +676,7 @@
   height: 22px;
   border-radius: var(--radius-sm);
   background: var(--gray-0);
-  box-shadow: 0 1px 2px #28243f1a;
+  box-shadow: var(--shadow-1);
 }
 .help-center .hf-check {
   position: absolute;
@@ -703,7 +703,7 @@
   border: 1px solid var(--gray-300);
   border-radius: 14px;
   background: var(--gray-0);
-  box-shadow: 0 6px 18px #28243f14;
+  box-shadow: var(--shadow-2);
 }
 .help-center .hf-dock-count {
   margin-right: var(--space-1);
@@ -730,7 +730,7 @@
 .help-center .hf-tabs > span.is-active {
   background: var(--gray-0);
   color: #30313d;
-  box-shadow: 0 1px 2px #28243f1a;
+  box-shadow: var(--shadow-1);
 }
 .help-center .hf-collage {
   display: flex;
@@ -783,7 +783,7 @@
   bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
-  box-shadow: 0 2px 6px #28243f1f;
+  box-shadow: var(--shadow-2);
 }
 .help-center .hf-cutout {
   display: flex;
@@ -797,7 +797,7 @@
   height: 124px;
   border: 1px solid var(--gray-300);
   background: var(--gray-0);
-  box-shadow: 0 2px 6px #28243f12;
+  box-shadow: var(--shadow-2);
 }
 .help-center .hf-page-picture {
   position: absolute;
@@ -816,7 +816,7 @@
   padding: var(--space-2);
   border-radius: var(--radius-xs);
   background: var(--gray-0);
-  box-shadow: 0 1px 3px #28243f1f;
+  box-shadow: var(--shadow-1);
 }
 .help-center .hf-page-scheme i {
   height: 5px;
@@ -868,7 +868,7 @@
   width: 186px;
   height: 90px;
   border-radius: var(--radius-xs);
-  box-shadow: 0 2px 8px #28243f1f;
+  box-shadow: var(--shadow-2);
   transform: translate(-50%, -50%);
 }
 .help-center .hf-switch,
@@ -879,7 +879,7 @@
   align-items: center;
   border-radius: 10px;
   background: var(--gray-0);
-  box-shadow: 0 1px 3px #28243f1f;
+  box-shadow: var(--shadow-1);
   white-space: nowrap;
   transform: translateX(-50%);
 }
@@ -926,7 +926,7 @@
   border-radius: 10px;
   background: var(--gray-0);
   color: #30313d;
-  box-shadow: 0 1px 3px #28243f1f;
+  box-shadow: var(--shadow-1);
   transform: translateY(-50%);
 }
 .help-center .hf-round.is-left {

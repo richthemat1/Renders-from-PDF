@@ -1335,7 +1335,7 @@ fieldset {
   border-radius: 18px;
   background: #ffffffd6;
   backdrop-filter: blur(10px);
-  box-shadow: 0 1px 3px #33304f08, 0 8px 28px #33304f12;
+  box-shadow: var(--shadow-3);
   animation: editor-dock-in 160ms ease-out;
 }
 @keyframes editor-dock-in {
@@ -1496,7 +1496,7 @@ fieldset {
   padding: var(--space-1);
   border-radius: var(--radius-control);
   background: white;
-  box-shadow: 0 8px 32px #17202b26;
+  box-shadow: var(--shadow-3);
 }
 .action-menu > button {
   display: flex;
@@ -1560,7 +1560,7 @@ fieldset {
   border-radius: var(--radius-panel);
   background: #ffffffd6;
   backdrop-filter: blur(10px);
-  box-shadow: 0 1px 3px #33304f08, 0 8px 28px #33304f12;
+  box-shadow: var(--shadow-3);
 }
 .editor-action-menu > button {
   min-height: 36px;
@@ -1738,7 +1738,7 @@ details[open] > summary::after {
   width: min(544px, calc(100vw - 40px));
   color: var(--ink);
   background: var(--gray-0);
-  box-shadow: 0 16px 48px #28243f1a, 0 2px 6px #28243f08;
+  box-shadow: var(--shadow-4);
 }
 .dialog::backdrop {
   background: #10182787;
@@ -1973,7 +1973,7 @@ details[open] > summary::after {
   border: 1px solid #e7e7ef;
   border-radius: var(--radius-lg);
   background: var(--gray-0);
-  box-shadow: 0 2px 6px #28243f05, 0 8px 28px #28243f14;
+  box-shadow: var(--shadow-3);
 }
 .toast-mark {
   display: grid;
@@ -2183,11 +2183,11 @@ kbd,
 .editor-action-menu {
   background: var(--gray-0);
   backdrop-filter: none;
-  box-shadow: 0 8px 32px #24233733;
+  box-shadow: var(--shadow-3);
 }
 .edit-panel.is-floating {
   border-color: #bcb8ce;
-  box-shadow: 0 8px 32px #24233733;
+  box-shadow: var(--shadow-3);
 }
 /* Liquid glass (glass.tsx): the gallery bends at the rim of the floating dock, a light rim catches the light.
    The white is denser than in a pure glass so the dock's 12–13px text stays readable over captions;
@@ -2245,7 +2245,7 @@ kbd,
 }
 .pick input:hover:not(:disabled) {
   border-color: var(--accent-dark);
-  box-shadow: 0 1px 4px #34459333;
+  box-shadow: var(--shadow-1);
 }
 .cover-button img {
   transition: filter 140ms;

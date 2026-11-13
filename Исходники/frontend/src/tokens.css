@@ -94,6 +94,13 @@
   --space-12: 48px;
   --space-16: 64px;
 
+  /* Elevation: one shadow colour, five heights */
+  --shadow-1: 0 1px 2px #28243f14;
+  --shadow-2: 0 2px 6px #28243f12, 0 8px 24px #28243f14;
+  --shadow-3: 0 8px 28px #28243f1f;
+  --shadow-4: 0 16px 48px #28243f1a, 0 2px 6px #28243f08;
+  --shadow-5: 0 24px 80px #28243f2e;
+
   /* Layers; dialogs live in the top layer through showModal() and take none */
   --z-topbar: 20;
   --z-dock: 25;
