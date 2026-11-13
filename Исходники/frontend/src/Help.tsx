@@ -125,8 +125,9 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
         спорные отмечены.
       </Step>
       <Step n={3} title="Проверьте и сохраните">
-        Перенесите спорные изображения в нужные варианты, лишние уберите и нажмите <Ui>Сохранить</Ui>. Каждый
-        вариант — отдельный PDF.
+        Перенесите спорные изображения в нужные варианты, лишние уберите, а нужные на своём месте отметьте{" "}
+        <Path items={["Перенести в вариант", "Оставить как есть"]} /> и нажмите <Ui>Сохранить</Ui>. Каждый вариант —
+        отдельный PDF.
       </Step>
       <Step n={4} title="Заберите варианты">
         Нажмите <Ui>Варианты в папку…</Ui> в шапке результата — PDF всех вариантов сохранятся в выбранную папку, в
@@ -444,6 +445,7 @@ const SECTIONS: Record<HelpTopic, (props: SectionProps) => ReactNode> = {
           <div><dt>Выбрать все видимые</dt><dd><Keys keys={["Ctrl", "A"]} /></dd></div>
           <div><dt>Снять всё выделение</dt><dd><Keys keys={["Esc"]} /></dd></div>
           <div><dt>Убрать выбранные</dt><dd><Keys keys={["Delete"]} /></dd></div>
+          <div><dt>Оставить открытое изображение как есть (в крупном просмотре)</dt><dd><Keys keys={["0"]} /></dd></div>
           <div><dt>Отменить шаг</dt><dd><Keys keys={["Ctrl", "Z"]} /></dd></div>
           <div><dt>Повторить отменённый шаг</dt><dd><Keys keys={["Ctrl", "Y"]} /> или <Keys keys={["Ctrl", "Shift", "Z"]} /></dd></div>
           <div><dt>Сохранить</dt><dd><Keys keys={["Ctrl", "S"]} /></dd></div>

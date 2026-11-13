@@ -58,6 +58,8 @@ interface DraftData {
   savedRemoved: number[];
   restored: number[];
   misc: number[];
+  /** «Оставить как есть»: images «На проверку» or «Без подписи» checked in this draft and left where they are. */
+  reviewed: number[];
   sourceVariants: Record<string, string | null>;
   removedFrom: Record<string, { variant: string | null; before?: number }>;
   /** Names given to variants this draft makes; the others keep their saved names or «Вариант N». */
@@ -78,6 +80,7 @@ export type Edit =
   | { type: "cut"; key: string; collage: string | null; source: number | null; replace: number[];
       boxes: Box[]; targets: (string | null | "keep")[]; trim: boolean; names?: Record<string, string> }
   | { type: "cutouts"; changes: CutoutChange[]; names?: Record<string, string> }
+  | { type: "keep"; ids: number[] }
   | { type: "collage-check"; id: string }
   | { type: "collage-dismiss"; id: string }
   | { type: "undo" }
@@ -100,7 +103,7 @@ export function createDraft(report: Report): Draft {
   for (const ids of Object.values(variants))
     ids.sort((a, b) => report.images[a].pdf_page - report.images[b].pdf_page);
   return { sourceCount: report.images.length, copies: {}, frames: {}, cuts: {}, collageChecked: [], collageDismissed: [],
-    variants, removed: [], order, savedRemoved, sourceVariants, removedFrom, restored: [], misc: [], variantNames: {}, past: [] };
+    variants, removed: [], order, savedRemoved, sourceVariants, removedFrom, restored: [], misc: [], reviewed: [], variantNames: {}, past: [] };
 }
 
 function remember(previous: Draft, data: DraftData): Draft {
@@ -338,6 +341,10 @@ function applyEdit(draft: Draft, edit: Edit): Draft {
     for (const change of edit.changes) data = applyCutout(data, change);
     return remember(draft, data);
   }
+  if (edit.type === "keep") {
+    const ids = edit.ids.filter((id) => id < draft.sourceCount && !isRemoved(draft, id));
+    return remember(draft, { ...dataOf(draft), reviewed: [...new Set([...draft.reviewed, ...ids])].sort((a, b) => a - b) });
+  }
   if (edit.type === "collage-check")
     return remember(draft, { ...dataOf(draft), collageChecked: [...new Set([...draft.collageChecked, edit.id])] });
   if (edit.type === "collage-dismiss")
@@ -476,7 +483,7 @@ export function payload(draft: Draft, revision: number) {
   const value: { revision: number; variants: Record<string, number[]>; removed: number[];
     restored?: number[]; misc?: number[]; copies?: number[]; cuts?: typeof cuts; cutouts?: typeof cutouts;
     variant_names?: Record<string, string>;
-    collage_checked?: string[]; collage_dismissed?: string[] } = {
+    collage_checked?: string[]; collage_dismissed?: string[]; reviewed?: number[] } = {
     revision,
     variants: Object.fromEntries(Object.entries(draft.variants).filter(([, ids]) => ids.length)
       .map(([key, ids]) => [key, ids.filter((id) => !isRemoved(draft, id) || !(id in draft.frames)).map(wire)])),
@@ -493,6 +500,8 @@ export function payload(draft: Draft, revision: number) {
   if (names.length) value.variant_names = Object.fromEntries(names);
   if (draft.collageChecked.length) value.collage_checked = draft.collageChecked;
   if (draft.collageDismissed.length) value.collage_dismissed = draft.collageDismissed;
+  const reviewed = (draft.reviewed ?? []).filter((id) => !isRemoved(draft, id));
+  if (reviewed.length) value.reviewed = reviewed;
   return value;
 }
 function dataOf(draft: Draft): DraftData {
@@ -620,7 +629,8 @@ export function draftLocation(draft: Draft, report: Report, id: number): {
     const status = original?.status ?? (folder === "Без подписи" ? "unsigned" : folder === "На проверку" ? "review" : "named");
     return { folder, status, variant: null };
   }
-  return { folder: image.folder, status: image.status, variant: null };
+  const checked = image.reviewed || (draft.reviewed ?? []).includes(id);
+  return { folder: image.folder, status: checked && image.status !== "named" ? "named" : image.status, variant: null };
 }
 export function isDirty(draft: Draft, initial: Draft): boolean {
   return (

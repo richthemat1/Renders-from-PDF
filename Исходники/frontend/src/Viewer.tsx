@@ -117,6 +117,17 @@ function textEntry(target: EventTarget | null): boolean {
     'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select,[contenteditable]:not([contenteditable="false"])',
   );
 }
+/** Why a service element was left out, short enough for the badge on its card; the full reason is in the viewer. */
+const SERVICE_REASONS: Record<string, string> = {
+  small_fragment: "мелкий фрагмент", repeated_resource: "повторяется", repeated_static: "повторяется",
+  fully_occluded: "закрыт другим", blank_image: "пустой", blank_layer: "пустой", text_fill: "фон текста",
+  cover_graphic: "оформление",
+};
+function serviceLabel(code?: string): string {
+  const reason = code ? SERVICE_REASONS[code] : undefined;
+  return reason ? `Служебный · ${reason}` : "Служебный";
+}
+
 export function Viewer({
   result,
   footer,
@@ -158,6 +169,8 @@ export function Viewer({
   const [savedHere, setSavedHere] = useState<"" | "saved" | "undone">("");
   // «Ещё → Отменить последнее сохранение» asks first: unlike a step of the draft, the undone save cannot be redone.
   const [confirmUndoSave, setConfirmUndoSave] = useState(false);
+  // «Варианты в папку…» / «В папку…» with unsaved edits or images still to review: what to do first.
+  const [exportAsk, setExportAsk] = useState<{ keys?: string[]; dirty: boolean; open: number } | null>(null);
   const [conflict, setConflict] = useState(false);
   const [rename, setRename] = useState<Rename | null>(null);
   /** The images «Новый вариант…» moves: the selection, or one card from its context menu. */
@@ -284,6 +297,8 @@ export function Viewer({
   );
   const removedAll = removedIds(draft);
   const removedSet = new Set(removedAll);
+  // «На проверку» or «Без подписи» and not checked yet: «Оставить как есть» can settle it where it is.
+  const waitsForDecision = (id: number) => !removedSet.has(id) && draftLocation(draft, report, id).status !== "named";
   // Service elements were set aside by the automatic filter, not by the user.
   const isService = (id: number) => !!report.images[id]?.suppressed;
   // Frames replaced by a newer cut, and a picture cut into frames, live on in the collage, not among removed cards.
@@ -717,10 +732,12 @@ export function Viewer({
   }
   /** Ask for a folder and put the saved PDFs of these variants straight into it; without keys all
    *  variants go into a folder named after the source PDF, made inside the chosen one. */
-  async function exportVariants(keys?: string[]) {
+  async function exportVariants(keys?: string[], confirmed = false) {
     if (savingRef.current || savingState.current) return;
-    if (dirty) {
-      notify("Сначала сохраните правки. В папку попадают сохранённые PDF вариантов.", true);
+    // Unsaved edits and images left for review are asked about before the PDFs go out, not after a click.
+    const open = keys ? 0 : counts.review + counts.unsigned;
+    if (!confirmed && (dirty || open)) {
+      setExportAsk({ keys, dirty, open });
       return;
     }
     let value: VariantExport | null;
@@ -913,6 +930,10 @@ export function Viewer({
       } else if (editing && !saving && /^[1-9]$/.test(event.key) && variants.includes(event.key)) {
         event.preventDefault();
         change({ type: "move", ids: [preview], target: event.key });
+      } else if (editing && !saving && event.key === "0" && waitsForDecision(preview)) {
+        // 0 leaves the open image as it is, as the digits send it to a variant.
+        event.preventDefault();
+        change({ type: "keep", ids: [preview] });
       }
     };
     viewport?.addEventListener("wheel", wheel, { passive: false });
@@ -996,7 +1017,8 @@ export function Viewer({
         disabled: saving || !active.length,
         children: [...variants.map((variant) => ({ value: `move:${variant}`, label: variantLabel(labelled, variant) })),
           { value: "move:return-to-misc", label: "Вернуть на прежнее место", separator: true,
-            disabled: !active.some((value) => draftVariant(draft, value) !== null) }] },
+            disabled: !active.some((value) => draftVariant(draft, value) !== null) },
+          { value: "move:keep", label: "Оставить как есть", disabled: !active.some(waitsForDecision) }] },
       { value: "new", label: "Новый вариант…", icon: <Plus size={16} />, disabled: saving || !active.length },
       { value: "copy", label: active.length > 1 ? "Создать копии…" : "Создать копию…", icon: <Copy size={16} />,
         disabled: saving || !active.length },
@@ -1036,6 +1058,7 @@ export function Viewer({
         else if (value === "caption") copyCaption(row.title);
         else if (value.startsWith("turn:")) void turnImages(active, Number(value.slice(5)) as Turn);
         else if (value === "move:return-to-misc") change({ type: "return-to-misc", ids: active }, keep);
+        else if (value === "move:keep") change({ type: "keep", ids: active.filter(waitsForDecision) }, keep);
         else if (value.startsWith("move:")) change({ type: "move", ids: active, target: value.slice(5) }, keep);
         else if (value === "new") setNewVariant(active);
         else if (value === "copy") startCopy(active);
@@ -1410,6 +1433,7 @@ export function Viewer({
             canMoveDown={selected.length === 1 && selectedPosition >= 0 && selectedPosition < selectedMembers.length - 1}
             canMoveEdge={canMoveEdge}
             canReturn={selectedActive.some((id) => draftVariant(draft, id) !== null)}
+            canKeep={selectedActive.some(waitsForDecision)}
             selectedRemoved={selectedRemoved.length}
             selectedActive={selectedActive.length}
             removed={removed.length}
@@ -1430,6 +1454,7 @@ export function Viewer({
             onReorder={reorder}
             onMoveEdge={(edge) => change({ type: "move-edge", ids: selectedActive, edge })}
             onReturn={() => change({ type: "return-to-misc", ids: selectedActive })}
+            onKeep={() => change({ type: "keep", ids: selectedActive.filter(waitsForDecision) })}
             onRestore={() => change({ type: "restore", ids: selectedRemoved })}
             onShowRemoved={() => { setFilter("removed"); setStatus("all"); setQuery(""); }}
             onUndoSave={() => setConfirmUndoSave(true)}
@@ -1590,7 +1615,7 @@ export function Viewer({
                     ) : (
                       <Tag size={12} />
                     )}
-                    {removedSet.has(row.id) ? isService(row.id) ? "Служебный" : "Убрано" : STATUS[row.status as keyof typeof STATUS]}
+                    {removedSet.has(row.id) ? isService(row.id) ? serviceLabel(row.image.suppression_code) : "Убрано" : STATUS[row.status as keyof typeof STATUS]}
                   </span>}
                   {(() => {
                     const collage = removedSet.has(row.id) ? undefined : collageOf(row.id);
@@ -1823,7 +1848,7 @@ export function Viewer({
               {previewFailed && <p className="preview-fallback" role="status">{previewRow.image.preview
                 ? "Полноразмерный просмотр недоступен. Показана миниатюра; детали можно проверить в PDF."
                 : "Полноразмерный просмотр недоступен. Проверьте изображение в PDF."}</p>}
-              <span className="preview-shortcuts">← → листать{editing && " · 1–9 перенести в существующий вариант"}</span>
+              <span className="preview-shortcuts">← → листать{editing && " · 1–9 перенести в существующий вариант · 0 оставить как есть"}</span>
             </div>
             <span className={`preview-location${removedSet.has(previewRow.id) ? " is-removed" : ""}`}
               title={removedSet.has(previewRow.id) ? isService(previewRow.id) ? "Пропущено автоматически" : "Убрано из результата" : previewRow.label}>
@@ -1980,6 +2005,32 @@ export function Viewer({
               <div className="dialog-alternatives">{back}</div>
             </div>;
           })()}
+        </Dialog>
+      )}</Presence>
+      <Presence>{exportAsk && (
+        <Dialog title={exportAsk.dirty ? "Сохранить правки перед выгрузкой?" : "Остались неразобранные изображения"}
+          busy={saving} onClose={() => setExportAsk(null)}>
+          {exportAsk.dirty && <p>В папку попадают сохранённые PDF вариантов: несохранённые правки в них ещё не вошли.</p>}
+          {exportAsk.open > 0 && <p>{exportAsk.open} {plural(exportAsk.open, ["изображение", "изображения", "изображений"])} ещё
+            «На проверку» или «Без подписи» — в PDF вариантов {exportAsk.open === 1 ? "оно не попадёт" : "они не попадут"}.</p>}
+          <div className="dialog-choices">
+            <button className="btn primary" data-autofocus disabled={saving} onClick={() => {
+              const ask = exportAsk;
+              setExportAsk(null);
+              void (async () => {
+                if (ask.dirty && !(await save())) return;
+                await exportVariants(ask.keys, true);
+              })();
+            }}>{exportAsk.dirty ? "Сохранить и выгрузить" : "Выгрузить как есть"}</button>
+            <div className="dialog-alternatives">
+              {exportAsk.open > 0 && <button className="btn secondary" disabled={saving} onClick={() => {
+                setExportAsk(null);
+                setFilter("needs-review"); setStatus("all"); setQuery("");
+                if (!editing) { setEditing(true); setSelected([]); }
+              }}>Сначала разобрать</button>}
+              <button className="btn quiet-text" disabled={saving} onClick={() => setExportAsk(null)}>Отмена</button>
+            </div>
+          </div>
         </Dialog>
       )}</Presence>
       <Presence>{confirmUndoSave && (

@@ -75,7 +75,11 @@ class DeliveryUI(unittest.TestCase):
         self.page.get_by_role('button', name='Перенести в вариант', exact=True).click()
         self.page.get_by_role('menuitem', name='Вариант 2', exact=True).click()
         self.page.get_by_role('button', name='Варианты в папку…', exact=True).click()
-        expect(self.page.get_by_text('Сначала сохраните правки', exact=False)).to_be_visible()
+        # Unsaved edits are asked about before anything goes out: save and send, or stay.
+        ask = self.page.get_by_role('dialog', name='Сохранить правки перед выгрузкой?')
+        expect(ask.get_by_role('button', name='Сохранить и выгрузить', exact=True)).to_be_focused()
+        ask.get_by_role('button', name='Отмена', exact=True).click()
+        expect(ask).to_have_count(0)
         self.assertEqual(self.calls, [None])
         # The save refreshes the copies made before by itself.
         before = (inner / 'Вариант 2.pdf').read_bytes()

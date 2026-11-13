@@ -106,10 +106,14 @@ class DesktopServer(PreviewServer):
         report = read_result(self.folders[id])
         if type(index) is not int or not 0 <= index < len(report['images']):
             raise ValueError('Изображение не найдено.')
-        page = report['images'][index].get('page')
+        image = report['images'][index]
+        page = image.get('page')
         if type(page) is not int or not 1 <= page <= report['pages']:
             raise ValueError('Номер исходной страницы не указан в отчёте.')
-        return source_pdf(report), page - 1, 1600, page_turn(report, page)
+        # The picture's place on the slide is framed, so a slide with two plans side by side shows which one it is.
+        box = image.get('bbox')
+        highlight = tuple(float(value) for value in box) if isinstance(box, list) and len(box) == 4 else None
+        return source_pdf(report), page - 1, 1600, page_turn(report, page), highlight
 
     def source_preview(self, id, index):
         """Read the original slide belonging to a registered report entry."""
@@ -125,17 +129,17 @@ class DesktopServer(PreviewServer):
     def page_image(self, id, number, thumb=False):
         return self._render_page(*self.source_page(id, number, thumb))
 
-    def _render_page(self, path, page_index, limit=1600, turn=0):
+    def _render_page(self, path, page_index, limit=1600, turn=0, highlight=None):
         """A PNG of the page, kept for repeat views: reopening the cutout editor or flipping back in the preview.
 
         The key holds the file's identity, size and time, so a rewritten PDF is rendered anew."""
         stat = Path(path).stat()
-        key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, page_index, limit, turn)
+        key = (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns, page_index, limit, turn, highlight)
         with self._renders_lock:
             if key in self._renders:
                 self._renders.move_to_end(key)
                 return self._renders[key]
-        image = render_page(path, page_index, limit, turn)
+        image = render_page(path, page_index, limit, turn, highlight)
         with self._renders_lock:
             if key not in self._renders:
                 self._renders[key] = image
@@ -145,8 +149,10 @@ class DesktopServer(PreviewServer):
         return image
 
 
-def render_page(path, page_index, limit, turn=0):
-    """A PNG of the page within `limit` pixels, turned clockwise by `turn` degrees as the result reads it."""
+def render_page(path, page_index, limit, turn=0, highlight=None):
+    """A PNG of the page within `limit` pixels, turned clockwise by `turn` degrees as the result reads it.
+
+    `highlight`: a box in page points from the top left (x0, top, x1, bottom) framed on an upright page."""
     import pypdfium2
     with PDFIUM_LOCK, pypdfium2.PdfDocument(path) as document:
         if not 0 <= page_index < len(document):
@@ -157,6 +163,8 @@ def render_page(path, page_index, limit, turn=0):
             bitmap = page.render(scale=scale, rotation=turn)
             try:
                 with bitmap.to_pil() as image:
+                    if highlight and not turn % 360:
+                        frame_box(image, highlight, scale)
                     image.thumbnail((limit, limit))
                     buffer = BytesIO()
                     image.save(buffer, 'PNG')
@@ -165,6 +173,20 @@ def render_page(path, page_index, limit, turn=0):
                 bitmap.close()
         finally:
             page.close()
+
+
+def frame_box(image, box, scale):
+    """A dark accent frame with a white inner line around the box: visible on light slides and on photos."""
+    from PIL import ImageDraw
+    x0, top, x1, bottom = (round(value * scale) for value in box)
+    x0, top = max(0, x0), max(0, top)
+    x1, bottom = min(image.width - 1, x1), min(image.height - 1, bottom)
+    if x1 - x0 < 4 or bottom - top < 4:
+        return
+    draw = ImageDraw.Draw(image)
+    width = max(3, round(min(image.size) / 300))
+    draw.rectangle((x0 - width, top - width, x1 + width, bottom + width), outline=(64, 80, 190), width=width)
+    draw.rectangle((x0, top, x1, bottom), outline=(255, 255, 255), width=max(1, width // 2))
 
 
 def desktop_handler(server):

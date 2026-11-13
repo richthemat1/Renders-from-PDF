@@ -25,6 +25,8 @@ interface Props {
   canMoveDown: boolean;
   canMoveEdge: boolean;
   canReturn: boolean;
+  /** Some selected image waits for a decision («На проверку», «Без подписи») and can be left as it is. */
+  canKeep: boolean;
   selectedRemoved: number;
   selectedActive: number;
   removed: number;
@@ -37,6 +39,7 @@ interface Props {
   onReorder(direction: -1 | 1): void;
   onMoveEdge(edge: "start" | "end"): void;
   onReturn(): void;
+  onKeep(): void;
   onRestore(): void;
   onShowRemoved(): void;
   onUndoSave(): void;
@@ -104,6 +107,7 @@ export function EditorToolbar(props: Props) {
   const moveItems: ActionMenuItem[] = [
     ...props.variants,
     { value: "return-to-misc", label: "Вернуть на прежнее место", separator: true, disabled: !props.canReturn },
+    { value: "keep", label: "Оставить как есть", disabled: !props.canKeep },
   ];
   const actions: ActionMenuItem[] = [
     { value: "move", label: "Перенести в вариант", icon: <FolderInput size={16} />,
@@ -141,6 +145,7 @@ export function EditorToolbar(props: Props) {
   ];
   function action(value: string) {
     if (value === "move:return-to-misc") props.onReturn();
+    else if (value === "move:keep") props.onKeep();
     else if (value.startsWith("move:")) props.onMove(value.slice(5));
     else if (value === "new") props.onNewVariant();
     else if (value === "copy") props.onCopy();
@@ -195,7 +200,7 @@ export function EditorToolbar(props: Props) {
                 disabled={props.saving} onClick={props.onClearSelection}>Снять всё</button>}
             </div>
             <ActionMenu className="editor-primary-action editor-move" label="Перенести в вариант"
-              disabled={noSelection} items={moveItems} onAction={(value) => value === "return-to-misc" ? props.onReturn() : props.onMove(value)}
+              disabled={noSelection} items={moveItems} onAction={(value) => value === "return-to-misc" ? props.onReturn() : value === "keep" ? props.onKeep() : props.onMove(value)}
               upwards={floating} placementKey={floating} />
             <button className="btn compact secondary editor-primary-action editor-new" aria-label="Новый вариант…"
               title="Новый вариант…" disabled={noSelection} onClick={props.onNewVariant}>

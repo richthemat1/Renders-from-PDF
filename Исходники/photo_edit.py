@@ -233,7 +233,9 @@ def unused_backup(output, report):
 def summarize(report):
     entries = [entry for entry in report['images'] if not entry.get('removed')]
     report['counts_by_folder'] = dict(sorted(Counter(entry['folder'] for entry in entries).items()))
-    report['counts_by_status'] = dict(Counter(entry['status'] for entry in entries))
+    # An image checked by a person and left as it is («Оставить как есть») no longer waits for a decision.
+    report['counts_by_status'] = dict(Counter('named' if entry.get('reviewed') and entry['status'] in ('review', 'unsigned')
+                                              else entry['status'] for entry in entries))
     documents = {}
     for entry in entries:
         document = documents.setdefault(entry['file'], {
@@ -1264,6 +1266,20 @@ def parse_variant_names(report, variants, raw):
     return names
 
 
+def parse_reviewed(report, payload, removed):
+    """Images «На проверку» or «Без подписи» a person checked and left as they are."""
+    values = payload.get('reviewed', [])
+    if not isinstance(values, list) or any(type(value) is not int for value in values):
+        raise EditError('Некорректный формат правки.')
+    images = report['images']
+    for index in values:
+        if not 0 <= index < len(images) or images[index].get('removed') or index in removed:
+            raise EditError('Отмеченное изображение не найдено или убрано. Нажмите «Обновить» и повторите правку.')
+        if images[index]['status'] not in ('review', 'unsigned'):
+            raise EditError('Оставить как есть можно только изображение «На проверку» или «Без подписи».')
+    return sorted(set(values))
+
+
 def apply_edits(output, payload):
     """Rebuild variant and individual PDFs transactionally, preserving every replaced source."""
     output = Path(output).resolve()
@@ -1281,6 +1297,7 @@ def apply_edits(output, payload):
         if any(index not in removed for index in members):
             raise EditError('Прежние кадры склейки не убраны из правки. Нажмите «Обновить» и повторите разрезание.')
     restored = [int(index) for index in payload.get('restored', [])]
+    reviewed = parse_reviewed(report, payload, removed)
     for item in cutouts:
         record = item['record']
         if any(index not in removed for index in item['members']):
@@ -1328,7 +1345,7 @@ def apply_edits(output, payload):
     source_singles = [index for index in removed+to_variant
                       if index < copy_start and entry_group(images[index]) is None and not images[index].get('removed')]
     if (not changed and not source_singles and not misc and not cuts and not cutouts and not checked and not dismissed
-            and not turns):
+            and not turns and not reviewed):
         return report, None
     # Read every source before creating backups or replacing any live PDF.
     built = {key: variant_pdf(output, working, variants[key], key, frames, rotations) for key in changed if variants[key]}
@@ -1357,6 +1374,11 @@ def apply_edits(output, payload):
     backup_name = str(backup.relative_to(output))
     new = updated_report(working, variants, removed, current, built, changed, backup_name,
                          misc=misc, restored=restored, singles=singles, copies=copies, copy_start=copy_start)
+    if reviewed:
+        for index in reviewed:
+            new['images'][index]['reviewed'] = True
+        summarize(new)
+        new['edits'][-1]['reviewed'] = reviewed
     if cuts or checked or dismissed:
         _update_collages(new, cut_summary, checked, dismissed)
     if cutouts:

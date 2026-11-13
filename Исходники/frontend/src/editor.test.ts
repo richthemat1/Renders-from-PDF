@@ -393,3 +393,25 @@ describe("variant label above a caption", () => {
     expect(repeatsLabel("Вариант 1", "Перспектива")).toBe(false);
   });
 });
+
+describe("«Оставить как есть»", () => {
+  const waiting = { revision: 1, images: [
+    { variant: 1, pdf_page: 1, status: "named", folder: "Вариант 1" },
+    { variant: null, pdf_page: 1, status: "unsigned", folder: "Без подписи" },
+    { variant: null, pdf_page: 1, status: "review", folder: "На проверку", removed: true },
+  ] } as unknown as Report;
+  it("settles an image where it is, is saved, undone and skips removed ones", () => {
+    const initial = createDraft(waiting);
+    const kept = editDraft(initial, { type: "keep", ids: [1, 2] });
+    expect(draftLocation(kept, waiting, 1)).toMatchObject({ status: "named", folder: "Без подписи", variant: null });
+    expect(payload(kept, 1)).toMatchObject({ reviewed: [1] });
+    expect(isDirty(kept, initial)).toBe(true);
+    const undone = editDraft(kept, { type: "undo" });
+    expect(draftLocation(undone, waiting, 1).status).toBe("unsigned");
+    expect(payload(undone, 1)).not.toHaveProperty("reviewed");
+  });
+  it("reads an image checked earlier from the saved report", () => {
+    const saved = { ...waiting, images: waiting.images.map((image, index) => index === 1 ? { ...image, reviewed: true } : image) } as Report;
+    expect(draftLocation(createDraft(saved), saved, 1).status).toBe("named");
+  });
+});

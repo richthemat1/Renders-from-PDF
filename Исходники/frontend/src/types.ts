@@ -10,6 +10,8 @@ export interface ImageEntry {
   variant: number | string | null;
   pdf_page: number;
   status: "named" | "review" | "unsigned";
+  /** Checked by a person and left as it is: it no longer waits for a decision. */
+  reviewed?: boolean;
   size: [number, number];
   reason?: string;
   /** Captions the parser could not choose between («На проверку»). */
